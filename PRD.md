@@ -159,7 +159,13 @@ parts influence each other.
 | MIDI export | **pretty_midi** | Clean JSON → multitrack `.mid` |
 | Notation render backend | **MuseScore** (preferred) or **LilyPond** | High-quality engraving from MusicXML |
 | Config | **pydantic-settings / .env** | API keys, provider/model names, round caps |
-| Tests | **pytest** | Validators + converters are deterministic and unit-testable |
+| Backend API | **FastAPI** (wraps the LangGraph pipeline) | Exposes `POST /compose` with **SSE streaming** of negotiation events; serves artifacts |
+| Frontend | **Next.js (App Router) + React + TypeScript**, deployed to **Vercel** | Style prompt UI, live negotiation feed, score viewer, MIDI player; preview URL per PR |
+| In-browser score render | **OpenSheetMusicDisplay** (or VexFlow) | Renders MusicXML client-side — keeps the heavy MuseScore binary off the request path |
+| In-browser playback | **Tone.js** / **html-midi-player** | Plays `song.mid` in the browser without a server round-trip |
+| Backend hosting | **Render / Railway / Fly.io / HF Spaces** (container) | Long-running agent loop + native MuseScore/LilyPond binaries — **not** Vercel Functions (see Frontend & Deployment) |
+| Artifact storage | **Vercel Blob** or S3-compatible | Stores `song.mid` / MusicXML / PDF; UI fetches by URL |
+| Tests | **pytest** (backend) + **Vitest/Playwright** (frontend, optional) | Validators + converters deterministic; UI smoke tests optional |
 
 **Quota/cost note:** free tiers are rate-limited (e.g. Gemini ~1,500 req/day, 10
 RPM; Groq ~1,000 req/day). Keep the negotiation round cap low, send **compact peer
@@ -313,43 +319,124 @@ check`; convergence check has a **conditional edge** back to the instrument node
 
 ---
 
+## Frontend & Deployment
+
+A web UI lets a user type a style, watch the band negotiate **live**, then view the
+score and play the result. The project is a **monorepo**: a **Next.js** frontend on
+**Vercel** and the existing **Python** pipeline behind a thin **FastAPI** service.
+
+### Why the Python backend does *not* go "directly to Vercel"
+
+Vercel is the right home for the Next.js frontend, but the composition pipeline
+cannot run as a Vercel Function as designed — three hard blockers:
+
+1. **Native render binaries.** `music21`'s sheet-music render path shells out to
+   **MuseScore/LilyPond** (system packages installed via `apt`). Vercel Functions
+   have a **read-only filesystem** (only `/tmp` is writable, ~500 MB) and no way to
+   install system binaries — the engraving step can't run there.
+2. **Execution duration.** A multi-round negotiation with per-instrument LLM calls
+   can run for minutes. Vercel Function limits (Fluid Compute): **~300 s on Hobby**,
+   **800 s GA on Pro/Enterprise**, up to **1800 s (30 min) in beta** — workable on
+   paid tiers but fragile, and we're optimizing for a *free* stack.
+3. **Bundle size & no persistence.** `music21` + scientific deps push the Python
+   function toward the bundle-size ceiling, and there's no persistent disk for
+   generated `.mid`/`.pdf` artifacts (only ephemeral `/tmp`).
+
+### Chosen topology
+
+```
+   Browser ──▶ Next.js (Vercel)  ──HTTPS/SSE──▶  FastAPI + LangGraph (container host)
+     ▲            │  app/api proxy                   │  director → agents → arbiter
+     │            ▼                                   ▼  music21 → pretty_midi / MuseScore
+     └──── score (OSMD) + MIDI (Tone.js) ◀── artifact URLs ◀── Vercel Blob / S3
+```
+
+- **Frontend — Vercel (Next.js App Router).** Style-prompt form, a live
+  **negotiation feed** (rendered from the SSE event stream), a **roster view**, an
+  in-browser **score viewer** (OpenSheetMusicDisplay renders MusicXML client-side),
+  and a **MIDI player** (Tone.js / html-midi-player). Push-to-deploy with a
+  **preview URL per PR**. A Next.js Route Handler (`app/api/compose`) proxies to the
+  backend so the browser never holds the backend URL/secret directly.
+- **Backend — container host (Render / Railway / Fly.io / Hugging Face Spaces).**
+  Runs FastAPI wrapping `build_graph()`. `POST /compose` kicks off a run and
+  **streams LangGraph node events over SSE** (director done → roster; each agent
+  pass → negotiation feed; convergence → done). MuseScore/LilyPond are installed in
+  the container image, so server-side PDF engraving works when needed.
+- **Artifacts — object storage (Vercel Blob or S3-compatible).** The backend writes
+  `song.mid` / `song.musicxml` / `song.pdf` and returns URLs; the UI fetches them.
+- **"More Vercel-native" fallback.** Because the score renders (OSMD/VexFlow) and
+  MIDI plays (Tone.js) **in the browser**, MuseScore is only needed for downloadable
+  PDFs. If we ever drop server-side PDF, the backend's only native dependency goes
+  away — but the duration/quota constraints still favor a separate backend over
+  Vercel Functions.
+
+---
+
 ## Suggested project structure
+
+Monorepo: `apps/api/` is the Python pipeline + FastAPI service; `apps/web/` is the
+Next.js frontend that deploys to Vercel. They share the `SongState` contract (the
+TypeScript types in `web` mirror the Pydantic schema).
 
 ```
 multiagent-band/
-  pyproject.toml
-  .env.example                  # LLM_PROVIDER, <PROVIDER>_API_KEY, MODEL_DIRECTOR, MODEL_INSTRUMENT, MAX_ROUNDS
   README.md
   PRD.md
-  llm_band/
-    __init__.py
-    config.py                   # pydantic-settings: models, round caps, render backend
-    schema.py                   # Pydantic: SongState, Header, RosterItem, Part, Note, NegotiationRequest
-    state.py                    # LangGraph State typing + reducers
-    graph.py                    # build_graph(): nodes, edges, conditional convergence edge
-    agents/
-      __init__.py
-      director.py               # arrangement reasoning → header + roster
-      instrument.py             # generic musician node (parametrized by roster id)
-      arbiter.py                # force-convergence / final resolution
-      prompts.py                # system-prompt templates (role/constraints/etiquette)
-    music/
-      validators.py             # music21-based range/key/duration/bar checks → errors
-      to_music21.py             # SongState → music21.stream.Score
-      render_midi.py            # SongState/Score → pretty_midi → .mid
-      render_sheet.py           # Score → MusicXML → MuseScore/LilyPond render
-      theory.py                 # helpers: GM programs, ranges, key membership, chord tones
-    llm.py                      # provider-agnostic chat-model factory (Gemini/Groq/OpenRouter) + structured output
-    cli.py                      # `llm-band "slow blues"` → outputs/song.mid + song.pdf
-  outputs/                      # generated .mid / .musicxml / .pdf (gitignored)
-  tests/
-    test_schema.py
-    test_validators.py          # notes out of range, bad durations, bar overflow
-    test_to_music21.py
-    test_render_midi.py         # JSON fixture → valid .mid round-trip
-    test_convergence.py         # zero-new-requests early exit; cap force-convergence
-    fixtures/
-      sample_songstate.json
+  apps/
+    api/                            # Python backend (LangGraph pipeline + FastAPI)
+      pyproject.toml
+      .env.example                  # LLM_PROVIDER, <PROVIDER>_API_KEY, MODEL_DIRECTOR, MODEL_INSTRUMENT, MAX_ROUNDS
+      Dockerfile                    # installs MuseScore/LilyPond — for the container host
+      llm_band/
+        __init__.py
+        config.py                   # pydantic-settings: models, round caps, render backend
+        schema.py                   # Pydantic: SongState, Header, RosterItem, Part, Note, NegotiationRequest
+        state.py                    # LangGraph State typing + reducers
+        graph.py                    # build_graph(): nodes, edges, conditional convergence edge
+        agents/
+          __init__.py
+          director.py               # arrangement reasoning → header + roster
+          instrument.py             # generic musician node (parametrized by roster id)
+          arbiter.py                # force-convergence / final resolution
+          prompts.py                # system-prompt templates (role/constraints/etiquette)
+        music/
+          validators.py             # music21-based range/key/duration/bar checks → errors
+          to_music21.py             # SongState → music21.stream.Score
+          render_midi.py            # SongState/Score → pretty_midi → .mid
+          render_sheet.py           # Score → MusicXML → MuseScore/LilyPond render
+          theory.py                 # helpers: GM programs, ranges, key membership, chord tones
+        llm.py                      # provider-agnostic chat-model factory (Gemini/Groq/OpenRouter) + structured output
+        api.py                      # FastAPI: POST /compose (SSE event stream), artifact endpoints
+        cli.py                      # `llm-band "slow blues"` → outputs/song.mid + song.pdf
+      outputs/                      # generated .mid / .musicxml / .pdf (gitignored; prod → object storage)
+      tests/
+        test_schema.py
+        test_validators.py          # notes out of range, bad durations, bar overflow
+        test_to_music21.py
+        test_render_midi.py         # JSON fixture → valid .mid round-trip
+        test_convergence.py         # zero-new-requests early exit; cap force-convergence
+        fixtures/
+          sample_songstate.json
+    web/                            # Next.js frontend (App Router) — deploys to Vercel
+      package.json
+      next.config.ts
+      tsconfig.json
+      .env.local.example            # NEXT_PUBLIC_API_BASE_URL → FastAPI backend
+      app/
+        layout.tsx
+        page.tsx                    # style-prompt entry → start a composition
+        compose/[jobId]/page.tsx    # live negotiation view (consumes SSE stream)
+        api/compose/route.ts        # Route Handler: proxies to backend, relays SSE
+      components/
+        StyleForm.tsx               # genre/style prompt input
+        RosterView.tsx              # director's reasoned instrumentation
+        NegotiationFeed.tsx         # live timeline of negotiation_requests
+        ScoreViewer.tsx             # renders MusicXML via OpenSheetMusicDisplay
+        MidiPlayer.tsx              # plays song.mid via Tone.js / html-midi-player
+      lib/
+        api.ts                      # typed client for the FastAPI backend
+        types.ts                    # TS mirror of SongState (kept in sync with schema.py)
+  vercel.json                       # Vercel project config (root dir = apps/web)
 ```
 
 ---
@@ -392,6 +479,17 @@ multiagent-band/
     parse failure as a validation error → bounded repair, never a crash.
 11. **Director under-/over-instrumenting.** Constrain the roster to a sane size
     (e.g. 3–8) so a single request doesn't spawn 20 agents; cap in the director schema.
+12. **Don't deploy the Python pipeline as a Vercel Function.** Native MuseScore/
+    LilyPond binaries, multi-minute run times, bundle-size limits, and the read-only
+    filesystem all break there — host the backend in a container (see Frontend &
+    Deployment). Vercel hosts only the Next.js frontend.
+13. **SSE through the Vercel proxy + CORS.** The `app/api/compose` Route Handler must
+    stream the backend's Server-Sent Events without buffering (no full-response
+    buffering / disabled response caching), and the backend must allow the frontend's
+    origin. Keep the proxy a pass-through so the live negotiation feed stays real-time.
+14. **Keep `lib/types.ts` in sync with `schema.py`.** The frontend mirrors
+    `SongState`; drift between the Pydantic schema and the TS types silently breaks
+    the UI. Prefer generating the TS types from the JSON schema in CI.
 
 ---
 
@@ -417,3 +515,8 @@ multiagent-band/
 6. **Adversarial prompts:** feed a novel style ("space-jazz polka") and confirm the
    director still yields a coherent roster and the pipeline completes — evidence of
    the agentic, non-hardcoded behavior.
+7. **End-to-end web flow:** with the backend running, submit a style in the Next.js
+   UI and assert the **SSE stream** drives the live negotiation feed (roster appears,
+   requests scroll in, convergence fires), the **score viewer** renders the MusicXML,
+   and the **MIDI player** plays `song.mid`. Verify a **Vercel preview deploy** of
+   `apps/web` builds and points at the backend via `NEXT_PUBLIC_API_BASE_URL`.
