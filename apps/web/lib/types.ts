@@ -79,3 +79,24 @@ export interface ComposeResponse {
     musicxml: string;
   };
 }
+
+// SSE events from POST /compose/stream (proxied by app/api/compose), in emission
+// order: one "director" event, zero or more "agent_pass" events as instruments
+// compose/negotiate, one "convergence" event, then one "done" event.
+export type ComposeEvent =
+  | { type: "director"; source: "director" | "canned"; header: Header; roster: RosterItem[] }
+  | {
+      type: "agent_pass";
+      round: number;
+      instrument_id: string;
+      notes_summary: string;
+      new_requests: NegotiationRequest[];
+      resolved_requests: NegotiationRequest[];
+    }
+  | {
+      type: "convergence";
+      round: number;
+      converged: boolean;
+      resolved_requests: NegotiationRequest[];
+    }
+  | (ComposeResponse & { type: "done" });

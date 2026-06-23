@@ -6,7 +6,7 @@ role + peer roles, so `peer_summaries` is empty on this first pass.
 
 from __future__ import annotations
 
-from typing import Optional, TypedDict
+from typing import Iterator, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
@@ -15,7 +15,7 @@ from .agents.arbiter import run_arbiter
 from .agents.instrument import NewRequest, RequestResolution, compose_part, run_instrument_turn
 from .config import get_settings
 from .schema import Header, NegotiationRequest, Part, RosterItem, SongState
-from .state import BandState
+from .state import BandState, merge_parts, merge_requests, take_latest
 
 
 class _InstrumentPayload(TypedDict):
@@ -221,3 +221,57 @@ def run_negotiation(song: SongState, llm=None, max_rounds: Optional[int] = None)
     song.round = result["round"]
     song.converged = result["converged"]
     return song
+
+
+def iter_negotiation_events(song: SongState, llm=None, max_rounds: Optional[int] = None) -> Iterator[dict]:
+    """Same negotiation run as `run_negotiation`, but yields one event dict per
+    node execution (each parallel `instrument_turn` Send produces its own chunk
+    under `stream_mode="updates"`, confirmed via a standalone smoke test) instead
+    of blocking until the graph finishes. Mutates `song` in place once exhausted
+    — callers must drain the generator fully for that side effect to apply, same
+    contract as `run_negotiation`.
+    """
+    if not song.roster:
+        return
+    rounds = max_rounds if max_rounds is not None else get_settings().max_rounds
+    app = _build_negotiation_graph(llm=llm, max_rounds=rounds)
+    state = {
+        "header": song.header, "roster": song.roster, "parts": dict(song.parts),
+        "negotiation_requests": list(song.negotiation_requests), "round": 0, "converged": False,
+    }
+    for chunk in app.stream(state, config={"recursion_limit": 4 * rounds + 10}, stream_mode="updates"):
+        for node, update in chunk.items():
+            if not update:
+                continue
+            if "parts" in update:
+                state["parts"] = merge_parts(state["parts"], update["parts"])
+            if "negotiation_requests" in update:
+                state["negotiation_requests"] = merge_requests(state["negotiation_requests"], update["negotiation_requests"])
+            if "round" in update:
+                state["round"] = take_latest(state["round"], update["round"])
+            if "converged" in update:
+                state["converged"] = update["converged"]
+
+            if node == "instrument_turn":
+                instrument_id = next(iter(update["parts"]))
+                reqs = update.get("negotiation_requests", [])
+                yield {
+                    "type": "agent_pass",
+                    "round": update["round"],
+                    "instrument_id": instrument_id,
+                    "notes_summary": state["parts"][instrument_id].notes_summary,
+                    "new_requests": [r.model_dump(by_alias=True) for r in reqs if r.status == "pending"],
+                    "resolved_requests": [r.model_dump(by_alias=True) for r in reqs if r.status != "pending"],
+                }
+            elif node == "arbiter":
+                yield {
+                    "type": "convergence",
+                    "round": state["round"],
+                    "converged": True,
+                    "resolved_requests": [r.model_dump(by_alias=True) for r in update.get("negotiation_requests", [])],
+                }
+
+    song.parts = state["parts"]
+    song.negotiation_requests = state["negotiation_requests"]
+    song.round = state["round"]
+    song.converged = state["converged"]

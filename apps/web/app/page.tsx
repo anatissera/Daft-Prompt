@@ -2,31 +2,70 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import type { ComposeResponse } from "@/lib/types";
+import type { ComposeEvent, ComposeResponse, Header, RosterItem } from "@/lib/types";
+import NegotiationFeed from "@/components/NegotiationFeed";
+import RosterView from "@/components/RosterView";
 
 // client-only: both touch browser APIs / custom elements
 const ScoreViewer = dynamic(() => import("@/components/ScoreViewer"), { ssr: false });
 const MidiPlayer = dynamic(() => import("@/components/MidiPlayer"), { ssr: false });
 
+type FeedEvent = Extract<ComposeEvent, { type: "agent_pass" | "convergence" }>;
+
 export default function Home() {
   const [style, setStyle] = useState("Bee Gees-style disco");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [source, setSource] = useState<"director" | "canned" | null>(null);
+  const [header, setHeader] = useState<Header | null>(null);
+  const [roster, setRoster] = useState<RosterItem[]>([]);
+  const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [result, setResult] = useState<ComposeResponse | null>(null);
 
   async function compose(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSource(null);
+    setHeader(null);
+    setRoster([]);
+    setFeed([]);
     setResult(null);
+
     try {
       const res = await fetch("/api/compose", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ style }),
       });
-      if (!res.ok) throw new Error(`backend error ${res.status}`);
-      setResult((await res.json()) as ComposeResponse);
+      if (!res.ok || !res.body) throw new Error(`backend error ${res.status}`);
+
+      // Manual SSE parsing: EventSource can't send a POST body, so we read the
+      // fetch body stream directly and split on the SSE "\n\n" event delimiter.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() ?? "";
+        for (const chunk of chunks) {
+          const line = chunk.split("\n").find((l) => l.startsWith("data:"));
+          if (!line) continue;
+          const event = JSON.parse(line.slice(5).trim()) as ComposeEvent;
+          if (event.type === "director") {
+            setSource(event.source);
+            setHeader(event.header);
+            setRoster(event.roster);
+          } else if (event.type === "agent_pass" || event.type === "convergence") {
+            setFeed((prev) => [...prev, event]);
+          } else if (event.type === "done") {
+            setResult(event);
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "unknown error");
     } finally {
@@ -35,80 +74,62 @@ export default function Home() {
   }
 
   return (
-    <main style={{ maxWidth: 860, margin: "0 auto", padding: "3rem 1.25rem" }}>
-      <h1 style={{ marginBottom: 4 }}>Multi-agent Band 🎵</h1>
-      <p style={{ opacity: 0.7, marginTop: 0 }}>
-        Describe a style and a band of agents composes a song. (Phase 1: canned
-        output — proves the pipeline end-to-end.)
+    <main className="page">
+      <p className="hero-eyebrow">
+        <span className="hero-eyebrow-dot" aria-hidden="true" />
+        Multi-agent composition
+      </p>
+      <h1 className="hero-title">Multiagent Band</h1>
+      <p className="hero-subtitle">
+        Describe a style and a band of agents composes and negotiates a song live.
       </p>
 
-      <form onSubmit={compose} style={{ display: "flex", gap: 8, margin: "1.5rem 0" }}>
+      <form onSubmit={compose} className="compose-form">
+        <label htmlFor="style-input" className="sr-only">
+          Musical style
+        </label>
         <input
+          id="style-input"
           value={style}
           onChange={(e) => setStyle(e.target.value)}
           placeholder="e.g. slow blues, Argentine cumbia…"
-          style={{
-            flex: 1,
-            padding: "0.6rem 0.8rem",
-            borderRadius: 8,
-            border: "1px solid #333",
-            background: "#15151c",
-            color: "inherit",
-          }}
+          className="compose-input"
         />
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            padding: "0.6rem 1.1rem",
-            borderRadius: 8,
-            border: "none",
-            background: loading ? "#444" : "#6d5dfc",
-            color: "#fff",
-            cursor: loading ? "default" : "pointer",
-          }}
-        >
+        <button type="submit" disabled={loading} className="compose-button">
+          {loading && <span className="spinner" aria-hidden="true" />}
           {loading ? "Composing…" : "Compose"}
         </button>
       </form>
 
-      {error && <p style={{ color: "#ff6b6b" }}>⚠ {error}</p>}
+      {error && (
+        <p className="error-banner" role="alert">
+          {error}
+        </p>
+      )}
 
-      {result && (
-        <section style={{ display: "grid", gap: "1.5rem" }}>
-          <div>
-            <h2 style={{ marginBottom: 8 }}>
-              Roster{" "}
-              <span style={{ fontSize: 12, opacity: 0.6, fontWeight: 400 }}>
-                ({result.source === "director" ? "reasoned by director" : "canned demo"})
-              </span>
-            </h2>
-            <ul>
-              {result.song.roster.map((r) => (
-                <li key={r.id}>
-                  <strong>{r.instrument}</strong> — {r.role}
-                </li>
-              ))}
-            </ul>
-          </div>
+      {header && (
+        <section className="results">
+          <RosterView header={header} roster={roster} source={source ?? "canned"} />
 
-          {Object.keys(result.song.parts).length > 0 ? (
+          <NegotiationFeed events={feed} />
+
+          {result && Object.keys(result.song.parts).length > 0 ? (
             <>
-              <div>
-                <h2 style={{ marginBottom: 8 }}>Playback</h2>
+              <div className="card">
+                <h2 className="section-title">Playback</h2>
                 <MidiPlayer midiUrl={result.artifacts.midi} />
               </div>
 
-              <div>
-                <h2 style={{ marginBottom: 8 }}>Score</h2>
+              <div className="card">
+                <h2 className="section-title">Score</h2>
                 <ScoreViewer musicXmlUrl={result.artifacts.musicxml} />
               </div>
             </>
-          ) : (
-            <p style={{ opacity: 0.6 }}>
+          ) : result ? (
+            <p className="empty-note">
               No notes were composed for this arrangement — try composing again.
             </p>
-          )}
+          ) : null}
         </section>
       )}
     </main>
