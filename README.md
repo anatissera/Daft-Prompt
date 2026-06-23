@@ -68,8 +68,16 @@ convergence gate (see `PRD.md`).
 
 ## Status
 
-Design phase. The full research and architecture write-up lives in
-[`PRD.md`](./PRD.md). Implementation has not started yet.
+Working prototype. The backend has the canonical `SongState` schema,
+deterministic validation/rendering, director/instrument/arbiter agents,
+bounded negotiation rounds, FastAPI endpoints, and SSE streaming. The Next.js UI
+can submit a style, show the roster/negotiation feed, render MusicXML, and play
+the MIDI artifact.
+
+The listening/reference-analysis feature is **not implemented yet**. The codebase
+now has an architectural boundary for it (`reference_analysis`) so future audio
+analysis can be added without coupling provider details, MIR libraries, downloads,
+or raw audio artifacts to composition, rendering, or the existing API.
 
 ## Pipeline
 
@@ -111,13 +119,16 @@ Runs on http://localhost:3000 (Next.js picks another free port if 3000 is taken)
 
 ## Roadmap
 
-1. Pick the free LLM provider and wire up its LangChain integration.
-2. Deterministic core: `schema` → `validators` → `to_music21` → `render_midi`
-   (testable without any LLM calls).
-3. Director + instrument agents and the LangGraph negotiation loop.
-4. Sheet-music rendering + CLI.
-5. FastAPI service (SSE) + Next.js UI on Vercel (style form, live negotiation feed,
-   score viewer, MIDI player).
+1. Harden the current composition prototype: provider selection, prompt quality,
+   validation repairs, artifact storage, deployment, and observability.
+2. Keep `SongState` mirrored between Pydantic and TypeScript, preferably generated
+   from JSON schema in CI.
+3. Build real `reference_analysis` adapters later: authorized source resolution,
+   MIR/audio profiling, optional Gemini audio explanations, and storage.
+4. Add a listening UI only after the reference-analysis use cases exist behind
+   fakes and provider adapters.
+5. Let composition consume only compact `ReferenceProfile` summaries, never raw
+   URLs/audio/provider internals.
 
 See [`PRD.md`](./PRD.md) for the JSON schema, architecture diagram, folder
 layout, failure modes, and verification plan.
