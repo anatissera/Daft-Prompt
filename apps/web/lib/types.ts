@@ -72,6 +72,7 @@ export interface SongState {
 
 export interface ComposeResponse {
   job_id: string;
+  source: "director" | "canned";
   song: SongState;
   artifacts: {
     midi: string;
