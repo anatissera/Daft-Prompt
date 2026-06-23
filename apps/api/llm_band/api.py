@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from .agents.director import run_director
 from .canned import canned_song
 from .config import get_settings
+from .graph import run_instruments
 from .music.render_midi import render_midi
 from .music.render_sheet import render_musicxml
 from .music.validators import errors_only, validate_song
@@ -65,11 +66,12 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
     job_dir.mkdir(parents=True, exist_ok=True)
 
     # Director (LLM) when a provider is configured; otherwise the canned demo so
-    # the app still runs with no key. Director sets header+roster only — instrument
-    # agents (parts) arrive in Phase 4, so the LLM path has no notes to render yet.
+    # the app still runs with no key. Instrument agents then fill in `parts`
+    # (Phase 4) — one-shot composition, no negotiation rounds yet (Phase 5).
     settings = get_settings()
     if settings.llm_configured:
         song = run_director(req.style)
+        song = run_instruments(song)
         source = "director"
     else:
         song = canned_song(req.style)
