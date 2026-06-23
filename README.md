@@ -61,7 +61,10 @@ convergence gate (see `PRD.md`).
 | Data model | Pydantic v2 (canonical `SongState` + parts) |
 | Music theory & notation | [music21](https://web.mit.edu/music21/) (→ MusicXML → sheet music) |
 | MIDI export | [pretty_midi](https://github.com/craffel/pretty-midi) |
-| Notation render | MuseScore or LilyPond |
+| Notation render | MuseScore or LilyPond (server) · OpenSheetMusicDisplay (browser) |
+| Backend API | [FastAPI](https://fastapi.tiangolo.com/) (SSE-streamed negotiation) |
+| Frontend | [Next.js](https://nextjs.org/) + React + TypeScript, deployed to [Vercel](https://vercel.com/) |
+| Hosting | Vercel (frontend) + container host for the Python backend (Render / Railway / Fly.io) |
 | Tests | pytest |
 
 ## Status
@@ -77,6 +80,11 @@ style request → director (arrangement + roster) → instrument agents compose
    → render → song.mid + sheet music
 ```
 
+The pipeline is a Python (FastAPI) backend; a **Next.js** web UI on **Vercel**
+streams the negotiation live and plays the result. See [`PRD.md`](./PRD.md) →
+*Frontend & Deployment* for why the Python backend runs on a container host rather
+than directly on Vercel.
+
 ## Roadmap
 
 1. Pick the free LLM provider and wire up its LangChain integration.
@@ -84,6 +92,8 @@ style request → director (arrangement + roster) → instrument agents compose
    (testable without any LLM calls).
 3. Director + instrument agents and the LangGraph negotiation loop.
 4. Sheet-music rendering + CLI.
+5. FastAPI service (SSE) + Next.js UI on Vercel (style form, live negotiation feed,
+   score viewer, MIDI player).
 
 See [`PRD.md`](./PRD.md) for the JSON schema, architecture diagram, folder
 layout, failure modes, and verification plan.
