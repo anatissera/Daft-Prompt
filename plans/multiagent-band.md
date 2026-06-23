@@ -38,6 +38,19 @@ Durable decisions that apply across all phases:
 - **Rendering**: score renders in the browser (OpenSheetMusicDisplay/VexFlow), MIDI
   plays in the browser (Tone.js / html-midi-player); MuseScore is server-side only
   for downloadable PDF.
+- **Listening / reference analysis is separate from composition**: `agents/` owns
+  director/instrument/arbiter behavior; `music/` owns deterministic symbolic
+  validation/rendering; a future `reference_analysis` bounded context owns external
+  audio acquisition, MIR analysis, and natural-language explanation.
+- **Reference tools stay small**: use cases call ports such as search, resolver,
+  MIR analyzer, transcription, stem separation, and storage. Adapters implement
+  Gemini audio, YouTube/search, librosa/Essentia, Basic Pitch, Demucs, and object
+  storage. Composition agents only receive compact `ReferenceProfile` data.
+- **Reference acquisition policy**: YouTube search may find candidate references,
+  but audio download/conversion is only allowed for user uploads, owned files,
+  Creative Commons/public-domain/licensed sources, or explicitly authorized URLs.
+  Commercial songs by name should resolve to metadata/candidates and then require
+  provider-supported URL analysis or a permitted user-supplied file.
 
 ---
 
@@ -210,3 +223,97 @@ Optional caching of the stable header/system prompts if the provider supports it
 - [ ] A standard run is measured against the free-tier limits and documented.
 - [ ] Adversarial styles complete end-to-end with coherent rosters.
 - [ ] (If supported) prompt caching hits on the stable header across rounds.
+
+---
+
+## Phase 9: Reference ingestion + architecture boundary
+
+**Branch**: `feat/reference-ingestion`
+**User stories**: US7 (ask about a song/reference in natural language)
+
+### What to build
+
+Introduce the listening bounded context without doing heavy MIR yet. Add
+`ReferenceProfile`/`AudioProfile` domain models, application use cases
+(`ResolveReference`, `AnalyzeReference`, `AnswerMusicQuestion` skeletons), and
+ports for search/resolution/audio analysis/transcription/stem separation/storage.
+Implement fake/local adapters so tests never need YouTube or network access.
+Reference resolution accepts user uploads and authorized direct URLs; YouTube search
+returns candidate metadata but refuses unauthorized commercial downloads.
+
+### Acceptance criteria
+
+- [ ] `reference_analysis` is isolated from `agents`, `graph.py`, and `music`; composition code only sees `ReferenceProfile`.
+- [ ] Ports/adapters are defined so use cases can be tested with fakes and no network.
+- [ ] Authorized upload/direct URL references get a stable `reference_id` and artifact location.
+- [ ] YouTube song-name search returns ranked candidates and source metadata, not an unconditional download.
+- [ ] Unauthorized download/conversion attempts return a clear permission error.
+
+---
+
+## Phase 10: MIR AudioProfile
+
+**Branch**: `feat/mir-audio-profile`
+**User stories**: US7
+
+### What to build
+
+Use MIR tools to turn permitted audio into compact technical evidence. Start with
+librosa/Essentia extraction for duration, tempo, beat/downbeat grid, key/chroma,
+energy curve, onset density, sections, and confidence values. Keep raw FFT/STFT
+matrices out of prompts; persist only compact summaries and optional derived
+artifacts under the `reference_id`.
+
+### Acceptance criteria
+
+- [ ] A short permitted audio fixture produces an `AudioProfile` with tempo/key/sections and confidence values.
+- [ ] Low-confidence features are represented explicitly instead of hidden or overstated.
+- [ ] Analysis is cached/idempotent by `reference_id`.
+- [ ] Tests cover analyzer success, unsupported format, duration-too-long, and low-confidence outputs.
+- [ ] No composition agent imports or calls MIR libraries directly.
+
+---
+
+## Phase 11: Conversational listening UI
+
+**Branch**: `feat/listening-chat-ui`
+**User stories**: US7 (understand what I'm hearing)
+
+### What to build
+
+Add a UI flow for asking questions about a reference. The backend combines a
+multimodal model impression (Gemini audio when configured) with the `AudioProfile`
+evidence, then answers in natural language with timestamps and confidence-aware
+language. The frontend shows the reference, question thread, key evidence, and a
+minimal timeline/section visualization.
+
+### Acceptance criteria
+
+- [ ] User can upload or select an authorized reference and ask a natural-language question.
+- [ ] Answers cite timestamps and profile evidence when available.
+- [ ] Gemini audio is optional; MIR-only explanations still work with reduced richness.
+- [ ] UI displays source/permission status, analysis confidence, and recoverable errors.
+- [ ] Tests cover chat with fake profiles and fake LLM responses.
+
+---
+
+## Phase 12: Reference-guided composition
+
+**Branch**: `feat/reference-guided-composition`
+**User stories**: US1, US7
+
+### What to build
+
+Let the composition pipeline consume a `ReferenceProfile` as optional context. The
+director may borrow high-level traits such as tempo range, energy curve, groove
+density, instrumentation hints, or approximate harmonic rhythm. Instrument agents
+receive compact profile summaries, not source audio or MIR internals. The system
+must not copy melodies, recordings, or full arrangements from commercial sources.
+
+### Acceptance criteria
+
+- [ ] `POST /compose` can accept an optional `reference_id` and pass only profile summaries into the graph.
+- [ ] Director/instrument prompts distinguish "inspired by traits" from copying a song.
+- [ ] Generated output remains a new `SongState` with its own MIDI/MusicXML artifacts.
+- [ ] Tests verify composition works with no reference, with a fake reference, and with an unavailable reference.
+- [ ] Documentation explains that references guide style/groove/energy, not direct copying.
