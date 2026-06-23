@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from .canned import canned_song
 from .music.render_midi import render_midi
 from .music.render_sheet import render_musicxml
+from .music.validators import errors_only, validate_song
 from .schema import SongState
 
 OUTPUTS = Path(__file__).resolve().parent.parent / "outputs"
@@ -61,6 +62,9 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
     job_dir.mkdir(parents=True, exist_ok=True)
 
     song = canned_song(req.style)
+    # run the deterministic validator on the way out (no-op for the canned song,
+    # but this is the path agent output will flow through in later phases).
+    song.errors = [i.message for i in errors_only(validate_song(song))]
     render_midi(song, str(job_dir / "song.mid"))
     render_musicxml(song, str(job_dir / "song.musicxml"))
 
