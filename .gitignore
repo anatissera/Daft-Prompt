@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Backend generated artifacts
+apps/api/outputs/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+next-env.d.ts.timestamp
+
+# Env
+.env
+.env.local
+*.local
+
+# OS / editor
+.DS_Store
