@@ -77,7 +77,12 @@ export default function Home() {
       {result && (
         <section style={{ display: "grid", gap: "1.5rem" }}>
           <div>
-            <h2 style={{ marginBottom: 8 }}>Roster</h2>
+            <h2 style={{ marginBottom: 8 }}>
+              Roster{" "}
+              <span style={{ fontSize: 12, opacity: 0.6, fontWeight: 400 }}>
+                ({result.source === "director" ? "reasoned by director" : "canned demo"})
+              </span>
+            </h2>
             <ul>
               {result.song.roster.map((r) => (
                 <li key={r.id}>
@@ -87,15 +92,24 @@ export default function Home() {
             </ul>
           </div>
 
-          <div>
-            <h2 style={{ marginBottom: 8 }}>Playback</h2>
-            <MidiPlayer midiUrl={result.artifacts.midi} />
-          </div>
+          {Object.keys(result.song.parts).length > 0 ? (
+            <>
+              <div>
+                <h2 style={{ marginBottom: 8 }}>Playback</h2>
+                <MidiPlayer midiUrl={result.artifacts.midi} />
+              </div>
 
-          <div>
-            <h2 style={{ marginBottom: 8 }}>Score</h2>
-            <ScoreViewer musicXmlUrl={result.artifacts.musicxml} />
-          </div>
+              <div>
+                <h2 style={{ marginBottom: 8 }}>Score</h2>
+                <ScoreViewer musicXmlUrl={result.artifacts.musicxml} />
+              </div>
+            </>
+          ) : (
+            <p style={{ opacity: 0.6 }}>
+              The director set the arrangement; instrument agents compose the notes
+              in a later phase.
+            </p>
+          )}
         </section>
       )}
     </main>
