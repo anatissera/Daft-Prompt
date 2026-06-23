@@ -27,10 +27,5 @@ export default function ScoreViewer({ musicXmlUrl }: { musicXmlUrl: string }) {
     };
   }, [musicXmlUrl]);
 
-  return (
-    <div
-      ref={ref}
-      style={{ background: "#fff", borderRadius: 8, padding: 12, overflowX: "auto" }}
-    />
-  );
+  return <div ref={ref} className="media-frame media-frame-light" />;
 }

@@ -19,6 +19,8 @@ export default function MidiPlayer({ midiUrl }: { midiUrl: string }) {
   }, []);
 
   return (
-    <MidiPlayerEl src={midiUrl} sound-font={SOUND_FONT} style={{ width: "100%" }} />
+    <div className="media-frame media-frame-dark">
+      <MidiPlayerEl src={midiUrl} sound-font={SOUND_FONT} style={{ width: "100%" }} />
+    </div>
   );
 }
