@@ -1,0 +1,88 @@
+"""Canonical `SongState` schema — the single source of truth shared across the
+pipeline and mirrored in the frontend (`apps/web/lib/types.ts`).
+
+Conventions (see PRD):
+- pitches are MIDI note numbers (0-127); `null` pitch means a rest.
+- durations are in beats (quarter-note beats), floats.
+- notes use absolute `bar` + `start_beat`.
+- `header` is immutable once the director sets it.
+"""
+
+from __future__ import annotations
+
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
+
+class Section(BaseModel):
+    name: str
+    start_bar: int
+    end_bar: int
+
+
+class ChordSpan(BaseModel):
+    bar: int
+    chord: str
+
+
+class Header(BaseModel):
+    """Immutable global plan set by the director."""
+
+    genre: str
+    key: str
+    tempo_bpm: float
+    time_signature: tuple[int, int] = (4, 4)
+    num_bars: int
+    sections: list[Section] = Field(default_factory=list)
+    chord_progression: list[ChordSpan] = Field(default_factory=list)
+
+
+class RosterItem(BaseModel):
+    id: str
+    instrument: str
+    midi_program: int = 0  # General MIDI program
+    midi_range: tuple[int, int] = (0, 127)
+    role: str = ""
+    is_drum: bool = False
+
+
+class Note(BaseModel):
+    bar: int
+    start_beat: float
+    pitch: Optional[int] = None  # None = rest
+    dur: float = 1.0
+    velocity: int = 96
+
+
+class Part(BaseModel):
+    instrument_id: str
+    version: int = 1
+    notes: list[Note] = Field(default_factory=list)
+    notes_summary: str = ""
+    self_notes: str = ""
+
+
+class NegotiationRequest(BaseModel):
+    id: str
+    from_: str = Field(alias="from")
+    to: str
+    round: int = 0
+    bars: list[int] = Field(default_factory=list)
+    request: str = ""
+    rationale: str = ""
+    status: Literal["pending", "resolved", "declined"] = "pending"
+    resolution: str = ""
+
+    model_config = {"populate_by_name": True}
+
+
+class SongState(BaseModel):
+    request: str
+    header: Header
+    roster: list[RosterItem] = Field(default_factory=list)
+    parts: dict[str, Part] = Field(default_factory=dict)
+    negotiation_requests: list[NegotiationRequest] = Field(default_factory=list)
+    round: int = 0
+    converged: bool = False
+    errors: list[str] = Field(default_factory=list)
