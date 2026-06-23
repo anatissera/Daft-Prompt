@@ -1,7 +1,6 @@
-# Multi-agent Band 🎵
+# Multiagent Band 🎵
 
-A multi-agent music composition system. You describe a style — *"Bee Gees-style
-disco"*, *"slow blues"*, *"Argentine cumbia"* — and a band of LLM agents composes
+A multi-agent music composition system. You describe a style and a band of LLM agents composes
 a full song for it.
 
 ## How it works
@@ -84,6 +83,31 @@ The pipeline is a Python (FastAPI) backend; a **Next.js** web UI on **Vercel**
 streams the negotiation live and plays the result. See [`PRD.md`](./PRD.md) →
 *Frontend & Deployment* for why the Python backend runs on a container host rather
 than directly on Vercel.
+
+## Running locally
+
+**Backend** (`apps/api`):
+
+```bash
+cd apps/api
+python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+cp .env.example .env   # optional: uncomment LLM_PROVIDER + an API key to use a real director
+.venv/bin/uvicorn llm_band.api:app --reload
+```
+
+Runs on http://localhost:8000 (health check: `/health`). With no LLM key set, `/compose`
+falls back to a canned demo song — no provider required to try the pipeline end-to-end.
+
+**Frontend** (`apps/web`):
+
+```bash
+cd apps/web
+npm install
+cp .env.local.example .env.local   # points at http://localhost:8000
+npm run dev
+```
+
+Runs on http://localhost:3000 (Next.js picks another free port if 3000 is taken).
 
 ## Roadmap
 

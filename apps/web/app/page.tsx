@@ -106,8 +106,7 @@ export default function Home() {
             </>
           ) : (
             <p style={{ opacity: 0.6 }}>
-              The director set the arrangement; instrument agents compose the notes
-              in a later phase.
+              No notes were composed for this arrangement — try composing again.
             </p>
           )}
         </section>
