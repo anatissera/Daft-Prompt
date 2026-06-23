@@ -9,13 +9,8 @@ from __future__ import annotations
 
 import pretty_midi
 
+from .theory import beats_per_bar as _beats_per_bar
 from ..schema import SongState
-
-
-def _beats_per_bar(time_signature: tuple[int, int]) -> float:
-    numerator, denominator = time_signature
-    # number of quarter-note beats per bar
-    return numerator * (4.0 / denominator)
 
 
 def song_to_pretty_midi(song: SongState) -> pretty_midi.PrettyMIDI:
