@@ -38,7 +38,7 @@ def _fake_song(style: str):
 def test_compose_uses_director_when_configured(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
     monkeypatch.setattr(api, "run_director", _fake_song)
-    monkeypatch.setattr(api, "run_instruments", lambda song: song)
+    monkeypatch.setattr(api, "run_negotiation", lambda song: song)
     client = TestClient(api.app)
     resp = client.post("/compose", json={"style": "disco"})
     assert resp.status_code == 200
