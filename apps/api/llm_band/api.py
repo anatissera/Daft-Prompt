@@ -15,7 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from .agents.director import run_director
 from .canned import canned_song
+from .config import get_settings
 from .music.render_midi import render_midi
 from .music.render_sheet import render_musicxml
 from .music.validators import errors_only, validate_song
@@ -46,6 +48,7 @@ class Artifacts(BaseModel):
 
 class ComposeResponse(BaseModel):
     job_id: str
+    source: str  # "director" (LLM) | "canned" (no LLM configured)
     song: SongState
     artifacts: Artifacts
 
@@ -61,9 +64,18 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
     job_dir = OUTPUTS / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    song = canned_song(req.style)
-    # run the deterministic validator on the way out (no-op for the canned song,
-    # but this is the path agent output will flow through in later phases).
+    # Director (LLM) when a provider is configured; otherwise the canned demo so
+    # the app still runs with no key. Director sets header+roster only — instrument
+    # agents (parts) arrive in Phase 4, so the LLM path has no notes to render yet.
+    settings = get_settings()
+    if settings.llm_configured:
+        song = run_director(req.style)
+        source = "director"
+    else:
+        song = canned_song(req.style)
+        source = "canned"
+
+    # run the deterministic validator on the way out (the path agent output flows through).
     song.errors = [i.message for i in errors_only(validate_song(song))]
     render_midi(song, str(job_dir / "song.mid"))
     render_musicxml(song, str(job_dir / "song.musicxml"))
@@ -71,6 +83,7 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
     base = str(request.base_url).rstrip("/")
     return ComposeResponse(
         job_id=job_id,
+        source=source,
         song=song,
         artifacts=Artifacts(
             midi=f"{base}/artifacts/{job_id}/song.mid",
