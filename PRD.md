@@ -143,6 +143,92 @@ parts influence each other.
   4. Keep tempo/meter/key **out of the agent's control** — they live in the
      immutable global header so agents can't contradict each other.
 
+### 7. Listening / reference analysis
+
+The long-term product should not only compose from a style prompt; it should also
+let a user talk about music in natural language. A user might say "what is the
+drummer doing here?", "why does this chorus feel bigger?", or "use this song's
+energy curve as a reference, but don't copy the melody." The right architecture is
+a **hybrid listening stack**:
+
+1. **Multimodal model for broad listening.** Gemini can take audio input and
+   answer text questions about it, including segment-level questions with
+   timestamps and structured outputs ([audio understanding](https://ai.google.dev/gemini-api/docs/audio)).
+   Use Gemini 3.5 Flash for general audio understanding; use a cheaper Flash-Lite
+   model for follow-up reasoning over already-extracted profiles. Gemini Live is a
+   later option for real-time voice/audio interaction, not required for the first
+   listening milestone.
+2. **MIR tools for technical evidence.** Use deterministic music information
+   retrieval (MIR) tools such as [librosa](https://librosa.org/doc/latest/index.html)
+   and [Essentia](https://essentia.upf.edu/algorithms_reference.html) to extract
+   tempo, beat grids, chroma/key estimates, energy curves, timbre descriptors,
+   onsets, sections, and confidence values.
+3. **Text model for explanation.** Feed the model a compact `ReferenceProfile`
+   plus the user's question. The model explains the music using evidence instead
+   of guessing from raw audio or giant spectrogram arrays.
+
+**Architecture decision: reference analysis is a separate use case.** Do not fold
+listening into `agents/` or `music/`.
+
+- `agents/` remains responsible for composition decisions: director, instrument
+  agents, negotiation, and arbiter.
+- `music/` remains responsible for deterministic symbolic transforms over
+  `SongState`: validation, `music21`, MusicXML, MIDI, and notation rendering.
+- A new bounded context, `reference_analysis` (or `listening`), owns acquisition,
+  analysis, and explanation of external audio references.
+
+Internally, `reference_analysis` should follow a clean use-case shape:
+
+- **Domain models:** `ReferenceProfile`, `AudioProfile`, `SectionProfile`,
+  `StemProfile`, and `ReferenceSource`.
+- **Application use cases:** `ResolveReference`, `AnalyzeReference`,
+  `AnswerMusicQuestion`, and `UseReferenceForComposition`.
+- **Ports/adapters:** YouTube/search resolver, Gemini audio client, MIR analyzer,
+  transcription, stem separation, and artifact storage.
+
+Dependency rule: API/UI call application use cases; use cases depend on ports;
+adapters implement ports; composition agents only receive structured profiles.
+`graph.py` and the musician agents must never know about YouTube, Gemini audio
+upload details, `librosa`, Demucs, or object-storage paths. This keeps the
+composition graph testable with fake profiles and lets the listening stack swap
+providers without rewriting the agent loop.
+
+**Tool design.** Expose listening capabilities as small, single-purpose tools with
+structured inputs/outputs:
+
+- `search_reference(query)` → candidate videos/tracks with metadata and confidence.
+- `resolve_reference(candidate)` → an authorized `ReferenceSource` or an explicit
+  permission error.
+- `analyze_audio_overview(reference_id)` → duration, tempo, key, sections, energy.
+- `estimate_beats(reference_id)` → beat/downbeat grid and confidence.
+- `estimate_harmony(reference_id)` → chroma, key, chord estimates, confidence.
+- `transcribe_melody(reference_id, segment?)` → symbolic notes or MIDI where reliable.
+- `separate_stems(reference_id)` → optional drums/bass/vocals/other stems.
+- `explain_audio(question, reference_profile)` → natural-language answer with
+  timestamps and cited profile evidence.
+
+Tools should be idempotent where possible, store artifacts under a stable
+`reference_id`, and return explicit failures: unauthorized source, not found,
+duration too long, low-confidence analysis, provider unavailable, or unsupported
+format. They should return compact profiles, not raw FFT/STFT matrices.
+
+**Reference acquisition policy.** The product may search YouTube to find candidate
+references and should prefer audio-focused uploads (topic/audio/static/lyric
+videos) over official music videos when the goal is sonic analysis. However, the
+system must not download or convert commercial YouTube audio unless the user owns
+it, it is Creative Commons/public-domain/licensed, or analysis/download is
+explicitly authorized. For commercial songs, the safe default is: find metadata and
+candidate URLs, use provider-supported URL analysis only when terms allow it, or
+ask the user to upload an audio file they have permission to analyze.
+
+**Cost notes.** Gemini audio is tokenized by duration (the current docs list 32
+tokens per second of audio, i.e. 1,920 tokens/minute), so long tracks should be
+summarized by segments and cached by `reference_id`. Gemini Developer API has free
+tier entries for several models, while Google Cloud's free program includes $300
+in new-customer credits and free monthly usage for some products; choose AI Studio
+for the simplest prototype and Vertex/Cloud Run/Cloud Storage when deployment and
+billing need to live under Google Cloud.
+
 ---
 
 ## Recommended Tech Stack
@@ -158,6 +244,9 @@ parts influence each other.
 | Music theory + notation | **music21** | JSON → Score → MusicXML → MuseScore/LilyPond render |
 | MIDI export | **pretty_midi** | Clean JSON → multitrack `.mid` |
 | Notation render backend | **MuseScore** (preferred) or **LilyPond** | High-quality engraving from MusicXML |
+| Audio understanding | **Gemini 3.5 Flash** (Developer API / Vertex AI) | Broad audio questions, timestamps, structured summaries |
+| MIR analysis | **librosa / Essentia** | Deterministic tempo, beat, chroma/key, onset, energy, and timbre evidence |
+| Reference transcription | **Basic Pitch** (later) + optional stem separation (Demucs) | Convert reliable melodic fragments or stems into symbolic context when useful |
 | Config | **pydantic-settings / .env** | API keys, provider/model names, round caps |
 | Backend API | **FastAPI** (wraps the LangGraph pipeline) | Exposes `POST /compose` with **SSE streaming** of negotiation events; serves artifacts |
 | Frontend | **Next.js (App Router) + React + TypeScript**, deployed to **Vercel** | Style prompt UI, live negotiation feed, score viewer, MIDI player; preview URL per PR |
@@ -405,6 +494,11 @@ multiagent-band/
           render_midi.py            # SongState/Score → pretty_midi → .mid
           render_sheet.py           # Score → MusicXML → MuseScore/LilyPond render
           theory.py                 # helpers: GM programs, ranges, key membership, chord tones
+        reference_analysis/          # separate listening / music-reference use case
+          models.py                  # ReferenceProfile, AudioProfile, SectionProfile, StemProfile
+          use_cases.py               # ResolveReference, AnalyzeReference, AnswerMusicQuestion
+          ports.py                   # search, resolver, audio analyzer, transcriber, storage interfaces
+          adapters/                  # Gemini audio, YouTube/search, librosa/Essentia, Basic Pitch, Demucs
         llm.py                      # provider-agnostic chat-model factory (Gemini/Groq/OpenRouter) + structured output
         api.py                      # FastAPI: POST /compose (SSE event stream), artifact endpoints
         cli.py                      # `llm-band "slow blues"` → outputs/song.mid + song.pdf
@@ -490,6 +584,16 @@ multiagent-band/
 14. **Keep `lib/types.ts` in sync with `schema.py`.** The frontend mirrors
     `SongState`; drift between the Pydantic schema and the TS types silently breaks
     the UI. Prefer generating the TS types from the JSON schema in CI.
+15. **Do not let reference analysis leak into composition internals.** `graph.py`
+    and `agents/` should receive a compact `ReferenceProfile`, not call YouTube,
+    Gemini audio, `librosa`, Demucs, or storage adapters directly.
+16. **YouTube/reference permissions.** Searching for a song is fine; downloading or
+    converting commercial audio is not a safe default. Gate downloads behind upload,
+    Creative Commons/public-domain/licensed sources, or explicit authorization, and
+    return a clear permission error otherwise.
+17. **MIR confidence and hallucinated certainty.** Beat, chord, key, and stem
+    estimates are probabilistic. Store confidence values and make the explainer say
+    "likely" when evidence is weak instead of presenting analysis as ground truth.
 
 ---
 
@@ -520,3 +624,8 @@ multiagent-band/
    requests scroll in, convergence fires), the **score viewer** renders the MusicXML,
    and the **MIDI player** plays `song.mid`. Verify a **Vercel preview deploy** of
    `apps/web` builds and points at the backend via `NEXT_PUBLIC_API_BASE_URL`.
+8. **Listening/reference flow:** analyze a short, permitted audio fixture; assert a
+   `ReferenceProfile` is produced with tempo/key/sections plus confidence values,
+   tools can be tested with fake adapters and no network, questions return
+   timestamped explanations grounded in the profile, and unauthorized YouTube
+   download attempts return a clear permission error.
