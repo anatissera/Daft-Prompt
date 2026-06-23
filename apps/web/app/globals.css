@@ -1,0 +1,468 @@
+/* Design tokens — dark "studio" theme. No new deps: system font stacks only. */
+:root {
+  color-scheme: dark;
+
+  --color-bg: #0a0a0f;
+  --color-surface: #14151d;
+  --color-surface-raised: #191a24;
+  --color-border: #262733;
+  --color-border-strong: #383a4a;
+
+  --color-text: #f2f2f7;
+  --color-text-muted: #a3a4ba;
+  --color-text-faint: #6f7086;
+
+  --color-accent: #7c6cff;
+  --color-accent-hover: #9285ff;
+  --color-accent-soft: rgba(124, 108, 255, 0.16);
+
+  --color-success: #34d399;
+  --color-success-soft: rgba(52, 211, 153, 0.14);
+  --color-danger: #fb7185;
+  --color-danger-soft: rgba(251, 113, 133, 0.14);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-full: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --shadow-md: 0 12px 32px -12px rgba(0, 0, 0, 0.5);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background:
+    radial-gradient(circle at 12% -10%, rgba(124, 108, 255, 0.12), transparent 45%),
+    var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---- Layout ------------------------------------------------------------ */
+
+.page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-5) var(--space-8);
+}
+
+.hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin: 0 0 var(--space-3);
+}
+
+.hero-eyebrow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+}
+
+.hero-title {
+  font-size: clamp(28px, 4vw, 38px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-2);
+}
+
+.hero-subtitle {
+  color: var(--color-text-muted);
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 var(--space-6);
+  max-width: 60ch;
+}
+
+.results {
+  display: grid;
+  gap: var(--space-5);
+}
+
+/* ---- Form ---------------------------------------------------------------- */
+
+.compose-form {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.compose-input {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 16px;
+  transition: border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+}
+
+.compose-input::placeholder {
+  color: var(--color-text-faint);
+}
+
+.compose-input:hover {
+  border-color: var(--color-border-strong);
+}
+
+.compose-input:focus-visible {
+  border-color: var(--color-accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.compose-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 48px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  transition: background 150ms var(--ease-out), transform 100ms var(--ease-out);
+}
+
+.compose-button:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.compose-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.compose-button:disabled {
+  background: var(--color-border-strong);
+  color: var(--color-text-faint);
+  cursor: default;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border: 1px solid rgba(251, 113, 133, 0.3);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: 14px;
+  margin-bottom: var(--space-5);
+}
+
+/* ---- Cards ---------------------------------------------------------------- */
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  animation: card-in 320ms var(--ease-out);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-4);
+}
+
+.section-title .source-tag {
+  text-transform: none;
+  font-weight: 500;
+  letter-spacing: normal;
+  color: var(--color-text-faint);
+}
+
+/* ---- Roster ---------------------------------------------------------------- */
+
+.header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+}
+
+.meta-pill {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: var(--space-1) var(--space-3);
+}
+
+.roster-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.roster-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+}
+
+.avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0a0a0f;
+}
+
+.roster-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.roster-item-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.roster-item-role {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/* ---- Negotiation feed ---------------------------------------------------- */
+
+.feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.feed-entry {
+  display: flex;
+  gap: var(--space-3);
+  animation: card-in 280ms var(--ease-out);
+}
+
+.feed-rail {
+  flex-shrink: 0;
+  width: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.feed-body {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: var(--space-1);
+}
+
+.feed-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.feed-instrument {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.feed-round {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--color-text-faint);
+}
+
+.feed-summary {
+  font-size: 14px;
+  color: var(--color-text-muted);
+  margin: 2px 0 0;
+}
+
+.feed-sub-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.feed-chip {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.feed-chip-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.feed-convergence {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.feed-convergence-line {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.badge-success {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.badge-danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+/* ---- Score / MIDI frames --------------------------------------------------- */
+
+.media-frame {
+  border-radius: var(--radius-md);
+  overflow: auto;
+}
+
+.media-frame-light {
+  background: #fff;
+  padding: var(--space-4);
+}
+
+.media-frame-dark {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  padding: var(--space-4);
+}
+
+.empty-note {
+  color: var(--color-text-faint);
+  font-size: 14px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

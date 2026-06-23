@@ -1,24 +1,27 @@
-"""FastAPI service — Phase 1 walking skeleton.
+"""FastAPI service.
 
-`POST /compose` returns a canned `SongState` plus URLs to rendered artifacts
-(`song.mid`, `song.musicxml`). No LLM and no streaming yet; later phases turn this
-into an SSE stream driven by the LangGraph pipeline.
+`POST /compose` returns a canned/director-composed `SongState` plus URLs to
+rendered artifacts (`song.mid`, `song.musicxml`) in one shot. `POST
+/compose/stream` runs the same pipeline but streams director/agent_pass/
+convergence/done events over SSE as the LangGraph negotiation progresses.
 """
 
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
+from typing import Iterator
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .agents.director import run_director
 from .canned import canned_song
 from .config import get_settings
-from .graph import run_negotiation
+from .graph import iter_negotiation_events, run_negotiation
 from .music.render_midi import render_midi
 from .music.render_sheet import render_musicxml
 from .music.validators import errors_only, validate_song
@@ -77,10 +80,7 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
         song = canned_song(req.style)
         source = "canned"
 
-    # run the deterministic validator on the way out (the path agent output flows through).
-    song.errors = [i.message for i in errors_only(validate_song(song))]
-    render_midi(song, str(job_dir / "song.mid"))
-    render_musicxml(song, str(job_dir / "song.musicxml"))
+    _render_artifacts(song, job_dir)
 
     base = str(request.base_url).rstrip("/")
     return ComposeResponse(
@@ -92,6 +92,49 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
             musicxml=f"{base}/artifacts/{job_id}/song.musicxml",
         ),
     )
+
+
+def _render_artifacts(song: SongState, job_dir: Path) -> None:
+    song.errors = [i.message for i in errors_only(validate_song(song))]
+    render_midi(song, str(job_dir / "song.mid"))
+    render_musicxml(song, str(job_dir / "song.musicxml"))
+
+
+def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base: str) -> Iterator[dict]:
+    settings = get_settings()
+    if settings.llm_configured:
+        song = run_director(req.style)
+        source = "director"
+        yield {"type": "director", "source": source, "header": song.header.model_dump(), "roster": [r.model_dump() for r in song.roster]}
+        yield from iter_negotiation_events(song)
+    else:
+        song = canned_song(req.style)
+        source = "canned"
+        yield {"type": "director", "source": source, "header": song.header.model_dump(), "roster": [r.model_dump() for r in song.roster]}
+        yield {"type": "convergence", "round": song.round, "converged": True, "resolved_requests": []}
+
+    _render_artifacts(song, job_dir)
+    yield {
+        "type": "done",
+        "job_id": job_id,
+        "source": source,
+        "song": song.model_dump(by_alias=True),
+        "artifacts": {"midi": f"{base}/artifacts/{job_id}/song.mid", "musicxml": f"{base}/artifacts/{job_id}/song.musicxml"},
+    }
+
+
+@app.post("/compose/stream")
+def compose_stream(req: ComposeRequest, request: Request) -> StreamingResponse:
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = OUTPUTS / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    base = str(request.base_url).rstrip("/")
+
+    def sse() -> Iterator[str]:
+        for event in _compose_stream_events(req, job_id, job_dir, base):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(sse(), media_type="text/event-stream")
 
 
 @app.get("/artifacts/{job_id}/{filename}")
