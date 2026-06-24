@@ -13,7 +13,7 @@ COPY llm_band ./llm_band
 
 RUN pip install -e .
 
-RUN mkdir -p /app/outputs
+RUN mkdir -p /app/outputs /app/uploads
 
 EXPOSE 8000
 

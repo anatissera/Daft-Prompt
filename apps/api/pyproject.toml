@@ -5,6 +5,7 @@ description = "Multi-agent LLM music composition system — backend (Phase 1: wa
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",
+    "python-multipart>=0.0.9",
     "uvicorn[standard]>=0.29",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",

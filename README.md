@@ -146,7 +146,8 @@ The compose runtime starts the FastAPI backend on
 [http://localhost:8000](http://localhost:8000) and the Next.js frontend on
 [http://localhost:3000](http://localhost:3000). The frontend talks to the API
 through `API_BASE_URL=http://api:8000` inside the compose network. Backend
-artifacts are written to `apps/api/outputs`.
+artifacts are written to `apps/api/outputs`, and local analysis uploads are
+written to `apps/api/uploads`.
 
 ## Verification
 

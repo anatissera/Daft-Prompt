@@ -6,6 +6,7 @@ services:
       - "8000:8000"
     volumes:
       - ./apps/api/outputs:/app/outputs
+      - ./apps/api/uploads:/app/uploads
 
   web:
     image: node:22-bookworm-slim
