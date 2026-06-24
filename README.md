@@ -46,7 +46,6 @@ Not implemented yet:
 - Tempo/key/energy/section/chord extraction from audio.
 - Evidence-grounded music Q&A over a `ReferenceProfile`.
 - Reference-guided composition through chat.
-- Backend Dockerfile and local Docker Compose runtime.
 
 ## Product Direction
 
@@ -137,6 +136,18 @@ npm run dev
 Runs on [http://localhost:3000](http://localhost:3000). Next.js may choose a
 different port if 3000 is taken.
 
+Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The compose runtime starts the FastAPI backend on
+[http://localhost:8000](http://localhost:8000) and the Next.js frontend on
+[http://localhost:3000](http://localhost:3000). The frontend talks to the API
+through `API_BASE_URL=http://api:8000` inside the compose network. Backend
+artifacts are written to `apps/api/outputs`.
+
 ## Verification
 
 Backend:
@@ -160,9 +171,9 @@ The MVP does not require persisted memory or a database. It is acceptable for
 uploaded references, chats, songs, and generated artifacts to be lost when the
 process or container restarts.
 
-The backend should be containerized early because Python music/audio libraries
-and future MIR dependencies are better suited to a container host than to
-serverless frontend functions.
+The backend is containerized early because Python music/audio libraries and
+future MIR dependencies are better suited to a container host than to serverless
+frontend functions.
 
 Likely deployment shape:
 
