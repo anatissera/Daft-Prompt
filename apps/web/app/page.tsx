@@ -8,7 +8,7 @@ import RosterView from "@/components/RosterView";
 
 // client-only: both touch browser APIs / custom elements
 const ScoreViewer = dynamic(() => import("@/components/ScoreViewer"), { ssr: false });
-const MidiPlayer = dynamic(() => import("@/components/MidiPlayer"), { ssr: false });
+const TrackMixer = dynamic(() => import("@/components/TrackMixer"), { ssr: false });
 
 type FeedEvent = Extract<ComposeEvent, { type: "agent_pass" | "convergence" }>;
 
@@ -117,7 +117,10 @@ export default function Home() {
             <>
               <div className="card">
                 <h2 className="section-title">Playback</h2>
-                <MidiPlayer midiUrl={result.artifacts.midi} />
+                <TrackMixer song={result.song} />
+                <a className="artifact-link" href={result.artifacts.midi}>
+                  Download full MIDI
+                </a>
               </div>
 
               <div className="card">
@@ -127,7 +130,7 @@ export default function Home() {
             </>
           ) : result ? (
             <p className="empty-note">
-              No notes were composed for this arrangement — try composing again.
+              No notes were composed for this song — try composing again.
             </p>
           ) : null}
         </section>
