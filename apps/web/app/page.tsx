@@ -133,7 +133,9 @@ export default function Home() {
             </>
           ) : result ? (
             <p className="empty-note">
-              No notes were composed for this song — try composing again.
+              {result.song.errors.length > 0
+                ? "Composition stopped before any playable parts were produced."
+                : "No notes were composed for this song — try composing again."}
             </p>
           ) : null}
         </section>
