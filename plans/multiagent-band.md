@@ -1,6 +1,8 @@
-# Plan: Multi-agent Band
+# Historical Plan: Multi-agent Band
 
-> Source PRD: [`PRD.md`](../PRD.md) — multi-agent LLM music composition system.
+> Historical composition-engine plan. The current product source of truth is
+> [`PRODUCT.md`](../PRODUCT.md), and the current MVP plan is
+> [`plans/chat-musical-mvp.md`](./chat-musical-mvp.md).
 
 ## How to work this plan
 
@@ -21,7 +23,7 @@ Durable decisions that apply across all phases:
 - **Monorepo**: `apps/api` (Python: LangGraph + FastAPI + music21 + pretty_midi) and
   `apps/web` (Next.js App Router + React + TypeScript, deploys to Vercel).
 - **Shared contract**: `SongState` is the single source of truth. Pydantic in
-  `apps/api/llm_band/schema.py`; mirrored as TypeScript in `apps/web/lib/types.ts`
+  `apps/api/llm_band/domain/song_state.py`; mirrored as TypeScript in `apps/web/lib/types.ts`
   (keep in sync; prefer generating TS from the JSON schema in CI).
 - **API surface**: `POST /compose` starts a run and **streams Server-Sent Events**
   (director done → roster; each agent pass → negotiation feed; convergence → done).
@@ -29,8 +31,9 @@ Durable decisions that apply across all phases:
 - **Music conventions**: pitches are MIDI ints (0–127, `null` = rest); durations in
   beats (float); notes use absolute `bar` + `start_beat`. `header`
   (key/tempo/meter/sections) is **immutable** after the director sets it.
-- **LLM provider**: free-tier, isolated behind `apps/api/llm_band/llm.py`. Pick is
-  TBD among Gemini (`langchain-google-genai`), Groq (`langchain-groq`), OpenRouter.
+- **LLM provider**: free-tier, isolated behind the infrastructure LLM adapter.
+  The current code routes provider choices through settings and keeps the graph
+  provider-agnostic.
 - **Deployment split**: `apps/web` on Vercel; `apps/api` on a container host
   (Render / Railway / Fly.io / HF Spaces) because of native MuseScore/LilyPond
   binaries, multi-minute runs, bundle-size and read-only-FS limits. Artifacts go to
@@ -73,7 +76,7 @@ artifact → browser playback/score works before any agent exists.
 - [ ] A fixture `SongState` renders to a re-parseable `.mid` and a valid `.musicxml`.
 - [ ] `apps/web` page submits a style, plays the returned MIDI, and renders the score.
 - [ ] `apps/web/lib/types.ts` defines `SongState` matching the Pydantic model.
-- [ ] README/PRD repo structure matches what actually exists for these two apps.
+- [ ] README and product docs match what actually exists for these two apps.
 
 ---
 
@@ -84,7 +87,7 @@ artifact → browser playback/score works before any agent exists.
 
 ### What to build
 
-Harden the Python core with **no LLM**: full `schema.py`, `validators.py`
+Harden the Python core with **no LLM**: full `domain/song_state.py`, `validators.py`
 (range/key/duration/bar checks → structured errors), `to_music21.py`,
 `render_midi.py`, `render_sheet.py`, and `theory.py` helpers. Unit-tested against a
 fixtures `SongState`. This is the trustworthy foundation every agent writes into.

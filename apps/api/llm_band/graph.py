@@ -14,7 +14,7 @@ from langgraph.types import Send
 from .agents.arbiter import run_arbiter
 from .agents.instrument import NewRequest, RequestResolution, compose_part, run_instrument_turn
 from .config import get_settings
-from .schema import Header, NegotiationRequest, Part, RosterItem, SongState
+from .domain.song_state import Header, NegotiationRequest, Part, RosterItem, SongState
 from .state import BandState, merge_parts, merge_requests, take_latest
 
 
@@ -227,9 +227,8 @@ def iter_negotiation_events(song: SongState, llm=None, max_rounds: Optional[int]
     """Same negotiation run as `run_negotiation`, but yields one event dict per
     node execution (each parallel `instrument_turn` Send produces its own chunk
     under `stream_mode="updates"`, confirmed via a standalone smoke test) instead
-    of blocking until the graph finishes. Mutates `song` in place once exhausted
-    — callers must drain the generator fully for that side effect to apply, same
-    contract as `run_negotiation`.
+    of blocking until the graph finishes. Keeps `song` synchronized after each
+    update so callers can return partial results if the stream is interrupted.
     """
     if not song.roster:
         return
@@ -251,6 +250,11 @@ def iter_negotiation_events(song: SongState, llm=None, max_rounds: Optional[int]
                 state["round"] = take_latest(state["round"], update["round"])
             if "converged" in update:
                 state["converged"] = update["converged"]
+
+            song.parts = state["parts"]
+            song.negotiation_requests = state["negotiation_requests"]
+            song.round = state["round"]
+            song.converged = state["converged"]
 
             if node == "instrument_turn":
                 instrument_id = next(iter(update["parts"]))

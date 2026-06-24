@@ -1,12 +1,4 @@
-"""Canonical `SongState` schema — the single source of truth shared across the
-pipeline and mirrored in the frontend (`apps/web/lib/types.ts`).
-
-Conventions (see PRD):
-- pitches are MIDI note numbers (0-127); `null` pitch means a rest.
-- durations are in beats (quarter-note beats), floats.
-- notes use absolute `bar` + `start_beat`.
-- `header` is immutable once the director sets it.
-"""
+"""Canonical `SongState` schema shared across the composition pipeline."""
 
 from __future__ import annotations
 
@@ -41,7 +33,7 @@ class Header(BaseModel):
 class RosterItem(BaseModel):
     id: str
     instrument: str
-    midi_program: int = 0  # General MIDI program
+    midi_program: int = 0
     midi_range: tuple[int, int] = (0, 127)
     role: str = ""
     is_drum: bool = False
@@ -50,7 +42,7 @@ class RosterItem(BaseModel):
 class Note(BaseModel):
     bar: int
     start_beat: float
-    pitch: Optional[int] = None  # None = rest
+    pitch: Optional[int] = None
     dur: float = 1.0
     velocity: int = 96
 
