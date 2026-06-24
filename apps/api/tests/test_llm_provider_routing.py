@@ -9,6 +9,7 @@ from llm_band.infrastructure.llm import (
     LLMAllProvidersFailed,
     LLMProviderUnavailable,
     LLMQuotaExceeded,
+    _build_chat_model,
     classify_llm_error,
     model_plan,
     with_fallbacks,
@@ -97,3 +98,62 @@ def test_with_fallbacks_raises_all_providers_failed_after_exhaustion():
 
     assert err.value.failures
     assert err.value.provider == "all"
+
+
+def test_all_providers_failed_message_is_concise_and_actionable():
+    err = LLMAllProvidersFailed(
+        [
+            LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="very long provider dump"),
+            LLMProviderUnavailable(
+                provider="openrouter",
+                model="openrouter/free",
+                detail="Install backend extra: pip install -e \".[openrouter]\"",
+            ),
+        ]
+    )
+
+    assert err.user_message == (
+        "All configured LLM providers failed. Gemini quota or rate limit was reached for "
+        "gemini-2.5-flash. OpenRouter is unavailable for openrouter/free: Install backend "
+        "extra: pip install -e \".[openrouter]\"."
+    )
+
+
+def test_gemini_chat_model_uses_configured_retry_count(monkeypatch):
+    captured = {}
+
+    class FakeGemini:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import llm_band.infrastructure.llm as llm_module
+
+    monkeypatch.setattr(llm_module, "_import_gemini_chat", lambda: FakeGemini)
+
+    _build_chat_model(
+        "gemini",
+        "gemini-2.5-flash",
+        Settings(llm_provider="gemini", gemini_api_key="gem", llm_max_retries=0),
+    )
+
+    assert captured["retries"] == 0
+
+
+def test_openrouter_missing_dependency_mentions_attempted_model(monkeypatch):
+    import llm_band.infrastructure.llm as llm_module
+
+    def missing_openrouter():
+        raise ModuleNotFoundError("No module named 'langchain_openai'")
+
+    monkeypatch.setattr(llm_module, "_import_openrouter_chat", missing_openrouter)
+
+    with pytest.raises(LLMProviderUnavailable) as err:
+        _build_chat_model(
+            "openrouter",
+            "openrouter/free",
+            Settings(llm_provider="openrouter", openrouter_api_key="or"),
+        )
+
+    assert err.value.provider == "openrouter"
+    assert err.value.model == "openrouter/free"
+    assert "pip install" in err.value.detail

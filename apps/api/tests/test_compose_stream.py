@@ -68,6 +68,13 @@ def _fake_quota_negotiation_events(_song):
     raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota exceeded")
 
 
+def _fake_partial_then_quota_events(song):
+    song.parts = {"bass": Part(instrument_id="bass", notes_summary="partial bass")}
+    yield {"type": "agent_pass", "round": 0, "instrument_id": "bass",
+           "notes_summary": "partial bass", "new_requests": [], "resolved_requests": []}
+    raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota exceeded")
+
+
 def test_compose_stream_director_path_emits_agent_pass_and_done(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
     monkeypatch.setattr(api, "run_director", _fake_song)
@@ -124,6 +131,22 @@ def test_compose_stream_emits_error_event_on_quota_exhaustion(monkeypatch):
     assert events[1]["model"] == "gemini-2.5-flash"
     assert events[-1]["song"]["converged"] is False
     assert "quota" in events[-1]["song"]["errors"][0].lower()
+
+
+def test_compose_stream_preserves_partial_parts_after_quota_error(monkeypatch):
+    monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
+    monkeypatch.setattr(api, "run_director", _fake_song)
+    monkeypatch.setattr(api, "iter_negotiation_events", _fake_partial_then_quota_events)
+    monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
+    client = TestClient(api.app)
+    resp = client.post("/compose/stream", json={"style": "disco"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert types == ["director", "agent_pass", "error", "done"]
+    assert events[-1]["song"]["parts"]["bass"]["notes_summary"] == "partial bass"
+    assert events[-1]["song"]["converged"] is False
 
 
 def test_compose_stream_canned_path_emits_director_and_done(monkeypatch):

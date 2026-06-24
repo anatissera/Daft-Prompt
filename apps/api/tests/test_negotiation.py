@@ -9,8 +9,9 @@ from langgraph.errors import GraphRecursionError
 
 from llm_band.agents.arbiter import ArbiterOutput, ArbiterResolution
 from llm_band.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
-from llm_band.graph import _build_negotiation_graph, run_negotiation
+from llm_band.graph import _build_negotiation_graph, iter_negotiation_events, run_negotiation
 from llm_band.domain.song_state import Header, Note, RosterItem, SongState
+from llm_band.infrastructure.llm import LLMQuotaExceeded
 
 HEADER = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
 BASS = RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove")
@@ -156,3 +157,32 @@ def test_recursion_limit_is_a_real_backstop_independent_of_round_cap():
             },
             config={"recursion_limit": 6},
         )
+
+
+def test_iter_negotiation_events_keeps_song_updated_before_later_llm_error():
+    class PartialThenQuotaLLM:
+        calls = 0
+
+        def with_structured_output(self, schema):
+            assert schema is InstrumentTurnOutput
+            return self
+
+        def invoke(self, _messages):
+            self.calls += 1
+            if self.calls == 1:
+                return InstrumentTurnOutput(
+                    notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)],
+                    notes_summary="partial bass",
+                )
+            raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota")
+
+    song = _song()
+    stream = iter_negotiation_events(song, llm=PartialThenQuotaLLM(), max_rounds=3)
+    first = next(stream)
+
+    assert first["type"] == "agent_pass"
+    assert song.parts["bass"].notes_summary == "partial bass"
+
+    with pytest.raises(LLMQuotaExceeded):
+        next(stream)
+    assert song.parts["bass"].notes_summary == "partial bass"

@@ -11,6 +11,12 @@ from llm_band.config import DEFAULT_MODELS, Settings, get_settings
 
 T = TypeVar("T")
 
+PROVIDER_LABELS = {
+    "gemini": "Gemini",
+    "groq": "Groq",
+    "openrouter": "OpenRouter",
+}
+
 
 class LLMError(RuntimeError):
     code = "llm_error"
@@ -49,6 +55,20 @@ class LLMAllProvidersFailed(LLMError):
         self.failures = failures
         detail = "; ".join(f"{f.provider}/{f.model}: {f.detail}" for f in failures) or "no models configured"
         super().__init__(provider="all", model="all", detail=detail)
+
+    @property
+    def user_message(self) -> str:
+        if not self.failures:
+            return "No configured LLM provider is available."
+
+        pieces = ["All configured LLM providers failed."]
+        for failure in self.failures:
+            provider = PROVIDER_LABELS.get(failure.provider, failure.provider.capitalize())
+            if isinstance(failure, LLMQuotaExceeded):
+                pieces.append(f"{provider} quota or rate limit was reached for {failure.model}.")
+            else:
+                pieces.append(f"{provider} is unavailable for {failure.model}: {failure.detail}.")
+        return " ".join(pieces)
 
 
 def _csv(value: Optional[str]) -> list[str]:
@@ -134,12 +154,29 @@ class _RateLimiter:
 _RATE_LIMITER = _RateLimiter()
 
 
+def _import_gemini_chat():
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    return ChatGoogleGenerativeAI
+
+
+def _import_openrouter_chat():
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI
+
+
 def _build_chat_model(provider: str, model: str, settings: Settings):
     key = settings.api_key_for(provider)
     if provider == "gemini":
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        ChatGoogleGenerativeAI = _import_gemini_chat()
 
-        return ChatGoogleGenerativeAI(model=model, google_api_key=key, temperature=0.7)
+        return ChatGoogleGenerativeAI(
+            model=model,
+            google_api_key=key,
+            temperature=0.7,
+            retries=max(0, settings.llm_max_retries),
+        )
 
     if provider == "groq":
         from langchain_groq import ChatGroq
@@ -147,13 +184,21 @@ def _build_chat_model(provider: str, model: str, settings: Settings):
         return ChatGroq(model=model, api_key=key, temperature=0.7)
 
     if provider == "openrouter":
-        from langchain_openai import ChatOpenAI
+        try:
+            ChatOpenAI = _import_openrouter_chat()
+        except ModuleNotFoundError as exc:
+            raise LLMProviderUnavailable(
+                provider=provider,
+                model=model,
+                detail='Install backend extra: pip install -e ".[openrouter]"',
+            ) from exc
 
         return ChatOpenAI(
             model=model,
             api_key=key,
             base_url="https://openrouter.ai/api/v1",
             temperature=0.7,
+            max_retries=max(0, settings.llm_max_retries),
         )
 
     raise LLMProviderUnavailable(provider=provider, model=model, detail="unknown provider")
