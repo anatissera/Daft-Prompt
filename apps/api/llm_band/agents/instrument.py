@@ -7,7 +7,7 @@ this instrument, and optionally raise new ones.
 Constrained by the immutable header, this instrument's role/range, and peers'
 compact `notes_summary` strings, never their full note lists (token cost). Reuses
 `Note` directly as the structured-output schema so there is one schema for the
-LLM contract and the canonical SongState (see PRD gotcha: schema drift).
+LLM contract and the canonical SongState (avoid schema drift).
 """
 
 from __future__ import annotations
