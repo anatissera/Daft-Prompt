@@ -17,7 +17,8 @@ from llm_band.domain.song_state import Part
 from llm_band.graph import iter_negotiation_events, run_negotiation
 from llm_band.infrastructure.storage.render_artifacts import render_artifacts
 from llm_band.infrastructure.storage.local_store import LocalArtifactStore
-from llm_band.interfaces.api_models import Artifacts, ComposeRequest, ComposeResponse, DoneEvent, sse_data
+from llm_band.infrastructure.llm import LLMAllProvidersFailed, LLMError
+from llm_band.interfaces.api_models import Artifacts, ComposeRequest, ComposeResponse, DoneEvent, ErrorEvent, sse_data
 
 OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
@@ -40,7 +41,10 @@ def health() -> dict[str, str]:
 @app.post("/compose", response_model=ComposeResponse)
 def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
     job = ARTIFACTS.create_job()
-    song, source = _compose_song().compose(req.style)
+    try:
+        song, source = _compose_song().compose(req.style)
+    except LLMError as exc:
+        raise HTTPException(status_code=503, detail=_llm_error_event(exc, partial=False)) from exc
     render_artifacts(song, job.path)
 
     base = str(request.base_url).rstrip("/")
@@ -91,6 +95,16 @@ def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base
                 by_alias=True, mode="json"
             )
             return
+    except LLMError as exc:
+        yield _llm_error_event(exc, partial=last_song is not None)
+        if last_song is None:
+            return
+        last_song.converged = False
+        last_song.errors.append(exc.user_message)
+        render_artifacts(last_song, job_dir)
+        yield DoneEvent(job_id=job_id, source=last_source, song=last_song, artifacts=artifacts).model_dump(
+            by_alias=True, mode="json"
+        )
     except Exception:
         if last_song is None:
             raise
@@ -114,6 +128,22 @@ def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base
         yield DoneEvent(job_id=job_id, source=last_source, song=last_song, artifacts=artifacts).model_dump(
             by_alias=True, mode="json"
         )
+
+
+def _llm_error_event(exc: LLMError, *, partial: bool) -> dict:
+    provider = exc.provider
+    model = exc.model
+    if isinstance(exc, LLMAllProvidersFailed) and exc.failures:
+        last = exc.failures[-1]
+        provider = last.provider
+        model = last.model
+    return ErrorEvent(
+        code=exc.code,
+        message=exc.user_message,
+        provider=None if provider == "all" else provider,
+        model=None if model == "all" else model,
+        partial=partial,
+    ).model_dump(mode="json")
 
 
 @app.post("/compose/stream")

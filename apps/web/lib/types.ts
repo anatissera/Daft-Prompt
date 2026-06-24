@@ -82,7 +82,7 @@ export interface ComposeResponse {
 
 // SSE events from POST /compose/stream (proxied by app/api/compose), in emission
 // order: one "director" event, zero or more "agent_pass" events as instruments
-// compose/negotiate, one "convergence" event, then one "done" event.
+// compose/negotiate, optional "error", one "convergence" or "done" event.
 export type ComposeEvent =
   | { type: "director"; source: "director" | "canned"; header: Header; roster: RosterItem[] }
   | {
@@ -98,5 +98,13 @@ export type ComposeEvent =
       round: number;
       converged: boolean;
       resolved_requests: NegotiationRequest[];
+    }
+  | {
+      type: "error";
+      code: string;
+      message: string;
+      provider: string | null;
+      model: string | null;
+      partial: boolean;
     }
   | (ComposeResponse & { type: "done" });

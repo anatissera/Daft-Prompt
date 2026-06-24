@@ -10,7 +10,7 @@ import RosterView from "@/components/RosterView";
 const ScoreViewer = dynamic(() => import("@/components/ScoreViewer"), { ssr: false });
 const TrackMixer = dynamic(() => import("@/components/TrackMixer"), { ssr: false });
 
-type FeedEvent = Extract<ComposeEvent, { type: "agent_pass" | "convergence" }>;
+type FeedEvent = Extract<ComposeEvent, { type: "agent_pass" | "convergence" | "error" }>;
 
 export default function Home() {
   const [style, setStyle] = useState("Bee Gees-style disco");
@@ -59,8 +59,11 @@ export default function Home() {
             setSource(event.source);
             setHeader(event.header);
             setRoster(event.roster);
-          } else if (event.type === "agent_pass" || event.type === "convergence") {
+          } else if (event.type === "agent_pass" || event.type === "convergence" || event.type === "error") {
             setFeed((prev) => [...prev, event]);
+            if (event.type === "error") {
+              setError(event.message);
+            }
           } else if (event.type === "done") {
             setResult(event);
           }

@@ -16,6 +16,7 @@ from llm_band.agents.director import (
     arrangement_to_song,
 )
 from llm_band.domain.song_state import Part
+from llm_band.infrastructure.llm import LLMQuotaExceeded
 
 
 def _parse_sse(text: str) -> list[dict]:
@@ -63,6 +64,10 @@ def _fake_failing_negotiation_events(song):
     raise RuntimeError("instrument failed after fallback event")
 
 
+def _fake_quota_negotiation_events(_song):
+    raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota exceeded")
+
+
 def test_compose_stream_director_path_emits_agent_pass_and_done(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
     monkeypatch.setattr(api, "run_director", _fake_song)
@@ -100,6 +105,25 @@ def test_compose_stream_survives_negotiation_exception_after_fallback_event(monk
     assert events[1]["instrument_id"] == "bass"
     assert "fallback" in events[1]["notes_summary"]
     assert events[-1]["song"]["parts"]["bass"]["notes_summary"].startswith("fallback")
+
+
+def test_compose_stream_emits_error_event_on_quota_exhaustion(monkeypatch):
+    monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
+    monkeypatch.setattr(api, "run_director", _fake_song)
+    monkeypatch.setattr(api, "iter_negotiation_events", _fake_quota_negotiation_events)
+    monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
+    client = TestClient(api.app)
+    resp = client.post("/compose/stream", json={"style": "disco"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert types == ["director", "error", "done"]
+    assert events[1]["code"] == "quota_exceeded"
+    assert events[1]["provider"] == "gemini"
+    assert events[1]["model"] == "gemini-2.5-flash"
+    assert events[-1]["song"]["converged"] is False
+    assert "quota" in events[-1]["song"]["errors"][0].lower()
 
 
 def test_compose_stream_canned_path_emits_director_and_done(monkeypatch):
