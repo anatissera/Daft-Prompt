@@ -2,16 +2,22 @@
 
 ## Done
 
-- Split the FastAPI layer away from composition, rendering, artifact paths, and
-  SSE serialization.
-- Added a local artifact storage boundary that can later be replaced by object
-  storage without changing composition.
-- Added typed API/SSE contract models for the current `/compose` and
-  `/compose/stream` payloads.
-- Added `llm_band.reference_analysis` as a separate bounded context with domain
-  models, ports, use cases, and fake adapters for tests.
-- Added boundary tests proving reference analysis can run with fakes and that
-  composition modules do not import reference-analysis internals.
+- Reorganized the backend into clean architecture layers:
+  `domain`, `application`, `ports`, `infrastructure`, and `interfaces`.
+- Moved `SongState` models into `domain/song_state.py` and future listening
+  models into `domain/audio_profile.py`.
+- Moved composition orchestration into `application/compose_song.py` and future
+  reference use cases into `application/analyze_reference.py` and
+  `application/answer_music_question.py`.
+- Added explicit ports for LLMs, artifact storage, audio analysis,
+  transcription, and stem separation.
+- Moved FastAPI and SSE models into `interfaces/`; `llm_band.api:app` remains a
+  compatibility entrypoint only.
+- Added local storage plus MIR/Gemini/S3 placeholders under `infrastructure/`
+  without implementing listening or adding new provider dependencies.
+- Added architecture tests for dependency direction and removal of legacy root
+  modules such as `schema.py`, `api_models.py`, `composition.py`, and the old
+  `reference_analysis/` package.
 
 ## Not Done
 
@@ -21,6 +27,7 @@
 - No MIR analysis with librosa, Essentia, Basic Pitch, or Demucs.
 - No listening UI.
 - No connection from `/compose` to reference analysis.
+- No reference-guided composition.
 
 ## Next
 
@@ -31,6 +38,6 @@
 - Add an explainer adapter that answers questions from `ReferenceProfile`
   evidence, not raw provider internals.
 - Add a separate API/UI flow for listening after the backend use cases are tested
-  with fakes.
+  through ports and fake adapters.
 - Add optional reference-guided composition by passing only compact
   `ReferenceProfile` summaries into the composition graph.

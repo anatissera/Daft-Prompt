@@ -74,10 +74,22 @@ bounded negotiation rounds, FastAPI endpoints, and SSE streaming. The Next.js UI
 can submit a style, show the roster/negotiation feed, render MusicXML, and play
 the MIDI artifact.
 
-The listening/reference-analysis feature is **not implemented yet**. The codebase
-now has an architectural boundary for it (`reference_analysis`) so future audio
-analysis can be added without coupling provider details, MIR libraries, downloads,
-or raw audio artifacts to composition, rendering, or the existing API.
+The listening/reference-analysis feature is **not implemented yet**. The backend
+is organized into clean architecture layers (`domain`, `application`, `ports`,
+`infrastructure`, `interfaces`) so future audio analysis can be added without
+coupling provider details, MIR libraries, downloads, or raw audio artifacts to
+composition, rendering, or the existing API.
+
+Current backend layer map:
+
+```text
+llm_band/
+  domain/          # SongState and future ReferenceProfile/AudioProfile data
+  application/     # compose/analyze/answer use cases
+  ports/           # LLM, storage, audio analysis, transcription, stems
+  infrastructure/  # provider/storage/MIR adapters and placeholders
+  interfaces/      # FastAPI HTTP/SSE boundary
+```
 
 ## Pipeline
 
@@ -123,7 +135,7 @@ Runs on http://localhost:3000 (Next.js picks another free port if 3000 is taken)
    validation repairs, artifact storage, deployment, and observability.
 2. Keep `SongState` mirrored between Pydantic and TypeScript, preferably generated
    from JSON schema in CI.
-3. Build real `reference_analysis` adapters later: authorized source resolution,
+3. Build real infrastructure adapters later: authorized source resolution,
    MIR/audio profiling, optional Gemini audio explanations, and storage.
 4. Add a listening UI only after the reference-analysis use cases exist behind
    fakes and provider adapters.

@@ -13,7 +13,7 @@ from llm_band.agents.director import (
     run_director,
 )
 from llm_band.config import Settings
-from llm_band.llm import make_llm
+from llm_band.infrastructure.gemini.llm import make_llm
 
 
 class _FakeStructured:

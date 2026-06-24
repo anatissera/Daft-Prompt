@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from llm_band.agents.instrument import MAX_REPAIRS, InstrumentOutput, _peer_context, compose_part
-from llm_band.schema import Header, Note, RosterItem
+from llm_band.domain.song_state import Header, Note, RosterItem
 
 
 class _FakeStructured:

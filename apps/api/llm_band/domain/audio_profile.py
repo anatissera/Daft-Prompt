@@ -1,4 +1,4 @@
-"""Domain models for future listening/reference analysis."""
+"""Domain models for future listening/reference-analysis workflows."""
 
 from __future__ import annotations
 

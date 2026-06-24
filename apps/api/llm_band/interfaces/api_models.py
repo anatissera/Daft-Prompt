@@ -1,4 +1,4 @@
-"""HTTP and SSE contracts for the FastAPI layer."""
+"""HTTP and SSE contracts for the FastAPI interface."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .schema import Header, RosterItem, SongState
+from llm_band.domain.song_state import Header, RosterItem, SongState
 
 
 class ComposeRequest(BaseModel):

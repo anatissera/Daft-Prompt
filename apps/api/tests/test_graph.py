@@ -6,7 +6,7 @@ from __future__ import annotations
 from llm_band.agents.instrument import InstrumentOutput
 from llm_band.graph import run_instruments
 from llm_band.music.validators import errors_only, validate_song
-from llm_band.schema import Header, Note, RosterItem, SongState
+from llm_band.domain.song_state import Header, Note, RosterItem, SongState
 
 
 class _FakeStructured:

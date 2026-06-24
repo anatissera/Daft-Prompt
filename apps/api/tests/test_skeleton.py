@@ -6,7 +6,7 @@ from __future__ import annotations
 import pretty_midi
 from fastapi.testclient import TestClient
 
-from llm_band.api import app
+from llm_band.interfaces.api import app
 from llm_band.canned import canned_song
 from llm_band.music.render_midi import render_midi
 from llm_band.music.render_sheet import render_musicxml

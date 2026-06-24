@@ -11,7 +11,7 @@ from __future__ import annotations
 from music21 import clef, instrument, key, meter, note, stream, tempo
 
 from .theory import beats_per_bar as _beats_per_bar
-from ..schema import SongState
+from ..domain.song_state import SongState
 
 # quarter-length divisors used when snapping ragged float durations to a clean
 # notation grid: 4 -> sixteenths, 3 -> triplet-eighths.

@@ -6,7 +6,7 @@ is optional and the pipeline never fails just because no engraver is installed.
 from __future__ import annotations
 
 from .to_music21 import song_to_score
-from ..schema import SongState
+from ..domain.song_state import SongState
 
 
 def render_musicxml(song: SongState, path: str) -> str:

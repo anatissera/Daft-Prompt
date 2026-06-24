@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from ..music.theory import beats_per_bar
 from ..music.validators import ValidationIssue, errors_only, validate_song
-from ..schema import Header, NegotiationRequest, Note, Part, RosterItem, SongState
+from ..domain.song_state import Header, NegotiationRequest, Note, Part, RosterItem, SongState
 
 MAX_REPAIRS = 2
 
@@ -99,7 +99,7 @@ def compose_part(
     the run.
     """
     if llm is None:
-        from ..llm import make_llm
+        from llm_band.infrastructure.gemini.llm import make_llm
 
         llm = make_llm("instrument")
     structured = llm.with_structured_output(InstrumentOutput)
@@ -181,7 +181,7 @@ def run_instrument_turn(
     surface later via `validate_song`.
     """
     if llm is None:
-        from ..llm import make_llm
+        from llm_band.infrastructure.gemini.llm import make_llm
 
         llm = make_llm("instrument")
     structured = llm.with_structured_output(InstrumentTurnOutput)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Annotated, TypedDict
 
-from .schema import Header, NegotiationRequest, Part, RosterItem
+from .domain.song_state import Header, NegotiationRequest, Part, RosterItem
 
 
 def merge_parts(left: dict[str, Part], right: dict[str, Part]) -> dict[str, Part]:

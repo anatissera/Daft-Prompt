@@ -1,8 +1,8 @@
-"""Architecture boundary for future listening/reference analysis.
+"""Application boundary for future listening/reference analysis.
 
 This does not test real audio analysis. It verifies that the bounded context can
-be exercised with fakes and that composition stays decoupled from listening
-internals.
+be exercised through ports and that composition stays decoupled from listening
+internals and MIR adapters.
 """
 
 from __future__ import annotations
@@ -10,22 +10,43 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from llm_band.reference_analysis.adapters.fake import (
-    FakeAudioAnalyzer,
-    FakeExplainer,
-    FakeReferenceResolver,
-)
-from llm_band.reference_analysis.models import (
+from llm_band.application.analyze_reference import AnalyzeReference, ResolveReference
+from llm_band.application.answer_music_question import AnswerMusicQuestion
+from llm_band.domain.audio_profile import (
     AudioProfile,
+    ExplanationAnswer,
     ReferenceProfile,
     ReferenceSource,
     SectionProfile,
 )
-from llm_band.reference_analysis.use_cases import (
-    AnalyzeReference,
-    AnswerMusicQuestion,
-    ResolveReference,
-)
+
+
+class FakeReferenceResolver:
+    def __init__(self, sources: dict[str, ReferenceSource]):
+        self.sources = sources
+
+    def resolve(self, query: str) -> ReferenceSource:
+        source = self.sources[query]
+        if not source.authorized and source.permission_error is None:
+            return source.model_copy(update={"permission_error": "reference is not authorized for analysis"})
+        return source
+
+
+class FakeAudioAnalyzer:
+    def __init__(self, profiles: dict[str, ReferenceProfile]):
+        self.profiles = profiles
+
+    def analyze(self, source: ReferenceSource) -> ReferenceProfile:
+        return self.profiles[source.reference_id]
+
+
+class FakeExplainer:
+    def answer(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer:
+        return ExplanationAnswer(
+            reference_id=profile.reference_id,
+            answer=f"Answer for {profile.reference_id}: {question}",
+            evidence=["fake evidence"],
+        )
 
 
 def test_reference_analysis_use_cases_run_with_fakes_and_no_audio_or_network():
@@ -86,6 +107,7 @@ def test_unauthorized_reference_fails_before_analysis():
 def test_composition_modules_do_not_import_reference_analysis_internals():
     root = Path(__file__).resolve().parents[1] / "llm_band"
     checked = [
+        root / "application" / "compose_song.py",
         root / "graph.py",
         *(root / "agents").glob("*.py"),
         *(root / "music").glob("*.py"),
@@ -100,7 +122,13 @@ def test_composition_modules_do_not_import_reference_analysis_internals():
                 names = [node.module or ""]
             else:
                 continue
-            if any(name.startswith("llm_band.reference_analysis") or name.startswith("reference_analysis") for name in names):
+            if any(
+                name.startswith("llm_band.ports.audio_analyzer")
+                or name.startswith("llm_band.ports.stem_separator")
+                or name.startswith("llm_band.ports.transcription")
+                or name.startswith("llm_band.infrastructure.mir")
+                for name in names
+            ):
                 forbidden.append((path.name, names))
 
     assert forbidden == []

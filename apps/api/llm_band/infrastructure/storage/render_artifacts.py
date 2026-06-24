@@ -1,13 +1,13 @@
-"""Rendering application service for generated composition artifacts."""
+"""Render generated composition artifacts into a job directory."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from .music.render_midi import render_midi
-from .music.render_sheet import render_musicxml
-from .music.validators import errors_only, validate_song
-from .schema import SongState
+from llm_band.domain.song_state import SongState
+from llm_band.music.render_midi import render_midi
+from llm_band.music.render_sheet import render_musicxml
+from llm_band.music.validators import errors_only, validate_song
 
 
 def render_artifacts(song: SongState, job_dir: Path) -> None:
