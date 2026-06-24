@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from llm_band.music.validators import errors_only, validate_song
-from llm_band.schema import Header, Note, Part, RosterItem, SongState
+from llm_band.domain.song_state import Header, Note, Part, RosterItem, SongState
 
 
 def _song(roster: list[RosterItem], parts: dict[str, Part], *, key="C major",

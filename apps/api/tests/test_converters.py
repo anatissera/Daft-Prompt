@@ -6,7 +6,7 @@ import pretty_midi
 
 from llm_band.music.render_midi import render_midi, song_to_pretty_midi
 from llm_band.music.render_sheet import render_musicxml, render_pdf
-from llm_band.schema import Header, Note, Part, RosterItem, SongState
+from llm_band.domain.song_state import Header, Note, Part, RosterItem, SongState
 
 
 def test_midi_round_trips(sample_song, tmp_path):

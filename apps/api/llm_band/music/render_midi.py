@@ -10,7 +10,7 @@ from __future__ import annotations
 import pretty_midi
 
 from .theory import beats_per_bar as _beats_per_bar
-from ..schema import SongState
+from ..domain.song_state import SongState
 
 
 def song_to_pretty_midi(song: SongState) -> pretty_midi.PrettyMIDI:

@@ -7,7 +7,7 @@ artifact -> browser playback/score) before any agent exists. Later phases replac
 
 from __future__ import annotations
 
-from .schema import (
+from .domain.song_state import (
     ChordSpan,
     Header,
     Note,

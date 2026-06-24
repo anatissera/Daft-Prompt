@@ -8,14 +8,14 @@ import json
 
 from fastapi.testclient import TestClient
 
-import llm_band.api as api
+import llm_band.interfaces.api as api
 from llm_band.agents.director import (
     ArrangementInstrument,
     ArrangementSection,
     DirectorOutput,
     arrangement_to_song,
 )
-from llm_band.schema import Part
+from llm_band.domain.song_state import Part
 
 
 def _parse_sse(text: str) -> list[dict]:

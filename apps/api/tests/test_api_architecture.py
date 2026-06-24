@@ -1,12 +1,15 @@
-"""API architecture tests: keep HTTP/SSE thin and artifact rendering isolated."""
+"""Clean-architecture tests for HTTP/SSE and artifact boundaries."""
 
 from __future__ import annotations
 
+import ast
+import importlib.util
 import json
+from pathlib import Path
 
-from llm_band.api_models import AgentPassEvent, DirectorEvent, sse_data
-from llm_band.artifacts import LocalArtifactStore
-from llm_band.schema import Header, RosterItem
+from llm_band.domain.song_state import Header, RosterItem
+from llm_band.infrastructure.storage.local_store import LocalArtifactStore
+from llm_band.interfaces.api_models import AgentPassEvent, DirectorEvent, sse_data
 
 
 def test_sse_data_serializes_one_data_event_with_aliases():
@@ -59,3 +62,37 @@ def test_local_artifact_store_rejects_traversal(tmp_path):
 
     assert store.path_for(job.job_id, "../song.mid") is None
     assert store.path_for("../bad", "song.mid") is None
+
+
+def test_legacy_root_architecture_modules_are_removed():
+    assert importlib.util.find_spec("llm_band.schema") is None
+    assert importlib.util.find_spec("llm_band.api_models") is None
+    assert importlib.util.find_spec("llm_band.artifacts") is None
+    assert importlib.util.find_spec("llm_band.composition") is None
+    assert importlib.util.find_spec("llm_band.rendering") is None
+    assert importlib.util.find_spec("llm_band.reference_analysis") is None
+
+
+def test_clean_architecture_dependency_direction():
+    root = Path(__file__).resolve().parents[1] / "llm_band"
+    rules = {
+        "domain": ("llm_band.infrastructure", "llm_band.interfaces", "llm_band.application"),
+        "application": ("llm_band.infrastructure", "llm_band.interfaces", "fastapi"),
+        "infrastructure": ("llm_band.interfaces", "fastapi"),
+    }
+    violations = []
+    for layer, forbidden_prefixes in rules.items():
+        for path in (root / layer).rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                else:
+                    continue
+                for name in names:
+                    if any(name == p or name.startswith(f"{p}.") for p in forbidden_prefixes):
+                        violations.append((str(path.relative_to(root)), name))
+
+    assert violations == []

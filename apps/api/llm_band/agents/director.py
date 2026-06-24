@@ -12,7 +12,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from ..schema import ChordSpan, Header, RosterItem, Section, SongState
+from ..domain.song_state import ChordSpan, Header, RosterItem, Section, SongState
 
 MIN_ROSTER = 3
 MAX_ROSTER = 8
@@ -96,7 +96,7 @@ def run_director(style: str, llm=None) -> SongState:
     """Run the director. Pass `llm` (a chat model) to inject a fake in tests;
     otherwise a provider model is built from settings."""
     if llm is None:
-        from ..llm import make_llm
+        from llm_band.infrastructure.gemini.llm import make_llm
 
         llm = make_llm("director")
     structured = llm.with_structured_output(DirectorOutput)

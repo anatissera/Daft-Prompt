@@ -1,21 +1,11 @@
-"""Artifact storage boundary.
-
-The current implementation stores generated files on local disk. Keeping that
-behind this small adapter lets production swap in object storage later without
-teaching API or composition code about storage paths.
-"""
+"""Local filesystem artifact storage adapter."""
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
 
-
-@dataclass(frozen=True)
-class ArtifactJob:
-    job_id: str
-    path: Path
+from llm_band.ports.artifact_store import ArtifactJob
 
 
 class LocalArtifactStore:

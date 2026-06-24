@@ -16,7 +16,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel
 
 from .theory import beats_per_bar, in_key
-from ..schema import SongState
+from ..domain.song_state import SongState
 
 _EPS = 1e-6
 

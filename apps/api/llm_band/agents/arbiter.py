@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..schema import NegotiationRequest
+from ..domain.song_state import NegotiationRequest
 
 
 class ArbiterResolution(BaseModel):
@@ -41,7 +41,7 @@ def run_arbiter(pending: list[NegotiationRequest], llm=None) -> list[Negotiation
     if not pending:
         return []
     if llm is None:
-        from ..llm import make_llm
+        from llm_band.infrastructure.gemini.llm import make_llm
 
         llm = make_llm("director")
     structured = llm.with_structured_output(ArbiterOutput)

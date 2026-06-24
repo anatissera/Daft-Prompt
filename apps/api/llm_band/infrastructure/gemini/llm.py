@@ -1,16 +1,10 @@
-"""Provider-agnostic chat-model factory.
-
-The project stays multi-provider: `LLM_PROVIDER` (env) selects Gemini, Groq, or
-OpenRouter at runtime; only the chosen provider's integration package needs to be
-installed (imports are lazy). Everything downstream consumes a LangChain chat model
-and `.with_structured_output(...)`, so swapping providers never touches agent code.
-"""
+"""Provider-backed LangChain chat-model factory."""
 
 from __future__ import annotations
 
 from typing import Optional
 
-from .config import DEFAULT_MODELS, Settings, get_settings
+from llm_band.config import DEFAULT_MODELS, Settings, get_settings
 
 
 def _model_name(role: str, settings: Settings) -> str:
@@ -19,11 +13,6 @@ def _model_name(role: str, settings: Settings) -> str:
 
 
 def make_llm(role: str = "director", settings: Optional[Settings] = None):
-    """Return a LangChain chat model for `role` ("director" | "instrument").
-
-    Raises RuntimeError if no provider/key is configured — callers that want a
-    graceful fallback should check `settings.llm_configured` first.
-    """
     s = settings or get_settings()
     if not s.llm_configured:
         raise RuntimeError(

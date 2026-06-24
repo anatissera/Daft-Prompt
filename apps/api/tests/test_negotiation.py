@@ -10,7 +10,7 @@ from langgraph.errors import GraphRecursionError
 from llm_band.agents.arbiter import ArbiterOutput, ArbiterResolution
 from llm_band.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
 from llm_band.graph import _build_negotiation_graph, run_negotiation
-from llm_band.schema import Header, Note, RosterItem, SongState
+from llm_band.domain.song_state import Header, Note, RosterItem, SongState
 
 HEADER = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
 BASS = RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove")
