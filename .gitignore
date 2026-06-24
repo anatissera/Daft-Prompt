@@ -10,6 +10,8 @@ apps/api/outputs/
 
 # Node / Next.js
 node_modules/
+apps/web/.next/
+EOF
 .next/
 out/
 next-env.d.ts.timestamp
@@ -21,3 +23,5 @@ next-env.d.ts.timestamp
 
 # OS / editor
 .DS_Store
+
+

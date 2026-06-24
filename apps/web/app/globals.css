@@ -434,6 +434,125 @@ body {
 
 /* ---- Score / MIDI frames --------------------------------------------------- */
 
+.track-mixer {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.mixer-transport {
+  display: grid;
+  grid-template-columns: auto auto minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+}
+
+.transport-button,
+.mixer-toggle {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 34px;
+  padding: 0 var(--space-3);
+}
+
+.transport-button:hover:not(:disabled),
+.mixer-toggle:hover {
+  border-color: var(--color-accent);
+}
+
+.transport-button:disabled {
+  color: var(--color-text-faint);
+  cursor: default;
+}
+
+.transport-range {
+  min-width: 0;
+  width: 100%;
+}
+
+.transport-time {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.mixer-track-list {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mixer-track {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+}
+
+.mixer-track-active {
+  border-color: rgba(124, 108, 255, 0.55);
+}
+
+.mixer-track-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mixer-track-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.mixer-toggle-on {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
+}
+
+.artifact-link {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.artifact-link:hover {
+  color: var(--color-text);
+}
+
+@media (max-width: 640px) {
+  .mixer-transport {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .transport-range {
+    grid-column: 1 / -1;
+  }
+
+  .mixer-track {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .mixer-track-actions {
+    grid-column: 2;
+  }
+}
+
 .media-frame {
   border-radius: var(--radius-md);
   overflow: auto;
