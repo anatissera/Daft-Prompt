@@ -16,6 +16,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from ..config import get_settings
+from ..infrastructure.llm import LLMError
 from ..music.theory import beats_per_bar
 from ..music.validators import ValidationIssue, errors_only, validate_song
 from ..domain.song_state import Header, NegotiationRequest, Note, Part, RosterItem, SongState
@@ -97,15 +99,18 @@ def _fallback_part(roster_item: RosterItem, reason: str = "model did not return 
 
 def _invoke_structured(structured, messages, schema_name: str):
     last_error = None
-    for attempt in range(STRUCTURED_OUTPUT_RETRIES + 1):
+    retries = max(0, get_settings().llm_max_retries)
+    for attempt in range(retries + 1):
         try:
             out = structured.invoke(messages)
+        except LLMError:
+            raise
         except Exception as exc:
             last_error = exc
             out = None
         if out is not None:
             return out
-        if attempt < STRUCTURED_OUTPUT_RETRIES:
+        if attempt < retries:
             messages = messages + [
                 (
                     "human",

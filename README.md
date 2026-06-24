@@ -117,6 +117,10 @@ cp .env.example .env   # optional: uncomment LLM_PROVIDER + an API key to use a 
 
 Runs on http://localhost:8000 (health check: `/health`). With no LLM key set, `/compose`
 falls back to a canned demo song — no provider required to try the pipeline end-to-end.
+For free-tier LLM use, configure Gemini as the primary provider and OpenRouter as
+an optional fallback in `.env`. The backend rate-limits model calls, can rotate
+through configured model fallbacks, and reports quota/provider failures in the
+SSE stream instead of returning silent empty agent parts.
 
 **Frontend** (`apps/web`):
 

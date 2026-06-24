@@ -1,7 +1,7 @@
 import type { ComposeEvent } from "@/lib/types";
 import { instrumentColor } from "@/lib/colors";
 
-type FeedEvent = Extract<ComposeEvent, { type: "agent_pass" | "convergence" }>;
+type FeedEvent = Extract<ComposeEvent, { type: "agent_pass" | "convergence" | "error" }>;
 
 function CheckIcon() {
   return (
@@ -52,7 +52,30 @@ export default function NegotiationFeed({ events }: { events: FeedEvent[] }) {
       <h2 className="section-title">Negotiation</h2>
       <ul className="feed-list">
         {events.map((e, i) =>
-          e.type === "agent_pass" ? (
+          e.type === "error" ? (
+            <li key={i} className="feed-entry">
+              <span className="feed-rail">
+                <span
+                  className="avatar"
+                  style={{
+                    background: "var(--color-danger)",
+                    width: 24,
+                    height: 24,
+                    fontSize: 11,
+                  }}
+                >
+                  !
+                </span>
+              </span>
+              <span className="feed-body">
+                <span className="feed-header">
+                  <span className="feed-instrument">model error</span>
+                  <span className="feed-round">{e.provider ?? "provider"}</span>
+                </span>
+                <p className="feed-summary">{e.message}</p>
+              </span>
+            </li>
+          ) : e.type === "agent_pass" ? (
             <li key={i} className="feed-entry">
               <span className="feed-rail">
                 <span

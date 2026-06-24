@@ -43,7 +43,7 @@ def run_arbiter(pending: list[NegotiationRequest], llm=None) -> list[Negotiation
     if llm is None:
         from llm_band.infrastructure.gemini.llm import make_llm
 
-        llm = make_llm("director")
+        llm = make_llm("arbiter")
     structured = llm.with_structured_output(ArbiterOutput)
     out: ArbiterOutput = structured.invoke(_prompt(pending))
 

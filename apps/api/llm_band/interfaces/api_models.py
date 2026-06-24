@@ -49,6 +49,15 @@ class ConvergenceEvent(BaseModel):
     resolved_requests: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ErrorEvent(BaseModel):
+    type: Literal["error"] = "error"
+    code: str
+    message: str
+    provider: str | None = None
+    model: str | None = None
+    partial: bool = False
+
+
 class DoneEvent(BaseModel):
     type: Literal["done"] = "done"
     job_id: str
@@ -57,7 +66,7 @@ class DoneEvent(BaseModel):
     artifacts: Artifacts
 
 
-ComposeEvent = DirectorEvent | AgentPassEvent | ConvergenceEvent | DoneEvent
+ComposeEvent = DirectorEvent | AgentPassEvent | ConvergenceEvent | ErrorEvent | DoneEvent
 
 
 def event_payload(event: BaseModel | dict[str, Any]) -> dict[str, Any]:

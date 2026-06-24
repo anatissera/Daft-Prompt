@@ -27,6 +27,18 @@ class Settings(BaseSettings):
 
     model_director: Optional[str] = None
     model_instrument: Optional[str] = None
+    model_arbiter: Optional[str] = None
+
+    gemini_model_fallbacks: Optional[str] = None
+    openrouter_model_director: Optional[str] = None
+    openrouter_model_instrument: Optional[str] = None
+    openrouter_model_arbiter: Optional[str] = None
+    openrouter_model_fallbacks: Optional[str] = None
+    llm_fallback_providers: str = "gemini,openrouter"
+
+    llm_max_retries: int = 1
+    llm_rpm_limit: int = 5
+    llm_fail_fast_on_quota: bool = True
 
     max_rounds: int = 3
 
