@@ -80,6 +80,77 @@ export interface ComposeResponse {
   };
 }
 
+export type ReferenceSourceKind = "upload" | "direct_url" | "youtube" | "metadata" | "local";
+export type ConfidenceLabel = "low" | "medium" | "high";
+
+export interface ReferenceSource {
+  reference_id: string;
+  kind: ReferenceSourceKind;
+  label: string;
+  uri: string;
+  authorized: boolean;
+  permission_error: string | null;
+}
+
+export interface ChordEstimate {
+  start_seconds: number;
+  end_seconds: number;
+  chords: string[];
+  confidence: number;
+  is_probable: boolean;
+  confidence_label: ConfidenceLabel;
+  label: string;
+}
+
+export interface EnergyPoint {
+  time_seconds: number;
+  energy: number;
+  confidence: number;
+}
+
+export interface SectionProfile {
+  name: string;
+  start_seconds: number;
+  end_seconds: number;
+  confidence: number;
+  energy: number | null;
+  energy_confidence: number;
+  chord_estimates: ChordEstimate[];
+}
+
+export interface StemProfile {
+  name: string;
+  artifact_uri: string | null;
+  confidence: number;
+}
+
+export interface AudioProfile {
+  duration_seconds: number;
+  tempo_bpm: number | null;
+  tempo_confidence: number;
+  key: string | null;
+  key_confidence: number;
+  confidence: number;
+  overall_confidence: number;
+  energy_curve: EnergyPoint[];
+  chord_estimates: ChordEstimate[];
+  sections: SectionProfile[];
+  stems: StemProfile[];
+}
+
+export interface ReferenceProfile {
+  reference_id: string;
+  source: ReferenceSource;
+  audio: AudioProfile | null;
+  summary: string;
+}
+
+export interface ExplanationAnswer {
+  reference_id: string;
+  answer: string;
+  evidence: string[];
+}
+
 // SSE events from POST /compose/stream (proxied by app/api/compose), in emission
 // order: one "director" event, zero or more "agent_pass" events as instruments
 // compose/negotiate, optional "error", one "convergence" or "done" event.

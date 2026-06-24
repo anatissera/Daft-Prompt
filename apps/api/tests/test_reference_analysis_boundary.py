@@ -14,6 +14,8 @@ from llm_band.application.analyze_reference import AnalyzeReference, ResolveRefe
 from llm_band.application.answer_music_question import AnswerMusicQuestion
 from llm_band.domain.audio_profile import (
     AudioProfile,
+    ChordEstimate,
+    EnergyPoint,
     ExplanationAnswer,
     ReferenceProfile,
     ReferenceSource,
@@ -69,9 +71,40 @@ def test_reference_analysis_use_cases_run_with_fakes_and_no_audio_or_network():
         audio=AudioProfile(
             duration_seconds=12.0,
             tempo_bpm=118.0,
+            tempo_confidence=0.86,
             key="C major",
+            key_confidence=0.73,
             confidence=0.91,
-            sections=[SectionProfile(name="loop", start_seconds=0.0, end_seconds=12.0)],
+            overall_confidence=0.91,
+            energy_curve=[
+                EnergyPoint(time_seconds=0.0, energy=0.35, confidence=0.8),
+                EnergyPoint(time_seconds=6.0, energy=0.82, confidence=0.84),
+            ],
+            chord_estimates=[
+                ChordEstimate(
+                    start_seconds=0.0,
+                    end_seconds=12.0,
+                    chords=["Am", "F", "C", "G"],
+                    confidence=0.66,
+                )
+            ],
+            sections=[
+                SectionProfile(
+                    name="loop",
+                    start_seconds=0.0,
+                    end_seconds=12.0,
+                    energy=0.78,
+                    energy_confidence=0.81,
+                    chord_estimates=[
+                        ChordEstimate(
+                            start_seconds=0.0,
+                            end_seconds=12.0,
+                            chords=["Am", "F", "C", "G"],
+                            confidence=0.66,
+                        )
+                    ],
+                )
+            ],
         ),
     )
     analyzer = FakeAudioAnalyzer({"ref_demo": profile})
@@ -79,6 +112,17 @@ def test_reference_analysis_use_cases_run_with_fakes_and_no_audio_or_network():
 
     assert analyzed.audio is not None
     assert analyzed.audio.tempo_bpm == 118.0
+    assert analyzed.audio.tempo_confidence == 0.86
+    assert analyzed.audio.key_confidence == 0.73
+    assert analyzed.audio.overall_confidence == 0.91
+    assert analyzed.audio.energy_curve[1].energy == 0.82
+    assert analyzed.audio.chord_estimates[0].is_probable is True
+    assert analyzed.audio.chord_estimates[0].label == "Probably Am - F - C - G"
+    assert analyzed.audio.sections[0].energy == 0.78
+    assert analyzed.audio.sections[0].chord_estimates[0].confidence_label == "medium"
+    dumped_chord = analyzed.model_dump(mode="json")["audio"]["chord_estimates"][0]
+    assert dumped_chord["label"] == "Probably Am - F - C - G"
+    assert dumped_chord["confidence_label"] == "medium"
 
     answer = AnswerMusicQuestion(FakeExplainer()).execute(
         "why does the chorus lift?", analyzed
