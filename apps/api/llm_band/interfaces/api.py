@@ -2,26 +2,33 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Iterator
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
 from llm_band.agents.director import run_director
+from llm_band.application.analyze_reference import AnalyzeReference
 from llm_band.application.compose_song import ComposeSong
 from llm_band.canned import canned_song
 from llm_band.config import get_settings
+from llm_band.domain.audio_profile import ReferenceProfile, ReferenceSource
 from llm_band.domain.song_state import Part
 from llm_band.graph import iter_negotiation_events, run_negotiation
+from llm_band.infrastructure.mir.librosa_analyzer import LibrosaAnalyzer
 from llm_band.infrastructure.storage.render_artifacts import render_artifacts
 from llm_band.infrastructure.storage.local_store import LocalArtifactStore
 from llm_band.infrastructure.llm import LLMAllProvidersFailed, LLMError
 from llm_band.interfaces.api_models import Artifacts, ComposeRequest, ComposeResponse, DoneEvent, ErrorEvent, sse_data
 
 OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
+REFERENCE_UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
+SUPPORTED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
+UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 app = FastAPI(title="Multi-agent Band API", version="0.1.0")
 
@@ -36,6 +43,74 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/references/analyze", response_model=ReferenceProfile)
+async def analyze_reference_upload(file: UploadFile | None = File(None)) -> ReferenceProfile:
+    if file is None:
+        raise HTTPException(status_code=400, detail="missing audio file")
+
+    filename = Path(file.filename or "").name
+    if not filename:
+        raise HTTPException(status_code=400, detail="empty filename")
+
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_REFERENCE_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail=f"unsupported audio file extension: {suffix or 'none'}",
+        )
+
+    reference_id = f"ref_{uuid.uuid4().hex[:12]}"
+    upload_root = _reference_upload_root()
+    upload_dir = upload_root / reference_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = upload_dir / filename
+
+    total_bytes = 0
+    try:
+        with audio_path.open("wb") as handle:
+            while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+                total_bytes += len(chunk)
+                if total_bytes > _reference_upload_max_bytes():
+                    audio_path.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail="uploaded audio file is too large",
+                    )
+                handle.write(chunk)
+    finally:
+        await file.close()
+
+    if total_bytes == 0:
+        audio_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="uploaded audio file is empty")
+
+    source = ReferenceSource(
+        reference_id=reference_id,
+        kind="upload",
+        label=filename,
+        uri=str(audio_path),
+        authorized=True,
+    )
+    try:
+        return AnalyzeReference(LibrosaAnalyzer()).execute(source)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"could not analyze uploaded audio: {exc}",
+        ) from exc
+
+
+def _reference_upload_root() -> Path:
+    configured = getattr(get_settings(), "reference_upload_dir", None)
+    return Path(configured).expanduser() if configured else REFERENCE_UPLOADS
+
+
+def _reference_upload_max_bytes() -> int:
+    return int(getattr(get_settings(), "reference_upload_max_bytes", 50 * 1024 * 1024))
 
 
 @app.post("/compose", response_model=ComposeResponse)

@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     llm_fail_fast_on_quota: bool = True
 
     max_rounds: int = 3
+    reference_upload_dir: Optional[str] = None
+    reference_upload_max_bytes: int = 50 * 1024 * 1024
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
