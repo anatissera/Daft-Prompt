@@ -1,4 +1,4 @@
-// TypeScript mirror of the backend `SongState` (apps/api/llm_band/schema.py).
+// TypeScript mirror of the backend `SongState` (apps/api/llm_band/domain/song_state.py).
 // Keep in sync; later phases may generate this from the JSON schema in CI.
 
 export interface Section {

@@ -1,155 +1,179 @@
-# Multiagent Band 🎵
+# LLMinem
 
-A multi-agent music composition system. You describe a style and a band of LLM agents composes
-a full song for it.
+LLMinem is a conversational music workspace.
 
-## How it works
+The product goal is a chat-first assistant that can analyze local songs with
+music tools and compose new songs either from scratch or from an analyzed
+reference.
 
-A **director agent** interprets the request and *reasons about* which instruments
-the genre needs (it is **not** a hardcoded genre→instrument table). It then spawns
-one **specialized sub-agent per instrument**. Each sub-agent composes its part and
-**negotiates with the others** during composition — the bass can ask the drums to
-leave space for a fill, the guitar can propose a chord change in the bridge — over
-a shared, structured song state. The final song is exported to **MIDI** and
-rendered as **sheet music**.
+The current repo already contains a working multi-agent composition prototype.
+The next MVP plan extends it into the chat musical product described in
+[`PRODUCT.md`](./PRODUCT.md).
 
-## Why it's agentic (not just a chain of LLM calls)
+## Source Of Truth
 
-- **Reasoned instrumentation** — the ensemble is inferred from the style, not looked up.
-- **Feedback-driven iteration** — each part is revised in response to other agents.
-- **Dynamic structure** — which agents exist and how many negotiation rounds run is
-  decided at runtime and adapts to the request.
-- **Goal-seeking with convergence** — agents negotiate toward a coherent whole and
-  stop at a fixed point (or are force-converged), rather than emitting one shot each.
+- [`PRODUCT.md`](./PRODUCT.md): product behavior and MVP scope.
+- [`DESIGN.md`](./DESIGN.md): UX direction for the chat-first interface.
+- [`docs/architecture.md`](./docs/architecture.md): technical boundaries and
+  architecture notes.
+- [`plans/chat-musical-mvp.md`](./plans/chat-musical-mvp.md): current
+  implementation roadmap.
+- [`plans/multiagent-band.md`](./plans/multiagent-band.md): historical plan for
+  the composition engine.
 
-## LLM provider — free tier (not decided yet)
+## What Exists Today
 
-To avoid paid API usage, the project targets a **free, no-credit-card LLM API**.
-Three candidates are on the table; the final pick is **TBD**:
+Working prototype:
 
-| Provider | Model | LangChain integration | Free tier (≈) | Notes |
-|---|---|---|---|---|
-| **Google Gemini** (AI Studio) | Gemini 2.5 Flash | `langchain-google-genai` → `ChatGoogleGenerativeAI` | ~1,500 req/day, 10 RPM | Native structured output, best LangGraph fit |
-| **Groq** | Llama 3.3 70B | `langchain-groq` → `ChatGroq` | ~1,000 req/day | Extremely fast (LPU) |
-| **OpenRouter** | free models (DeepSeek, Gemini, …) | OpenAI-compatible base URL | ~200 req/day/model | Wide model choice |
+- Python FastAPI backend.
+- Clean architecture layers: `domain`, `application`, `ports`,
+  `infrastructure`, and `interfaces`.
+- Canonical `SongState` Pydantic schema.
+- Director, instrument, and arbiter agents.
+- Bounded negotiation rounds through LangGraph shared state.
+- Deterministic validation and rendering.
+- MIDI and MusicXML artifact generation.
+- SSE streaming for composition events.
+- Next.js UI that can submit a style prompt, show roster/negotiation activity,
+  render MusicXML, and play generated parts through a simple mixer.
+- Tests for validators, converters, agents, negotiation, provider routing,
+  streaming, and architecture boundaries.
 
-> All free tiers may use prompts for training — fine for a course project, not for
-> sensitive data. Set the key via env var (`GEMINI_API_KEY` / `GROQ_API_KEY` /
-> `OPENROUTER_API_KEY`); never commit keys.
+Not implemented yet:
 
-## Related work
+- Chat-first product flow.
+- Local audio upload and real MIR analysis.
+- Tempo/key/energy/section/chord extraction from audio.
+- Evidence-grounded music Q&A over a `ReferenceProfile`.
+- Reference-guided composition through chat.
+- Backend Dockerfile and local Docker Compose runtime.
 
-Two academic systems do something similar — worth reading and differentiating against:
+## Product Direction
 
-- **ComposerX** ([arXiv:2404.18081](https://arxiv.org/abs/2404.18081)) — leader +
-  melody/harmony/instrument + review + arrangement agents over conversation chains.
-- **CoComposer** ([arXiv:2509.00132](https://arxiv.org/abs/2509.00132)) — 5 agents,
-  fewer rounds; found a separate per-instrument-agent design *less* efficient.
+The MVP should support one conversational flow:
 
-Our angle differs: the director **reasons the instrumentation from the genre**,
-agents do **peer negotiation via shared state**, and we target **MIDI + engraved
-sheet music**. CoComposer's efficiency caveat is handled by our round cap +
-convergence gate (see `PRD.md`).
+1. The user chats naturally.
+2. The user can attach or select a local audio file.
+3. The backend analyzes the file into a compact `ReferenceProfile`.
+4. The assistant answers music questions using tool evidence.
+5. The user can compose from scratch.
+6. The user can compose from the analyzed reference.
+7. The generated song is playable, exportable, and inspectable.
 
-## Tech stack
+Chord estimates should be treated as probabilities, not facts. Good answer style:
 
-| Concern | Choice |
-|---|---|
-| Orchestration | [LangGraph](https://langchain-ai.github.io/langgraph/) (typed shared state, cycles, checkpointing) |
-| LLM | Free-tier provider — **Gemini / Groq / OpenRouter** (TBD), via its LangChain integration |
-| Data model | Pydantic v2 (canonical `SongState` + parts) |
-| Music theory & notation | [music21](https://web.mit.edu/music21/) (→ MusicXML → sheet music) |
-| MIDI export | [pretty_midi](https://github.com/craffel/pretty-midi) |
-| Notation render | MuseScore or LilyPond (server) · OpenSheetMusicDisplay (browser) |
-| Backend API | [FastAPI](https://fastapi.tiangolo.com/) (SSE-streamed negotiation) |
-| Frontend | [Next.js](https://nextjs.org/) + React + TypeScript, deployed to [Vercel](https://vercel.com/) |
-| Hosting | Vercel (frontend) + container host for the Python backend (Render / Railway / Fly.io) |
-| Tests | pytest |
+> "Probably Am - F - C - G in this section."
 
-## Status
+By default, reference-guided composition should transfer tempo, structure, energy,
+and mood. It should not copy estimated chords unless the user asks for harmonic
+guidance.
 
-Working prototype. The backend has the canonical `SongState` schema,
-deterministic validation/rendering, director/instrument/arbiter agents,
-bounded negotiation rounds, FastAPI endpoints, and SSE streaming. The Next.js UI
-can submit a style, show the roster/negotiation feed, render MusicXML, and play
-the MIDI artifact.
-
-The listening/reference-analysis feature is **not implemented yet**. The backend
-is organized into clean architecture layers (`domain`, `application`, `ports`,
-`infrastructure`, `interfaces`) so future audio analysis can be added without
-coupling provider details, MIR libraries, downloads, or raw audio artifacts to
-composition, rendering, or the existing API.
+## Architecture
 
 Current backend layer map:
 
 ```text
 llm_band/
-  domain/          # SongState and future ReferenceProfile/AudioProfile data
+  domain/          # SongState and ReferenceProfile/AudioProfile models
   application/     # compose/analyze/answer use cases
   ports/           # LLM, storage, audio analysis, transcription, stems
   infrastructure/  # provider/storage/MIR adapters and placeholders
   interfaces/      # FastAPI HTTP/SSE boundary
 ```
 
-## Pipeline
+The existing composition pipeline:
 
+```text
+style request
+  -> director (arrangement + roster)
+  -> instrument agents compose
+  -> negotiation rounds through shared SongState
+  -> convergence / arbiter
+  -> render
+  -> song.mid + song.musicxml
 ```
-style request → director (arrangement + roster) → instrument agents compose
-   → negotiation rounds (shared state) → validation → convergence / arbiter
-   → render → song.mid + sheet music
+
+The planned chat musical pipeline:
+
+```text
+chat message + optional local audio
+  -> chat intent router
+  -> local audio analysis and/or music Q&A and/or composition
+  -> ReferenceProfile and/or SongState
+  -> conversational answer + playable artifacts
 ```
 
-The pipeline is a Python (FastAPI) backend; a **Next.js** web UI on **Vercel**
-streams the negotiation live and plays the result. See [`PRD.md`](./PRD.md) →
-*Frontend & Deployment* for why the Python backend runs on a container host rather
-than directly on Vercel.
+Composition agents should consume compact `ReferenceProfile` summaries only.
+They should not call MIR libraries, storage adapters, provider upload APIs, or
+raw audio directly.
 
-## Running locally
+## Running Locally
 
-**Backend** (`apps/api`):
+Backend (`apps/api`):
 
 ```bash
 cd apps/api
-python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-cp .env.example .env   # optional: uncomment LLM_PROVIDER + an API key to use a real director
+python -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+cp .env.example .env
 .venv/bin/uvicorn llm_band.api:app --reload
 ```
 
-Runs on http://localhost:8000 (health check: `/health`). With no LLM key set, `/compose`
-falls back to a canned demo song — no provider required to try the pipeline end-to-end.
-For free-tier LLM use, configure Gemini as the primary provider and OpenRouter as
-an optional fallback in `.env`. The backend rate-limits model calls, can rotate
-through configured model fallbacks, and reports quota/provider failures in the
-SSE stream instead of returning silent empty agent parts.
+Runs on [http://localhost:8000](http://localhost:8000). Health check:
+`/health`.
 
-**Frontend** (`apps/web`):
+With no LLM key set, `/compose` falls back to a canned demo song, so the current
+composition pipeline can run end-to-end without a provider.
+
+Frontend (`apps/web`):
 
 ```bash
 cd apps/web
 npm install
-cp .env.local.example .env.local   # points at http://localhost:8000
+cp .env.local.example .env.local
 npm run dev
 ```
 
-Runs on http://localhost:3000 (Next.js picks another free port if 3000 is taken).
+Runs on [http://localhost:3000](http://localhost:3000). Next.js may choose a
+different port if 3000 is taken.
 
-## Roadmap
+## Verification
 
-1. Harden the current composition prototype: provider selection, prompt quality,
-   validation repairs, artifact storage, deployment, and observability.
-2. Keep `SongState` mirrored between Pydantic and TypeScript, preferably generated
-   from JSON schema in CI.
-3. Build real infrastructure adapters later: authorized source resolution,
-   MIR/audio profiling, optional Gemini audio explanations, and storage.
-4. Add a listening UI only after the reference-analysis use cases exist behind
-   fakes and provider adapters.
-5. Let composition consume only compact `ReferenceProfile` summaries, never raw
-   URLs/audio/provider internals.
+Backend:
 
-See [`PRD.md`](./PRD.md) for the JSON schema, architecture diagram, folder
-layout, failure modes, and verification plan.
+```bash
+cd apps/api
+python -m pytest
+```
+
+Frontend:
+
+```bash
+cd apps/web
+npm run typecheck
+node --test lib/trackMixerLogic.test.mjs
+```
+
+## Deployment Direction
+
+The MVP does not require persisted memory or a database. It is acceptable for
+uploaded references, chats, songs, and generated artifacts to be lost when the
+process or container restarts.
+
+The backend should be containerized early because Python music/audio libraries
+and future MIR dependencies are better suited to a container host than to
+serverless frontend functions.
+
+Likely deployment shape:
+
+- Next.js frontend on Vercel or a similar web host.
+- FastAPI backend as a container on Render, Railway, Fly.io, Cloud Run, or
+  similar.
+- Local filesystem storage for MVP/local development.
+- Optional object storage later for durable deployed artifacts.
 
 ## Branching
 
 - `main` — stable / released.
-- `develop` — integration branch; feature branches merge here.
+- `develop` — integration branch.
+- feature branches — individual slices of the MVP plan.
