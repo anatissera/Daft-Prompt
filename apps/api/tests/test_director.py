@@ -6,6 +6,8 @@ import pytest
 
 from llm_band.agents.director import (
     MAX_ROSTER,
+    MAX_BARS,
+    MIN_BARS,
     ArrangementInstrument,
     ArrangementSection,
     DirectorOutput,
@@ -76,6 +78,23 @@ def test_midi_range_is_normalized():
     out.instruments[0].midi_high = 40  # backwards on purpose
     song = arrangement_to_song("x", out)
     assert song.roster[0].midi_range == (40, 60)
+
+
+def test_director_clamps_bar_count_and_sections():
+    out = _output(3)
+    out.num_bars = 160
+    out.sections = [
+        ArrangementSection(name="long", start_bar=0, end_bar=160),
+        ArrangementSection(name="outside", start_bar=64, end_bar=100),
+    ]
+
+    song = arrangement_to_song("oversized", out)
+
+    assert MIN_BARS <= song.header.num_bars <= MAX_BARS
+    assert song.header.num_bars == MAX_BARS
+    assert song.header.sections[0].end_bar == MAX_BARS
+    assert song.header.sections[1].start_bar == MAX_BARS - 1
+    assert song.header.sections[1].end_bar == MAX_BARS
 
 
 def test_make_llm_requires_configuration():

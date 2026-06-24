@@ -34,20 +34,20 @@ class ComposeSong:
         if self.llm_configured():
             song = self.director(style)
             source = "director"
-            yield _director_event(song, source), None, source
-            yield from ((event, None, source) for event in self.event_streamer(song))
+            yield _director_event(song, source), song, source
+            yield from ((event, song, source) for event in self.event_streamer(song))
             yield {}, song, source
             return
 
         song = self.canned(style)
         source = "canned"
-        yield _director_event(song, source), None, source
+        yield _director_event(song, source), song, source
         yield {
             "type": "convergence",
             "round": song.round,
             "converged": True,
             "resolved_requests": [],
-        }, None, source
+        }, song, source
         yield {}, song, source
 
 

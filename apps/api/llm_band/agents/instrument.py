@@ -21,6 +21,7 @@ from ..music.validators import ValidationIssue, errors_only, validate_song
 from ..domain.song_state import Header, NegotiationRequest, Note, Part, RosterItem, SongState
 
 MAX_REPAIRS = 2
+STRUCTURED_OUTPUT_RETRIES = 1
 
 
 class InstrumentOutput(BaseModel):
@@ -85,6 +86,37 @@ def _to_part(roster_item: RosterItem, out: InstrumentOutput) -> Part:
     )
 
 
+def _fallback_part(roster_item: RosterItem, reason: str = "model did not return structured output") -> Part:
+    return Part(
+        instrument_id=roster_item.id,
+        notes=[],
+        notes_summary=f"fallback: {reason}",
+        self_notes=reason,
+    )
+
+
+def _invoke_structured(structured, messages, schema_name: str):
+    last_error = None
+    for attempt in range(STRUCTURED_OUTPUT_RETRIES + 1):
+        try:
+            out = structured.invoke(messages)
+        except Exception as exc:
+            last_error = exc
+            out = None
+        if out is not None:
+            return out
+        if attempt < STRUCTURED_OUTPUT_RETRIES:
+            messages = messages + [
+                (
+                    "human",
+                    f"Return only a valid {schema_name} object matching the requested structured schema. Do not return prose.",
+                )
+            ]
+    if last_error is not None:
+        return None
+    return None
+
+
 def compose_part(
     header: Header,
     roster_item: RosterItem,
@@ -108,7 +140,9 @@ def compose_part(
         ("system", _system_prompt(header, roster_item)),
         ("human", f"Other instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
     ]
-    out: InstrumentOutput = structured.invoke(messages)
+    out = _invoke_structured(structured, messages, "InstrumentOutput")
+    if out is None:
+        return _fallback_part(roster_item)
     part = _to_part(roster_item, out)
 
     for _ in range(MAX_REPAIRS):
@@ -119,7 +153,9 @@ def compose_part(
             ("ai", f"My part: {out.notes_summary}"),
             ("human", _repair_prompt(issues)),
         ]
-        out = structured.invoke(messages)
+        out = _invoke_structured(structured, messages, "InstrumentOutput")
+        if out is None:
+            return _fallback_part(roster_item)
         part = _to_part(roster_item, out)
 
     return part
@@ -194,7 +230,9 @@ def run_instrument_turn(
         messages.append(("ai", f"My current part: {existing_part.notes_summary}"))
     messages.append(("human", _pending_context(pending)))
 
-    out: InstrumentTurnOutput = structured.invoke(messages)
+    out = _invoke_structured(structured, messages, "InstrumentTurnOutput")
+    if out is None:
+        return _fallback_part(roster_item), [], []
     part = _to_part(roster_item, out)
 
     for _ in range(MAX_REPAIRS):
@@ -205,7 +243,9 @@ def run_instrument_turn(
             ("ai", f"My part: {out.notes_summary}"),
             ("human", _repair_prompt(issues)),
         ]
-        out = structured.invoke(messages)
+        out = _invoke_structured(structured, messages, "InstrumentTurnOutput")
+        if out is None:
+            return _fallback_part(roster_item), [], []
         part = _to_part(roster_item, out)
 
     return part, out.request_resolutions, out.new_requests
