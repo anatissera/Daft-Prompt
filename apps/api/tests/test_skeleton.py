@@ -6,7 +6,7 @@ from __future__ import annotations
 import pretty_midi
 from fastapi.testclient import TestClient
 
-from llm_band.api import app
+import llm_band.interfaces.api as api
 from llm_band.canned import canned_song
 from llm_band.music.render_midi import render_midi
 from llm_band.music.render_sheet import render_musicxml
@@ -29,8 +29,13 @@ def test_canned_song_renders_valid_musicxml(tmp_path):
     assert "score-partwise" in text  # well-formed MusicXML root
 
 
-def test_compose_endpoint_returns_artifacts():
-    client = TestClient(app)
+class _NoLLMCfg:
+    llm_configured = False
+
+
+def test_compose_endpoint_returns_artifacts(monkeypatch):
+    monkeypatch.setattr(api, "get_settings", lambda: _NoLLMCfg())
+    client = TestClient(api.app)
     resp = client.post("/compose", json={"style": "slow blues"})
     assert resp.status_code == 200
     body = resp.json()
