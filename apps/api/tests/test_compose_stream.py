@@ -31,6 +31,10 @@ class _Cfg:
     llm_configured = True
 
 
+class _NoLLMCfg:
+    llm_configured = False
+
+
 def _fake_song(style: str):
     out = DirectorOutput(
         genre="disco", key="C major", tempo_bpm=120,
@@ -52,10 +56,18 @@ def _fake_negotiation_events(song):
     yield {"type": "convergence", "round": 0, "converged": True, "resolved_requests": []}
 
 
+def _fake_failing_negotiation_events(song):
+    yield {"type": "agent_pass", "round": 0, "instrument_id": "bass",
+           "notes_summary": "fallback: model did not return structured output",
+           "new_requests": [], "resolved_requests": []}
+    raise RuntimeError("instrument failed after fallback event")
+
+
 def test_compose_stream_director_path_emits_agent_pass_and_done(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
     monkeypatch.setattr(api, "run_director", _fake_song)
     monkeypatch.setattr(api, "iter_negotiation_events", _fake_negotiation_events)
+    monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose/stream", json={"style": "disco"})
 
@@ -73,7 +85,26 @@ def test_compose_stream_director_path_emits_agent_pass_and_done(monkeypatch):
     assert done["artifacts"]["midi"].endswith("song.mid")
 
 
-def test_compose_stream_canned_path_emits_director_and_done():
+def test_compose_stream_survives_negotiation_exception_after_fallback_event(monkeypatch):
+    monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
+    monkeypatch.setattr(api, "run_director", _fake_song)
+    monkeypatch.setattr(api, "iter_negotiation_events", _fake_failing_negotiation_events)
+    monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
+    client = TestClient(api.app)
+    resp = client.post("/compose/stream", json={"style": "disco"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert types == ["director", "agent_pass", "convergence", "done"]
+    assert events[1]["instrument_id"] == "bass"
+    assert "fallback" in events[1]["notes_summary"]
+    assert events[-1]["song"]["parts"]["bass"]["notes_summary"].startswith("fallback")
+
+
+def test_compose_stream_canned_path_emits_director_and_done(monkeypatch):
+    monkeypatch.setattr(api, "get_settings", lambda: _NoLLMCfg())
+    monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose/stream", json={"style": "slow blues"})
 

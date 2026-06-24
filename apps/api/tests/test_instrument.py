@@ -3,7 +3,14 @@
 
 from __future__ import annotations
 
-from llm_band.agents.instrument import MAX_REPAIRS, InstrumentOutput, _peer_context, compose_part
+from llm_band.agents.instrument import (
+    MAX_REPAIRS,
+    InstrumentOutput,
+    InstrumentTurnOutput,
+    _peer_context,
+    compose_part,
+    run_instrument_turn,
+)
 from llm_band.domain.song_state import Header, Note, RosterItem
 
 
@@ -67,6 +74,35 @@ def test_compose_part_never_crashes_when_repairs_exhausted():
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
     assert part.notes[0].pitch == 10  # shipped as-is
     assert llm.structured.calls == 1 + MAX_REPAIRS
+
+
+def test_compose_part_falls_back_when_structured_output_is_none():
+    llm = FakeLLM([None, None])
+    part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
+
+    assert part.instrument_id == "bass"
+    assert part.notes == []
+    assert "structured output" in part.notes_summary
+    assert llm.structured.calls == 2
+
+
+def test_run_instrument_turn_falls_back_when_structured_output_is_none():
+    class TurnLLM(FakeLLM):
+        def with_structured_output(self, schema):
+            assert schema is InstrumentTurnOutput
+            return self.structured
+
+    llm = TurnLLM([None, None])
+    part, resolutions, new_requests = run_instrument_turn(
+        HEADER, BASS, ROSTER, {}, [], None, llm=llm
+    )
+
+    assert part.instrument_id == "bass"
+    assert part.notes == []
+    assert "structured output" in part.notes_summary
+    assert resolutions == []
+    assert new_requests == []
+    assert llm.structured.calls == 2
 
 
 def test_peer_context_uses_summary_strings_not_note_lists():

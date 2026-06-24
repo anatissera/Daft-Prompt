@@ -18,6 +18,10 @@ class _Cfg:
     llm_configured = True
 
 
+class _NoLLMCfg:
+    llm_configured = False
+
+
 def _fake_song(style: str):
     out = DirectorOutput(
         genre="disco", key="C major", tempo_bpm=120,
@@ -39,6 +43,7 @@ def test_compose_uses_director_when_configured(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
     monkeypatch.setattr(api, "run_director", _fake_song)
     monkeypatch.setattr(api, "run_negotiation", lambda song: song)
+    monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose", json={"style": "disco"})
     assert resp.status_code == 200
@@ -47,8 +52,9 @@ def test_compose_uses_director_when_configured(monkeypatch):
     assert [r["id"] for r in body["song"]["roster"]] == ["bass", "lead", "drums"]
 
 
-def test_compose_falls_back_to_canned_without_llm():
-    # default settings: no provider -> canned path
+def test_compose_falls_back_to_canned_without_llm(monkeypatch):
+    monkeypatch.setattr(api, "get_settings", lambda: _NoLLMCfg())
+    monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose", json={"style": "slow blues"})
     assert resp.status_code == 200
