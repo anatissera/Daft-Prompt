@@ -43,17 +43,17 @@ Durable decisions that apply across all phases:
   for downloadable PDF.
 - **Listening / reference analysis is separate from composition**: `agents/` owns
   director/instrument/arbiter behavior; `music/` owns deterministic symbolic
-  validation/rendering; a future `reference_analysis` bounded context owns external
-  audio acquisition, MIR analysis, and natural-language explanation.
-- **Reference tools stay small**: use cases call ports such as search, resolver,
-  MIR analyzer, transcription, stem separation, and storage. Adapters implement
-  Gemini audio, YouTube/search, librosa/Essentia, Basic Pitch, Demucs, and object
-  storage. Composition agents only receive compact `ReferenceProfile` data.
-- **Reference acquisition policy**: YouTube search may find candidate references,
-  but audio download/conversion is only allowed for user uploads, owned files,
-  Creative Commons/public-domain/licensed sources, or explicitly authorized URLs.
-  Commercial songs by name should resolve to metadata/candidates and then require
-  provider-supported URL analysis or a permitted user-supplied file.
+  validation/rendering; reference analysis owns local audio ingestion, MIR
+  analysis, and natural-language explanation.
+- **Reference tools stay small**: use cases call ports such as the MIR analyzer,
+  transcription, stem separation, and storage. Local file analysis is the active
+  MVP path; YouTube/search and commercial-song acquisition are out of scope for
+  the current product direction. Composition agents only receive compact
+  `ReferenceProfile` data.
+- **Reference acquisition policy**: for the MVP, analyze only local files the
+  user provides. Future acquisition policies must remain subordinate to
+  `PRODUCT.md` and must not couple composition agents to raw audio or provider
+  internals.
 
 ---
 
