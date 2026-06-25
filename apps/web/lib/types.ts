@@ -82,6 +82,12 @@ export interface ComposeResponse {
 
 export type ReferenceSourceKind = "upload" | "direct_url" | "youtube" | "metadata" | "local";
 export type ConfidenceLabel = "low" | "medium" | "high";
+export type AnalysisNoteSeverity = "info" | "warning" | "error";
+export type TempoCandidateRelation = "primary" | "half_time" | "double_time" | "alternate";
+export type MeterSource = "assumed" | "estimated";
+export type KeyMode = "major" | "minor" | "unknown";
+export type ChordQuality = "major" | "minor" | "diminished" | "unknown";
+export type StemRole = "percussion" | "bass" | "vocal" | "harmony" | "mix" | "other";
 
 export interface ReferenceSource {
   reference_id: string;
@@ -118,9 +124,100 @@ export interface SectionProfile {
   chord_estimates: ChordEstimate[];
 }
 
+export interface AnalysisNote {
+  code: string;
+  message: string;
+  severity: AnalysisNoteSeverity;
+}
+
+export interface TempoCandidate {
+  bpm: number;
+  confidence: number;
+  relation: TempoCandidateRelation;
+}
+
+export interface TempoProfile {
+  primary_bpm: number | null;
+  confidence: number;
+  candidates: TempoCandidate[];
+  beat_grid_confidence: number;
+  bar_grid_confidence: number;
+}
+
+export interface MeterProfile {
+  time_signature: [number, number];
+  source: MeterSource;
+  confidence: number;
+}
+
+export interface KeyCandidate {
+  key: string;
+  mode: KeyMode;
+  confidence: number;
+}
+
+export interface KeyProfile {
+  primary: KeyCandidate | null;
+  candidates: KeyCandidate[];
+  relative_key_ambiguity: boolean;
+  confidence: number;
+}
+
+export interface ChordCandidate {
+  root: string;
+  quality: ChordQuality;
+  label: string;
+  confidence: number;
+}
+
+export interface AnalysisChordSpan {
+  start_bar: number;
+  end_bar: number;
+  start_beat: number;
+  end_beat: number;
+  start_seconds: number;
+  end_seconds: number;
+  candidates: ChordCandidate[];
+  chosen: ChordCandidate | null;
+  confidence: number;
+}
+
+export interface ProgressionEstimate {
+  start_bar: number;
+  end_bar: number;
+  chords: string[];
+  confidence: number;
+  repetitions: number;
+}
+
+export interface HarmonicProfile {
+  key: KeyProfile;
+  chord_spans: AnalysisChordSpan[];
+  progressions: ProgressionEstimate[];
+  harmonic_rhythm_label: string;
+  confidence: number;
+}
+
+export interface StructuralSection {
+  label: string;
+  start_bar: number;
+  end_bar: number;
+  start_seconds: number;
+  end_seconds: number;
+  confidence: number;
+  main_progression: string[];
+}
+
+export interface StructureProfile {
+  sections: StructuralSection[];
+  confidence: number;
+}
+
 export interface StemProfile {
   name: string;
   artifact_uri: string | null;
+  role: StemRole;
+  available: boolean;
   confidence: number;
 }
 
@@ -136,6 +233,11 @@ export interface AudioProfile {
   chord_estimates: ChordEstimate[];
   sections: SectionProfile[];
   stems: StemProfile[];
+  tempo: TempoProfile | null;
+  meter: MeterProfile;
+  harmony: HarmonicProfile | null;
+  structure: StructureProfile | null;
+  analysis_notes: AnalysisNote[];
 }
 
 export interface ReferenceProfile {

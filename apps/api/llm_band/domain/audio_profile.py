@@ -63,9 +63,100 @@ class SectionProfile(BaseModel):
     chord_estimates: list[ChordEstimate] = Field(default_factory=list)
 
 
+class AnalysisNote(BaseModel):
+    code: str
+    message: str
+    severity: Literal["info", "warning", "error"] = "info"
+
+
+class TempoCandidate(BaseModel):
+    bpm: float
+    confidence: float = Field(ge=0.0, le=1.0)
+    relation: Literal["primary", "half_time", "double_time", "alternate"] = "primary"
+
+
+class TempoProfile(BaseModel):
+    primary_bpm: Optional[float] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    candidates: list[TempoCandidate] = Field(default_factory=list, max_length=6)
+    beat_grid_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    bar_grid_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class MeterProfile(BaseModel):
+    time_signature: tuple[int, int] = (4, 4)
+    source: Literal["assumed", "estimated"] = "assumed"
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class KeyCandidate(BaseModel):
+    key: str
+    mode: Literal["major", "minor", "unknown"]
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class KeyProfile(BaseModel):
+    primary: Optional[KeyCandidate] = None
+    candidates: list[KeyCandidate] = Field(default_factory=list, max_length=8)
+    relative_key_ambiguity: bool = False
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class ChordCandidate(BaseModel):
+    root: str
+    quality: Literal["major", "minor", "diminished", "unknown"]
+    label: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class ChordSpan(BaseModel):
+    start_bar: int
+    end_bar: int
+    start_beat: float = 1.0
+    end_beat: float = 1.0
+    start_seconds: float
+    end_seconds: float
+    candidates: list[ChordCandidate] = Field(default_factory=list, max_length=5)
+    chosen: Optional[ChordCandidate] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class ProgressionEstimate(BaseModel):
+    start_bar: int
+    end_bar: int
+    chords: list[str] = Field(default_factory=list, max_length=16)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    repetitions: int = 1
+
+
+class HarmonicProfile(BaseModel):
+    key: KeyProfile = Field(default_factory=KeyProfile)
+    chord_spans: list[ChordSpan] = Field(default_factory=list, max_length=512)
+    progressions: list[ProgressionEstimate] = Field(default_factory=list, max_length=32)
+    harmonic_rhythm_label: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class StructuralSection(BaseModel):
+    label: str
+    start_bar: int
+    end_bar: int
+    start_seconds: float
+    end_seconds: float
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    main_progression: list[str] = Field(default_factory=list, max_length=16)
+
+
+class StructureProfile(BaseModel):
+    sections: list[StructuralSection] = Field(default_factory=list, max_length=64)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class StemProfile(BaseModel):
     name: str
     artifact_uri: Optional[str] = None
+    role: Literal["percussion", "bass", "vocal", "harmony", "mix", "other"] = "other"
+    available: bool = True
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
@@ -81,6 +172,11 @@ class AudioProfile(BaseModel):
     chord_estimates: list[ChordEstimate] = Field(default_factory=list)
     sections: list[SectionProfile] = Field(default_factory=list)
     stems: list[StemProfile] = Field(default_factory=list)
+    tempo: Optional[TempoProfile] = None
+    meter: MeterProfile = Field(default_factory=MeterProfile)
+    harmony: Optional[HarmonicProfile] = None
+    structure: Optional[StructureProfile] = None
+    analysis_notes: list[AnalysisNote] = Field(default_factory=list)
 
 
 class ReferenceProfile(BaseModel):
