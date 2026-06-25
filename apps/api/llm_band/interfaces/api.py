@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from inspect import signature
 from pathlib import Path
+from queue import Queue
+from threading import Thread
 from typing import Iterator
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -22,7 +25,17 @@ from llm_band.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnaly
 from llm_band.infrastructure.storage.render_artifacts import render_artifacts
 from llm_band.infrastructure.storage.local_store import LocalArtifactStore
 from llm_band.infrastructure.llm import LLMAllProvidersFailed, LLMError
-from llm_band.interfaces.api_models import Artifacts, ComposeRequest, ComposeResponse, DoneEvent, ErrorEvent, sse_data
+from llm_band.interfaces.api_models import (
+    AnalysisDoneEvent,
+    AnalysisErrorEvent,
+    AnalysisProgressEvent,
+    Artifacts,
+    ComposeRequest,
+    ComposeResponse,
+    DoneEvent,
+    ErrorEvent,
+    sse_data,
+)
 
 OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
 REFERENCE_UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
@@ -47,6 +60,30 @@ def health() -> dict[str, str]:
 
 @app.post("/references/analyze", response_model=ReferenceProfile)
 async def analyze_reference_upload(file: UploadFile | None = File(None)) -> ReferenceProfile:
+    source = await _store_reference_upload(file)
+    try:
+        return AnalyzeReference(_reference_analyzer()).execute(source)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"could not analyze uploaded audio: {exc}",
+        ) from exc
+
+
+@app.post("/references/analyze/stream")
+async def analyze_reference_upload_stream(file: UploadFile | None = File(None)) -> StreamingResponse:
+    source = await _store_reference_upload(file)
+
+    def sse() -> Iterator[str]:
+        for event in _reference_analysis_stream_events(source):
+            yield sse_data(event)
+
+    return StreamingResponse(sse(), media_type="text/event-stream")
+
+
+async def _store_reference_upload(file: UploadFile | None) -> ReferenceSource:
     if file is None:
         raise HTTPException(status_code=400, detail="missing audio file")
 
@@ -93,15 +130,44 @@ async def analyze_reference_upload(file: UploadFile | None = File(None)) -> Refe
         uri=str(audio_path),
         authorized=True,
     )
-    try:
-        return AnalyzeReference(_reference_analyzer()).execute(source)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"could not analyze uploaded audio: {exc}",
-        ) from exc
+    return source
+
+
+def _reference_analysis_stream_events(source: ReferenceSource) -> Iterator[dict]:
+    events: Queue[dict | None] = Queue()
+
+    def progress(stage: str, message: str) -> None:
+        events.put(AnalysisProgressEvent(type=stage, message=message).model_dump(mode="json"))
+
+    def worker() -> None:
+        analyzer = _reference_analyzer()
+        try:
+            profile = _analyze_with_progress(analyzer, source, progress)
+            events.put(AnalysisDoneEvent(profile=profile).model_dump(mode="json"))
+        except Exception as exc:
+            events.put(
+                AnalysisErrorEvent(
+                    message=f"could not analyze uploaded audio: {exc}",
+                ).model_dump(mode="json")
+            )
+        finally:
+            events.put(None)
+
+    yield AnalysisProgressEvent(type="accepted", message="File accepted. Starting analysis.").model_dump(mode="json")
+    thread = Thread(target=worker, daemon=True)
+    thread.start()
+    while True:
+        event = events.get()
+        if event is None:
+            break
+        yield event
+
+
+def _analyze_with_progress(analyzer, source: ReferenceSource, progress) -> ReferenceProfile:
+    analyze = analyzer.analyze
+    if "progress" in signature(analyze).parameters:
+        return analyze(source, progress=progress)
+    return analyze(source)
 
 
 def _reference_analyzer() -> DeepHarmonicAnalyzer:
