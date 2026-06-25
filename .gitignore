@@ -26,3 +26,4 @@ next-env.d.ts.timestamp
 
 # OS / editor
 .DS_Store
+.vercel
