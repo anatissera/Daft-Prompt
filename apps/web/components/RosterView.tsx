@@ -5,13 +5,15 @@ export default function RosterView({
   header,
   roster,
   source,
+  embedded = false,
 }: {
   header: Header;
   roster: RosterItem[];
   source: "director" | "canned";
+  embedded?: boolean;
 }) {
   return (
-    <div className="card">
+    <div className={embedded ? "embedded-panel" : "card"}>
       <h2 className="section-title">
         Roster{" "}
         <span className="source-tag">
