@@ -215,7 +215,7 @@ test("answerReferenceQuestion answers structure and harmonic progression questio
   );
   assert.equal(
     answerReferenceQuestion("What is the A/B/C structure?", harmonicProfile),
-    "The structure appears to repeat as A bars 1-4 / B bars 5-8.",
+    "The structure appears to repeat as A bars 1-4 (high · 78%) / B bars 5-8 (medium · 74%).",
   );
 });
 
