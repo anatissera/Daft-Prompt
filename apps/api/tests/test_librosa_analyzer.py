@@ -69,6 +69,8 @@ def test_analyze_local_audio_returns_compact_reference_profile(tmp_path: Path):
     assert all(0.0 <= point.energy <= 1.0 for point in profile.audio.energy_curve)
     assert profile.audio.sections
     assert profile.audio.chord_estimates
+    assert len(profile.audio.chord_estimates) >= 4
+    assert len({tuple(chord.chords) for chord in profile.audio.chord_estimates}) > 1
     assert all(chord.is_probable for chord in profile.audio.chord_estimates)
     assert {
         chord.confidence_label for chord in profile.audio.chord_estimates
