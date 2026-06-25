@@ -152,7 +152,7 @@ export function answerReferenceQuestion(prompt, profile) {
     if (timeline.length > 0) {
       const sections = timeline
         .slice(0, 5)
-        .map((section) => `${section.label} bars ${section.bars}`)
+        .map((section) => `${section.label} bars ${section.bars} (${section.confidence})`)
         .join(" / ");
       return `The structure appears to repeat as ${sections}.`;
     }
