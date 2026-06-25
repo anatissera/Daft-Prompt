@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from llm_band.domain.audio_profile import ReferenceProfile
 from llm_band.domain.song_state import Header, RosterItem, SongState
 
 
@@ -67,6 +68,36 @@ class DoneEvent(BaseModel):
 
 
 ComposeEvent = DirectorEvent | AgentPassEvent | ConvergenceEvent | ErrorEvent | DoneEvent
+
+
+AnalysisProgressType = Literal[
+    "accepted",
+    "separating_stems",
+    "building_harmonic_source",
+    "estimating_tempo_grid",
+    "estimating_key",
+    "estimating_chords",
+    "detecting_structure",
+]
+
+
+class AnalysisProgressEvent(BaseModel):
+    type: AnalysisProgressType
+    message: str
+
+
+class AnalysisDoneEvent(BaseModel):
+    type: Literal["done"] = "done"
+    message: str = "Analysis ready."
+    profile: ReferenceProfile
+
+
+class AnalysisErrorEvent(BaseModel):
+    type: Literal["error"] = "error"
+    message: str
+
+
+AnalysisEvent = AnalysisProgressEvent | AnalysisDoneEvent | AnalysisErrorEvent
 
 
 def event_payload(event: BaseModel | dict[str, Any]) -> dict[str, Any]:

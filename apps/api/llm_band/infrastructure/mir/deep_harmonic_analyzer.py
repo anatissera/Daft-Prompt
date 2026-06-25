@@ -10,7 +10,7 @@ raising.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from llm_band.domain.audio_profile import (
@@ -33,6 +33,7 @@ from llm_band.infrastructure.mir.tempo_grid import estimate_tempo_grid
 
 
 WEAK_BAR_GRID_CONFIDENCE = 0.4
+ProgressCallback = Callable[[str, str], None]
 
 
 class DeepHarmonicAnalyzer:
@@ -57,13 +58,38 @@ class DeepHarmonicAnalyzer:
         self.structure_detector = structure_detector
         self.duration_provider = duration_provider or _audio_duration
 
-    def analyze(self, source: ReferenceSource) -> ReferenceProfile:
+    def analyze(
+        self,
+        source: ReferenceSource,
+        *,
+        progress: ProgressCallback | None = None,
+    ) -> ReferenceProfile:
+        return self._analyze(source, progress=progress)
+
+    def analyze_with_progress(self, source: ReferenceSource) -> Iterator[tuple[str, str, ReferenceProfile | None]]:
+        events: list[tuple[str, str]] = []
+
+        def progress(stage: str, message: str) -> None:
+            events.append((stage, message))
+
+        profile = self._analyze(source, progress=progress)
+        for stage, message in events:
+            yield stage, message, None
+        yield "done", "Analysis ready.", profile
+
+    def _analyze(
+        self,
+        source: ReferenceSource,
+        *,
+        progress: ProgressCallback | None = None,
+    ) -> ReferenceProfile:
         audio_path = DemucsSeparator._resolve_local_path(source)
         duration = self.duration_provider(audio_path)
         analysis_dir = self.output_root / source.reference_id
         analysis_dir.mkdir(parents=True, exist_ok=True)
 
         notes: list[AnalysisNote] = []
+        _emit(progress, "separating_stems", "Separating stems for harmonic analysis.")
         stems = self.separator.separate(source)
         if {stem.name for stem in stems} == {"mix"}:
             notes.append(
@@ -74,16 +100,20 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
+        _emit(progress, "building_harmonic_source", "Building the harmonic source.")
         harmonic = self.harmonic_source_builder(stems, analysis_dir / "harmonic.wav")
         notes.extend(harmonic.notes)
 
+        _emit(progress, "estimating_tempo_grid", "Estimating tempo, beats, and bars.")
         drum_path = next((stem.path for stem in stems if stem.name == "drums"), None)
         grid = self.tempo_estimator(str(audio_path), drum_path=drum_path)
 
+        _emit(progress, "estimating_key", "Estimating likely key candidates.")
         key_profile = self.key_estimator(
             harmonic.path, confidence_adjustment=harmonic.confidence_adjustment
         )
 
+        _emit(progress, "estimating_chords", "Estimating probable triads by bar.")
         chord_spans = self.chord_estimator(harmonic.path, grid.bar_times, duration)
 
         grid_confidence = grid.tempo.bar_grid_confidence
@@ -99,6 +129,7 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
+        _emit(progress, "detecting_structure", "Detecting repeated progressions and A/B/C structure.")
         structure, progressions = self.structure_detector(chord_spans)
 
         harmony = HarmonicProfile(
@@ -132,6 +163,11 @@ class DeepHarmonicAnalyzer:
             audio=audio,
             summary=_summarize(audio),
         )
+
+
+def _emit(progress: ProgressCallback | None, stage: str, message: str) -> None:
+    if progress is not None:
+        progress(stage, message)
 
 
 def _legacy_chord_estimates(chord_spans) -> list[ChordEstimate]:
