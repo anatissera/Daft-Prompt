@@ -9,9 +9,8 @@ services:
       - ./apps/api/uploads:/app/uploads
 
   web:
-    image: node:22-bookworm-slim
-    working_dir: /app
-    command: sh -c "npm ci && npm run dev -- --hostname 0.0.0.0"
+    build:
+      context: ./apps/web
     environment:
       API_BASE_URL: http://api:8000
     ports:
