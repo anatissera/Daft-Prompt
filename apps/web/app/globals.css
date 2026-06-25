@@ -86,20 +86,20 @@ body {
   padding: var(--space-8) var(--space-5) var(--space-8);
 }
 
-.workspace {
-  width: min(1180px, 100%);
+.chat-workspace {
+  width: min(920px, 100%);
+  min-height: 100vh;
   margin: 0 auto;
   padding: var(--space-6) var(--space-5) var(--space-8);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
-  gap: var(--space-5);
-  align-items: start;
-}
-
-.chat-shell {
   min-width: 0;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: var(--space-5);
+}
+
+.chat-hero {
+  display: grid;
+  gap: var(--space-2);
 }
 
 .workspace-heading {
@@ -145,12 +145,13 @@ body {
   margin-bottom: 0;
 }
 
-.results {
+.chat-panel {
   display: grid;
-  gap: var(--space-5);
+  min-height: 0;
+  gap: var(--space-4);
 }
 
-.composition-results {
+.results {
   display: grid;
   gap: var(--space-5);
 }
@@ -160,11 +161,13 @@ body {
 .chat-thread {
   display: grid;
   gap: var(--space-3);
-  min-height: 220px;
+  align-content: start;
+  min-height: min(58vh, 620px);
+  padding-bottom: var(--space-2);
 }
 
 .chat-message {
-  width: min(100%, 680px);
+  width: min(100%, 720px);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
@@ -180,6 +183,8 @@ body {
 
 .chat-message-user {
   justify-self: end;
+  width: fit-content;
+  max-width: min(100%, 620px);
   background: #20202b;
   border-color: var(--color-border-strong);
 }
@@ -197,6 +202,9 @@ body {
 }
 
 .chat-composer {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: 4;
   display: grid;
   gap: var(--space-3);
   border: 1px solid var(--color-border);
@@ -208,7 +216,7 @@ body {
 
 .chat-input {
   width: 100%;
-  min-height: 88px;
+  min-height: 68px;
   resize: vertical;
   padding: var(--space-3);
   border: 1px solid transparent;
@@ -265,7 +273,48 @@ body {
   white-space: nowrap;
 }
 
-/* ---- Reference context --------------------------------------------------- */
+/* ---- Result blocks --------------------------------------------------- */
+
+.result-block {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.result-block-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.result-title {
+  font-size: 18px;
+  line-height: 1.25;
+  font-weight: 700;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.details-panel {
+  display: grid;
+  gap: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+}
+
+.details-panel > summary {
+  margin-bottom: var(--space-3);
+}
+
+.embedded-panel {
+  display: grid;
+  gap: var(--space-3);
+}
 
 .context-panel {
   position: sticky;
@@ -447,7 +496,8 @@ body {
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 
-.compose-button {
+.compose-button,
+.send-button {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -463,15 +513,18 @@ body {
   transition: background 150ms var(--ease-out), transform 100ms var(--ease-out);
 }
 
-.compose-button:hover:not(:disabled) {
+.compose-button:hover:not(:disabled),
+.send-button:hover:not(:disabled) {
   background: var(--color-accent-hover);
 }
 
-.compose-button:active:not(:disabled) {
+.compose-button:active:not(:disabled),
+.send-button:active:not(:disabled) {
   transform: scale(0.97);
 }
 
-.compose-button:disabled {
+.compose-button:disabled,
+.send-button:disabled {
   background: var(--color-border-strong);
   color: var(--color-text-faint);
   cursor: default;
@@ -822,23 +875,36 @@ body {
 }
 
 @media (max-width: 640px) {
-  .workspace {
+  .chat-workspace {
     padding: var(--space-5) var(--space-3) var(--space-6);
-    grid-template-columns: minmax(0, 1fr);
   }
 
-  .context-panel {
-    position: static;
-    order: 2;
-    padding: var(--space-4);
+  .chat-hero {
+    gap: var(--space-1);
   }
 
-  .chat-shell {
-    order: 1;
+  .hero-title {
+    font-size: 30px;
+  }
+
+  .hero-subtitle {
+    margin-bottom: 0;
+  }
+
+  .chat-thread {
+    min-height: 52vh;
   }
 
   .chat-message {
     width: 100%;
+  }
+
+  .result-block {
+    padding: var(--space-3);
+  }
+
+  .result-block-header {
+    display: grid;
   }
 
   .composer-actions {
@@ -846,7 +912,8 @@ body {
   }
 
   .attach-button,
-  .compose-button {
+  .compose-button,
+  .send-button {
     flex: 1 1 140px;
   }
 

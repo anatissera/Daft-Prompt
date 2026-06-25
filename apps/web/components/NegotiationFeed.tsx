@@ -44,11 +44,11 @@ function ArrowIcon() {
   );
 }
 
-export default function NegotiationFeed({ events }: { events: FeedEvent[] }) {
+export default function NegotiationFeed({ events, embedded = false }: { events: FeedEvent[]; embedded?: boolean }) {
   if (events.length === 0) return null;
 
   return (
-    <div className="card">
+    <div className={embedded ? "embedded-panel" : "card"}>
       <h2 className="section-title">Negotiation</h2>
       <ul className="feed-list">
         {events.map((e, i) =>
