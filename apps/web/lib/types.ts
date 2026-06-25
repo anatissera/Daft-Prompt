@@ -253,6 +253,20 @@ export interface ExplanationAnswer {
   evidence: string[];
 }
 
+export type AnalysisProgressType =
+  | "accepted"
+  | "separating_stems"
+  | "building_harmonic_source"
+  | "estimating_tempo_grid"
+  | "estimating_key"
+  | "estimating_chords"
+  | "detecting_structure";
+
+export type AnalysisEvent =
+  | { type: AnalysisProgressType; message: string }
+  | { type: "done"; message: string; profile: ReferenceProfile }
+  | { type: "error"; message: string };
+
 // SSE events from POST /compose/stream (proxied by app/api/compose), in emission
 // order: one "director" event, zero or more "agent_pass" events as instruments
 // compose/negotiate, optional "error", one "convergence" or "done" event.

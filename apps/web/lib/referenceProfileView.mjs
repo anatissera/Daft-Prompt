@@ -19,16 +19,20 @@ export function describeReferenceSummary(profile) {
   if (!audio) return ["No audio profile available yet."];
 
   const rows = [`Duration ${formatDuration(audio.duration_seconds)}`];
-  if (audio.tempo_bpm !== null && audio.tempo_bpm !== undefined) {
+  const tempo = audio.tempo?.primary_bpm ?? audio.tempo_bpm;
+  const tempoConfidence = audio.tempo?.confidence ?? audio.tempo_confidence;
+  if (tempo !== null && tempo !== undefined) {
     rows.push(
-      `Likely tempo ${Math.round(audio.tempo_bpm)} BPM · ${confidenceLabel(audio.tempo_confidence)} · ${formatPercent(
-        audio.tempo_confidence,
+      `Likely tempo ${Math.round(tempo)} BPM · ${confidenceLabel(tempoConfidence)} · ${formatPercent(
+        tempoConfidence,
       )}`,
     );
   }
-  if (audio.key) {
+  const key = audio.harmony?.key?.primary?.key ?? audio.key;
+  const keyConfidence = audio.harmony?.key?.confidence ?? audio.key_confidence;
+  if (key) {
     rows.push(
-      `Likely key ${audio.key} · ${confidenceLabel(audio.key_confidence)} · ${formatPercent(audio.key_confidence)}`,
+      `Likely key ${key} · ${confidenceLabel(keyConfidence)} · ${formatPercent(keyConfidence)}`,
     );
   }
   rows.push(`Overall confidence ${formatPercent(audio.overall_confidence || audio.confidence || 0)}`);
@@ -38,6 +42,17 @@ export function describeReferenceSummary(profile) {
 export function getTopChordEstimates(profile, limit = 4) {
   const audio = profile.audio;
   if (!audio) return [];
+  const harmonicSpans = audio.harmony?.chord_spans ?? [];
+  if (harmonicSpans.length > 0) {
+    return harmonicSpans
+      .filter((span) => span.chosen)
+      .slice(0, limit)
+      .map((span) => ({
+        label: `Probably ${span.chosen.label}`,
+        timeRange: `bars ${span.start_bar}-${span.end_bar}`,
+        confidence: formatConfidence(confidenceLabel(span.chosen.confidence), span.chosen.confidence),
+      }));
+  }
   return audio.chord_estimates.slice(0, limit).map((estimate) => ({
     label: estimate.label,
     timeRange: `${formatDuration(estimate.start_seconds)}-${formatDuration(estimate.end_seconds)}`,
@@ -45,10 +60,48 @@ export function getTopChordEstimates(profile, limit = 4) {
   }));
 }
 
+export function getKeyCandidateSummary(profile, limit = 4) {
+  const candidates = profile.audio?.harmony?.key?.candidates ?? [];
+  return candidates.slice(0, limit).map((candidate) => ({
+    label: candidate.key,
+    confidence: formatConfidence(confidenceLabel(candidate.confidence), candidate.confidence),
+  }));
+}
+
+export function getMainProgression(profile) {
+  const progressions = profile.audio?.harmony?.progressions ?? [];
+  const main = progressions.find((progression) => progression.chords.length > 0);
+  if (!main) return null;
+  return {
+    label: `Probably ${main.chords.join(" - ")}`,
+    bars: `bars ${main.start_bar}-${main.end_bar}`,
+    repetitions: main.repetitions,
+    confidence: formatConfidence(confidenceLabel(main.confidence), main.confidence),
+  };
+}
+
+export function getStructureTimeline(profile) {
+  const sections = profile.audio?.structure?.sections ?? [];
+  return sections.map((section) => ({
+    label: section.label,
+    bars: `${section.start_bar}-${section.end_bar}`,
+    timeRange: `${formatDuration(section.start_seconds)}-${formatDuration(section.end_seconds)}`,
+    progression: section.main_progression.join(" - "),
+    confidence: formatConfidence(confidenceLabel(section.confidence), section.confidence),
+  }));
+}
+
+export function getAnalysisNotes(profile) {
+  return (profile.audio?.analysis_notes ?? []).map((note) => ({
+    label: note.severity,
+    message: note.message,
+  }));
+}
+
 export function isReferenceQuestion(prompt) {
   const normalized = prompt.toLowerCase();
   if (/\b(compose|generate|make|write|create)\b/.test(normalized)) return false;
-  return /\b(chord|chords|tempo|bpm|key|energy|section|sections|chorus|verse|analysis|analyze|profile)\b/.test(
+  return /\b(chord|chords|tempo|bpm|key|energy|section|sections|form|structure|chorus|verse|analysis|analyze|profile)\b/.test(
     normalized,
   );
 }
@@ -59,9 +112,13 @@ export function answerReferenceQuestion(prompt, profile) {
   if (!audio) return "I do not have an audio profile for this reference yet.";
 
   if (/\b(chord|chords|chorus|harmony|harmonic)\b/.test(normalized)) {
+    const main = getMainProgression(profile);
     const estimates = getTopChordEstimates(profile, 4);
-    if (estimates.length === 0) {
+    if (!main && estimates.length === 0) {
       return "I do not have probable chord estimates for this reference yet.";
+    }
+    if (main) {
+      return `The main progression is estimated as ${main.label} across ${main.bars}, with ${main.confidence} confidence.`;
     }
     const summary = estimates
       .map((estimate) => `${estimate.label} from ${estimate.timeRange} with ${estimate.confidence} confidence`)
@@ -70,23 +127,38 @@ export function answerReferenceQuestion(prompt, profile) {
   }
 
   if (/\b(tempo|bpm|speed|fast|slow)\b/.test(normalized)) {
-    if (audio.tempo_bpm === null || audio.tempo_bpm === undefined) {
+    const tempo = audio.tempo?.primary_bpm ?? audio.tempo_bpm;
+    const tempoConfidence = audio.tempo?.confidence ?? audio.tempo_confidence;
+    if (tempo === null || tempo === undefined) {
       return "I do not have a reliable tempo estimate for this reference yet.";
     }
-    return `The tempo is likely ${Math.round(audio.tempo_bpm)} BPM with ${formatConfidence(
-      confidenceLabel(audio.tempo_confidence),
-      audio.tempo_confidence,
+    return `The tempo is likely ${Math.round(tempo)} BPM with ${formatConfidence(
+      confidenceLabel(tempoConfidence),
+      tempoConfidence,
     )} confidence.`;
   }
 
   if (/\b(key|tonality|tonal)\b/.test(normalized)) {
-    if (!audio.key) {
+    const key = audio.harmony?.key?.primary?.key ?? audio.key;
+    const keyConfidence = audio.harmony?.key?.confidence ?? audio.key_confidence;
+    if (!key) {
       return "I do not have a reliable key estimate for this reference yet.";
     }
-    return `The key is probably ${audio.key} with ${formatConfidence(confidenceLabel(audio.key_confidence), audio.key_confidence)} confidence.`;
+    return `The key is probably ${key} with ${formatConfidence(confidenceLabel(keyConfidence), keyConfidence)} confidence.`;
   }
 
-  if (/\b(energy|section|sections|lift|bigger|contrast|verse|chorus)\b/.test(normalized)) {
+  if (/\b(section|sections|form|structure|verse|chorus)\b/.test(normalized)) {
+    const timeline = getStructureTimeline(profile);
+    if (timeline.length > 0) {
+      const sections = timeline
+        .slice(0, 5)
+        .map((section) => `${section.label} bars ${section.bars}`)
+        .join(" / ");
+      return `The structure appears to repeat as ${sections}.`;
+    }
+  }
+
+  if (/\b(energy|lift|bigger|contrast)\b/.test(normalized)) {
     if (audio.sections.length === 0) {
       return "I do not have section-level energy estimates for this reference yet.";
     }
@@ -100,7 +172,7 @@ export function answerReferenceQuestion(prompt, profile) {
     return `The section energy estimate is ${sections}.`;
   }
 
-  return "I can answer from the current analysis about likely tempo, key, energy or sections, and probable chords.";
+  return "I can answer from the current analysis about likely tempo, key, A/B/C structure, and probable chords.";
 }
 
 export function confidenceLabel(value) {
