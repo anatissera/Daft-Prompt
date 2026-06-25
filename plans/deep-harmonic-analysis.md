@@ -328,12 +328,12 @@ docker compose build api
 - Create `apps/api/llm_band/infrastructure/mir/harmonic_source.py`
 - Create `apps/api/tests/test_harmonic_source.py`
 
-- [ ] Implement `build_harmonic_source(stems, output_path)`:
+- [x] Implement `build_harmonic_source(stems, output_path)`:
   - when `bass` and `other` exist, mix those stems into a harmonic analysis file;
   - reduce or exclude `vocals` for the first version because vocals can distort chord estimates;
   - ignore `drums` for harmony;
   - when separated stems are unavailable, use librosa HPSS to build a harmonic component from the mix.
-- [ ] Return a small object with:
+- [x] Return a small object with:
 
 ```python
 class HarmonicSource(BaseModel):
@@ -343,9 +343,9 @@ class HarmonicSource(BaseModel):
     notes: list[AnalysisNote] = Field(default_factory=list)
 ```
 
-- [ ] Test that `bass + other` is preferred when available.
-- [ ] Test that HPSS fallback emits an analysis note and lowers confidence.
-- [ ] Run:
+- [x] Test that `bass + other` is preferred when available.
+- [x] Test that HPSS fallback emits an analysis note and lowers confidence. (Also: raw-mix last-resort fallback when HPSS errors; `bass`-without-`other` falls back to HPSS; empty stems raises.)
+- [x] Run:
 
 ```bash
 cd apps/api
@@ -358,17 +358,18 @@ python -m pytest tests/test_harmonic_source.py
 - Create `apps/api/llm_band/infrastructure/mir/tempo_grid.py`
 - Create `apps/api/tests/test_tempo_grid.py`
 
-- [ ] Implement tempo candidate extraction from the full mix and, when available, the drum stem.
-- [ ] Return primary, half-time, and double-time candidates.
-- [ ] Estimate beat times and compute confidence from beat interval stability.
-- [ ] Build bars by grouping beats in fours.
-- [ ] Return `MeterProfile(time_signature=(4, 4), source="assumed", confidence=0.5)`.
-- [ ] Test stable synthetic click/audio produces:
+- [x] Implement tempo candidate extraction from the full mix and, when available, the drum stem. (Beat input prefers `drum_path`; `beat_tracker` is injectable for fast unit tests.)
+- [x] Return primary, half-time, and double-time candidates.
+- [x] Estimate beat times and compute confidence from beat interval stability.
+- [x] Build bars by grouping beats in fours. (Returned in an internal `TempoGrid` dataclass with `beat_times`/`bar_times`, not leaked into `ReferenceProfile`.)
+- [x] Return `MeterProfile(time_signature=(4, 4), source="assumed", confidence=0.5)`.
+- [x] Test stable synthetic click/audio produces:
   - primary tempo near expected BPM;
   - half/double candidates;
   - bars with four beats each;
   - nonzero beat and bar confidence.
-- [ ] Run:
+  - (Also: drum-path preference, and graceful degradation when no beats are found.)
+- [x] Run:
 
 ```bash
 cd apps/api
