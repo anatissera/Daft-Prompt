@@ -19,6 +19,9 @@ from llm_band.domain.audio_profile import (
 
 SAMPLE_RATE = 22_050
 HOP_LENGTH = 512
+SHORT_CHORD_WINDOW_SECONDS = 2.0
+LONG_CHORD_WINDOW_SECONDS = 8.0
+LONG_CHORD_SECTION_SECONDS = 16.0
 MAJOR_KEY_PROFILE = np.array(
     [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
 )
@@ -326,20 +329,39 @@ class LibrosaAnalyzer:
 
         estimates: list[ChordEstimate] = []
         for section in sections:
-            mask = _frame_range(section.start_seconds, section.end_seconds, frame_times)
-            chroma_vector = np.mean(chroma[:, mask], axis=1)
-            chord, confidence = _estimate_chord(chroma_vector)
-            if chord == "unknown":
-                continue
-            estimates.append(
-                ChordEstimate(
-                    start_seconds=round(section.start_seconds, 3),
-                    end_seconds=round(section.end_seconds, 3),
-                    chords=[chord],
-                    confidence=confidence,
-                    is_probable=True,
-                )
+            section_duration = max(0.0, section.end_seconds - section.start_seconds)
+            window_seconds = (
+                LONG_CHORD_WINDOW_SECONDS
+                if section_duration > LONG_CHORD_SECTION_SECONDS
+                else SHORT_CHORD_WINDOW_SECONDS
             )
+            boundaries = np.arange(
+                section.start_seconds,
+                section.end_seconds,
+                window_seconds,
+            )
+            if boundaries.size == 0:
+                boundaries = np.array([section.start_seconds])
+
+            for start_seconds in boundaries:
+                end_seconds = min(float(start_seconds + window_seconds), section.end_seconds)
+                if end_seconds <= start_seconds:
+                    continue
+
+                mask = _frame_range(float(start_seconds), end_seconds, frame_times)
+                chroma_vector = np.mean(chroma[:, mask], axis=1)
+                chord, confidence = _estimate_chord(chroma_vector)
+                if chord == "unknown":
+                    continue
+                estimates.append(
+                    ChordEstimate(
+                        start_seconds=round(float(start_seconds), 3),
+                        end_seconds=round(end_seconds, 3),
+                        chords=[chord],
+                        confidence=confidence,
+                        is_probable=True,
+                    )
+                )
         return estimates
 
     def _summarize(self, audio: AudioProfile) -> str:
@@ -349,5 +371,8 @@ class LibrosaAnalyzer:
         if audio.key is not None:
             pieces.append(f"The key is probably {audio.key}.")
         if audio.chord_estimates:
-            pieces.append(f"{audio.chord_estimates[0].label} in the first detected section.")
+            chord_labels = " - ".join(
+                chord.chords[0] for chord in audio.chord_estimates[:4] if chord.chords
+            )
+            pieces.append(f"Probable chords include {chord_labels}.")
         return " ".join(pieces)
