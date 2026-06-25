@@ -18,7 +18,7 @@ from llm_band.config import get_settings
 from llm_band.domain.audio_profile import ReferenceProfile, ReferenceSource
 from llm_band.domain.song_state import Part
 from llm_band.graph import iter_negotiation_events, run_negotiation
-from llm_band.infrastructure.mir.librosa_analyzer import LibrosaAnalyzer
+from llm_band.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from llm_band.infrastructure.storage.render_artifacts import render_artifacts
 from llm_band.infrastructure.storage.local_store import LocalArtifactStore
 from llm_band.infrastructure.llm import LLMAllProvidersFailed, LLMError
@@ -94,7 +94,7 @@ async def analyze_reference_upload(file: UploadFile | None = File(None)) -> Refe
         authorized=True,
     )
     try:
-        return AnalyzeReference(LibrosaAnalyzer()).execute(source)
+        return AnalyzeReference(_reference_analyzer()).execute(source)
     except HTTPException:
         raise
     except Exception as exc:
@@ -102,6 +102,10 @@ async def analyze_reference_upload(file: UploadFile | None = File(None)) -> Refe
             status_code=422,
             detail=f"could not analyze uploaded audio: {exc}",
         ) from exc
+
+
+def _reference_analyzer() -> DeepHarmonicAnalyzer:
+    return DeepHarmonicAnalyzer(output_root=_reference_upload_root())
 
 
 def _reference_upload_root() -> Path:

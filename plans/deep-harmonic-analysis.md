@@ -382,15 +382,13 @@ python -m pytest tests/test_tempo_grid.py
 - Create `apps/api/llm_band/infrastructure/mir/key_features.py`
 - Create `apps/api/tests/test_key_features.py`
 
-- [ ] Estimate key candidates from the harmonic source, not the full mix when stems or HPSS are available.
-- [ ] Use CQT/chroma or HPCP-style pitch-class summaries with tuning-aware preprocessing.
-- [ ] Return multiple candidates, including relative major/minor alternatives when close.
-- [ ] Populate compatibility fields:
-  - `audio.key = harmony.key.primary.key`
-  - `audio.key_confidence = harmony.key.confidence`
-- [ ] Test synthetic A minor/C major ambiguous material returns both candidates.
-- [ ] Test a clear major triad progression returns the expected major key candidate.
-- [ ] Run:
+- [x] Estimate key candidates from the harmonic source, not the full mix when stems or HPSS are available. (`estimate_key(harmonic_path, ...)`; `confidence_adjustment` carries the HPSS/mix penalty from `HarmonicSource`.)
+- [x] Use CQT/chroma or HPCP-style pitch-class summaries with tuning-aware preprocessing. (Default provider: `chroma_cqt` with `estimate_tuning`; pure scoring is provider-independent.)
+- [x] Return multiple candidates, including relative major/minor alternatives when close. (`relative_key_ambiguity` flagged when top two are a relative pair within margin.)
+- [~] Populate compatibility fields (`audio.key`, `audio.key_confidence`) — deferred to the Phase 7 orchestrator, which composes `f"{primary.key}"`/`primary.confidence` into legacy fields. `KeyCandidate.key` already carries the full label (e.g. "A minor").
+- [x] Test synthetic A minor/C major ambiguous material returns both candidates.
+- [x] Test a clear major triad progression returns the expected major key candidate. (Also: empty vector → empty profile; confidence adjustment lowers confidence; injected provider path.)
+- [x] Run:
 
 ```bash
 cd apps/api
@@ -403,15 +401,15 @@ python -m pytest tests/test_key_features.py
 - Create `apps/api/llm_band/infrastructure/mir/chord_features.py`
 - Create `apps/api/tests/test_chord_features.py`
 
-- [ ] Define triad templates for major, minor, and diminished chords.
-- [ ] Aggregate harmonic-source chroma by bar.
-- [ ] Produce up to five candidates per bar.
-- [ ] Pick `chosen` chord only when confidence is above a conservative threshold.
-- [ ] Smooth the bar sequence so isolated one-bar outliers are corrected when neighbors strongly agree.
-- [ ] Populate legacy `audio.chord_estimates` as time-range compatibility summaries.
-- [ ] Test a synthetic four-bar `Am - F - C - G` fixture returns that progression as chosen triads.
-- [ ] Test smoothing removes a one-bar spurious chord between matching neighbors.
-- [ ] Run:
+- [x] Define triad templates for major, minor, and diminished chords.
+- [x] Aggregate harmonic-source chroma by bar. (`estimate_chords` slices a chroma matrix along `bar_times`; pure `chords_from_bar_chromas` takes per-bar vectors.)
+- [x] Produce up to five candidates per bar.
+- [x] Pick `chosen` chord only when confidence is above a conservative threshold. (Confidence leans on candidate separation so flat/ambiguous bars stay unchosen.)
+- [x] Smooth the bar sequence so isolated one-bar outliers are corrected when neighbors strongly agree.
+- [~] Populate legacy `audio.chord_estimates` as time-range compatibility summaries — deferred to the Phase 7 orchestrator (ChordSpan → ChordEstimate).
+- [x] Test a synthetic four-bar `Am - F - C - G` fixture returns that progression as chosen triads.
+- [x] Test smoothing removes a one-bar spurious chord between matching neighbors. (Also: ≤5 candidates/bar, low-confidence bar has no `chosen`, diminished triad recognized.)
+- [x] Run:
 
 ```bash
 cd apps/api
@@ -424,15 +422,15 @@ python -m pytest tests/test_chord_features.py
 - Create `apps/api/llm_band/infrastructure/mir/structure_features.py`
 - Create `apps/api/tests/test_structure_features.py`
 
-- [ ] Detect repeated chord windows over bar-aligned `ChordSpan` data.
-- [ ] Create `ProgressionEstimate` entries for repeated progressions.
-- [ ] Group adjacent bars into structural sections.
-- [ ] Assign labels `A`, `B`, `C`, etc. by repeated harmonic similarity.
-- [ ] Keep labels abstract. Do not emit `verse`, `chorus`, or `bridge`.
-- [ ] Populate legacy `audio.sections` as compatibility summaries from `StructureProfile`.
-- [ ] Test a synthetic section pattern `A B C B` returns repeated `B` labels for matching progressions.
-- [ ] Test section boundaries are integer bars.
-- [ ] Run:
+- [x] Detect repeated chord windows over bar-aligned `ChordSpan` data. (Fixed 4-bar phrase windows; signature = chosen-chord tuple.)
+- [x] Create `ProgressionEstimate` entries for repeated progressions. (One per unique signature, with `repetitions` count.)
+- [x] Group adjacent bars into structural sections.
+- [x] Assign labels `A`, `B`, `C`, etc. by repeated harmonic similarity. (Same signature → same letter; consecutive same-label windows merge.)
+- [x] Keep labels abstract. Do not emit `verse`, `chorus`, or `bridge`.
+- [~] Populate legacy `audio.sections` as compatibility summaries from `StructureProfile` — deferred to the Phase 7 orchestrator.
+- [x] Test a synthetic section pattern `A B C B` returns repeated `B` labels for matching progressions.
+- [x] Test section boundaries are integer bars. (Also: consecutive identical phrases merge; empty input; labels stay abstract.)
+- [x] Run:
 
 ```bash
 cd apps/api
@@ -447,8 +445,8 @@ python -m pytest tests/test_structure_features.py
 - Create `apps/api/tests/test_deep_harmonic_analyzer.py`
 - Modify `apps/api/tests/test_reference_analysis_api.py`
 
-- [ ] Implement `DeepHarmonicAnalyzer.analyze(source)` as the default `AudioAnalyzer` for uploads.
-- [ ] Orchestration order:
+- [x] Implement `DeepHarmonicAnalyzer.analyze(source)` as the default `AudioAnalyzer` for uploads. (Every stage injectable; real feature modules wired as defaults.)
+- [x] Orchestration order:
   1. resolve local source path;
   2. run Demucs separation;
   3. build harmonic source;
@@ -457,13 +455,13 @@ python -m pytest tests/test_structure_features.py
   6. estimate triad chords per bar;
   7. detect progressions and A/B/C sections;
   8. assemble `ReferenceProfile`;
-  9. fill compatibility fields.
-- [ ] If Demucs fails, continue with HPSS/mix fallback and add an `AnalysisNote`.
-- [ ] If beat/bar grid confidence is low, keep key candidates but lower chord/structure confidence.
-- [ ] Update `/references/analyze` to instantiate `DeepHarmonicAnalyzer`.
-- [ ] Test the orchestrator with fake separator/feature modules so the main test is fast.
-- [ ] Test API upload still returns a `ReferenceProfile` with populated legacy fields and new `harmony`/`structure` fields.
-- [ ] Run:
+  9. fill compatibility fields (`key`, `tempo_bpm`, `chord_estimates`, `sections`).
+- [x] If Demucs fails, continue with HPSS/mix fallback and add an `AnalysisNote`. (`separation_unavailable` note when only the mix is available; HPSS note flows from the harmonic source.)
+- [x] If beat/bar grid confidence is low, keep key candidates but lower chord/structure confidence. (`weak_bar_grid` note; harmony confidence blends key/chord/grid confidence.)
+- [x] Update `/references/analyze` to instantiate `DeepHarmonicAnalyzer`. (Via `api._reference_analyzer()` factory, monkeypatchable in tests.)
+- [x] Test the orchestrator with fake separator/feature modules so the main test is fast.
+- [x] Test API upload still returns a `ReferenceProfile` with populated legacy fields and new `harmony`/`structure` fields. (Analyzer faked at the route boundary; rejection/failure paths kept.)
+- [x] Run:
 
 ```bash
 cd apps/api
