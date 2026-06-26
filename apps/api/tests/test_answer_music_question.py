@@ -145,6 +145,38 @@ def test_answers_structure_questions_from_structure_profile():
     ]
 
 
+def test_key_answer_mentions_close_alternatives_when_confidence_is_low():
+    profile = _profile()
+    key_profile = profile.audio.harmony.key
+    key_profile.primary = KeyCandidate(key="Ab major", mode="major", confidence=0.44)
+    key_profile.candidates = [
+        KeyCandidate(key="Ab major", mode="major", confidence=0.44),
+        KeyCandidate(key="F minor", mode="minor", confidence=0.42),
+        KeyCandidate(key="C# minor", mode="minor", confidence=0.38),
+    ]
+    key_profile.relative_key_ambiguity = True
+    key_profile.confidence = 0.44
+
+    answer = AnswerMusicQuestion().execute("what key is this in?", profile)
+
+    assert "probably" in answer.answer.lower() or "likely" in answer.answer.lower()
+    assert "low confidence" in answer.answer.lower()
+    assert "close alternatives" in answer.answer.lower()
+    assert "F minor" in answer.answer
+
+
+def test_structure_answer_mentions_uncertainty_when_confidence_is_low():
+    profile = _profile()
+    profile.audio.structure.confidence = 0.25
+    for section in profile.audio.structure.sections:
+        section.confidence = 0.25
+
+    answer = AnswerMusicQuestion().execute("what is the form?", profile)
+
+    assert "unclear" in answer.answer.lower() or "approximate" in answer.answer.lower()
+    assert "low confidence" in answer.answer.lower()
+
+
 def test_falls_back_when_profile_has_no_audio():
     profile = ReferenceProfile(
         reference_id="ref_empty",
