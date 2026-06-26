@@ -12,21 +12,35 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from llm_band.agents.director import run_director
 from llm_band.application.analyze_reference import AnalyzeReference
+from llm_band.application.answer_music_question import AnswerMusicQuestion
+from llm_band.application.chat_music import ChatMusic
 from llm_band.application.compose_song import ComposeSong
 from llm_band.canned import canned_song
 from llm_band.config import get_settings
 from llm_band.domain.audio_profile import ReferenceProfile, ReferenceSource
 from llm_band.domain.song_state import Part
 from llm_band.graph import iter_negotiation_events, run_negotiation
+from llm_band.infrastructure.explainer.profile_explainer import ProfileExplainer
 from llm_band.infrastructure.mir.librosa_analyzer import LibrosaAnalyzer
+from llm_band.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from llm_band.infrastructure.storage.render_artifacts import render_artifacts
 from llm_band.infrastructure.storage.local_store import LocalArtifactStore
 from llm_band.infrastructure.llm import LLMAllProvidersFailed, LLMError
-from llm_band.interfaces.api_models import Artifacts, ComposeRequest, ComposeResponse, DoneEvent, ErrorEvent, sse_data
+from llm_band.interfaces.api_models import (
+    Artifacts,
+    ChatRequest,
+    ChatResponse,
+    ComposeRequest,
+    ComposeResponse,
+    DoneEvent,
+    ErrorEvent,
+    sse_data,
+)
 
 OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
 REFERENCE_UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
+REFERENCE_STORE = InMemoryReferenceStore()
 SUPPORTED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
@@ -94,7 +108,7 @@ async def analyze_reference_upload(file: UploadFile | None = File(None)) -> Refe
         authorized=True,
     )
     try:
-        return AnalyzeReference(LibrosaAnalyzer()).execute(source)
+        profile = AnalyzeReference(LibrosaAnalyzer()).execute(source)
     except HTTPException:
         raise
     except Exception as exc:
@@ -102,6 +116,27 @@ async def analyze_reference_upload(file: UploadFile | None = File(None)) -> Refe
             status_code=422,
             detail=f"could not analyze uploaded audio: {exc}",
         ) from exc
+
+    REFERENCE_STORE.save(profile)
+    return profile
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(req: ChatRequest) -> ChatResponse:
+    if req.reference_id and REFERENCE_STORE.get(req.reference_id) is None:
+        raise HTTPException(status_code=404, detail=f"reference_id not found: {req.reference_id}")
+    try:
+        return _chat_music().handle(req)
+    except LLMError as exc:
+        raise HTTPException(status_code=503, detail=_llm_error_event(exc, partial=False)) from exc
+
+
+def _chat_music() -> ChatMusic:
+    return ChatMusic(
+        compose_song=_compose_song(),
+        answer_music_question=AnswerMusicQuestion(ProfileExplainer()),
+        reference_store=REFERENCE_STORE,
+    )
 
 
 def _reference_upload_root() -> Path:
