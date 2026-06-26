@@ -284,6 +284,29 @@ test("describeReferenceSummary keeps tempo and key probabilistic", () => {
   ]);
 });
 
+test("describeReferenceSummary includes double-time tempo alternative", () => {
+  const tempoProfile = {
+    ...profile,
+    audio: {
+      ...profile.audio,
+      tempo: {
+        primary_bpm: 86,
+        confidence: 0.88,
+        candidates: [
+          { bpm: 86, confidence: 0.88, relation: "primary" },
+          { bpm: 172, confidence: 0.56, relation: "double_time" },
+        ],
+        beat_grid_confidence: 0.88,
+        bar_grid_confidence: 0.8,
+      },
+    },
+  };
+
+  const rows = describeReferenceSummary(tempoProfile);
+
+  assert(rows.some((row) => row === "Also plausible: 172 BPM double-time"));
+});
+
 test("getTopChordEstimates returns probable chord labels with time ranges", () => {
   assert.deepEqual(getTopChordEstimates(profile, 1), [
     {
