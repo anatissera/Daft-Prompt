@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -116,6 +117,12 @@ class _FailingProgressAnalyzer:
         raise RuntimeError("decoder exploded")
 
 
+class _SlowAnalyzer:
+    def analyze(self, source: ReferenceSource, *, progress=None) -> ReferenceProfile:
+        time.sleep(0.05)
+        return _profile(source)
+
+
 def test_analyze_reference_stream_emits_progress_and_done(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(api, "REFERENCE_UPLOADS", tmp_path / "uploads")
     monkeypatch.setattr(api, "_reference_analyzer", lambda: _ProgressAnalyzer())
@@ -157,3 +164,24 @@ def test_analyze_reference_stream_emits_error_event(tmp_path: Path, monkeypatch:
     events = _parse_sse(response.text)
     assert [event["type"] for event in events] == ["accepted", "separating_stems", "error"]
     assert "decoder exploded" in events[-1]["message"]
+
+
+def test_analyze_reference_stream_emits_keepalive_during_long_idle_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(api, "REFERENCE_UPLOADS", tmp_path / "uploads")
+    monkeypatch.setattr(api, "_reference_analyzer", lambda: _SlowAnalyzer())
+    monkeypatch.setattr(api, "ANALYSIS_KEEPALIVE_SECONDS", 0.01)
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/references/analyze/stream",
+        files={"file": ("slow.wav", b"fake audio bytes", "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    event_types = [event["type"] for event in events]
+    assert event_types[0] == "accepted"
+    assert "analysis_keepalive" in event_types
+    assert event_types[-1] == "done"

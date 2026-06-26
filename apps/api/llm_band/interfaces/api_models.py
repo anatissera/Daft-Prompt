@@ -78,6 +78,7 @@ AnalysisProgressType = Literal[
     "estimating_key",
     "estimating_chords",
     "detecting_structure",
+    "analysis_keepalive",
 ]
 
 

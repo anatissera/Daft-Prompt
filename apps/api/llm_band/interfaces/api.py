@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from inspect import signature
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Queue
 from threading import Thread
 from typing import Iterator
 
@@ -42,6 +42,7 @@ REFERENCE_UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
 SUPPORTED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
+ANALYSIS_KEEPALIVE_SECONDS = 15.0
 
 app = FastAPI(title="Multi-agent Band API", version="0.1.0")
 
@@ -157,7 +158,14 @@ def _reference_analysis_stream_events(source: ReferenceSource) -> Iterator[dict]
     thread = Thread(target=worker, daemon=True)
     thread.start()
     while True:
-        event = events.get()
+        try:
+            event = events.get(timeout=ANALYSIS_KEEPALIVE_SECONDS)
+        except Empty:
+            yield AnalysisProgressEvent(
+                type="analysis_keepalive",
+                message="Still analyzing. This can take a few minutes for longer songs.",
+            ).model_dump(mode="json")
+            continue
         if event is None:
             break
         yield event
