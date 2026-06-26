@@ -74,7 +74,11 @@ def key_profile_from_pitch_classes(
     )
 
     candidates = [
-        KeyCandidate(key=_label(tonic, mode), mode=mode, confidence=round(_clamp(score), 3))
+        KeyCandidate(
+            key=_label(tonic, mode),
+            mode=mode,
+            confidence=round(_candidate_confidence(score, best_score, confidence), 3),
+        )
         for score, tonic, mode in scored[: max(1, max_candidates)]
     ]
     relative_ambiguity = _is_relative_pair(scored[0], scored[1]) and (
@@ -90,6 +94,12 @@ def key_profile_from_pitch_classes(
 
 def _label(tonic_index: int, mode: str) -> str:
     return f"{NOTE_NAMES[tonic_index]} {mode}"
+
+
+def _candidate_confidence(score: float, best_score: float, profile_confidence: float) -> float:
+    distance = max(0.0, best_score - score)
+    closeness = _clamp(1.0 - distance * 8.0)
+    return _clamp(profile_confidence * (0.65 + 0.35 * closeness))
 
 
 def _is_relative_pair(
