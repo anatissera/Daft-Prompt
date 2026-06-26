@@ -160,6 +160,14 @@ def test_weak_bar_grid_adds_note(tmp_path):
     assert "weak_bar_grid" in codes
 
 
+def test_ambiguous_key_adds_note(tmp_path):
+    profile = _analyzer(tmp_path).analyze(_source(tmp_path))
+
+    notes = profile.audio.analysis_notes
+    assert any(note.code == "ambiguous_key" for note in notes)
+    assert any("ambiguous" in note.message.lower() for note in notes)
+
+
 def test_non_local_source_is_rejected(tmp_path):
     analyzer = _analyzer(tmp_path)
     remote = ReferenceSource(
