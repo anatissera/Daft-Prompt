@@ -112,6 +112,25 @@ class DeepHarmonicAnalyzer:
         key_profile = self.key_estimator(
             harmonic.path, confidence_adjustment=harmonic.confidence_adjustment
         )
+        if key_profile.primary and key_profile.relative_key_ambiguity:
+            alternatives = [
+                candidate.key for candidate in key_profile.candidates[1:4]
+            ]
+            suffix = (
+                f" Close alternatives include {', '.join(alternatives)}."
+                if alternatives
+                else ""
+            )
+            notes.append(
+                AnalysisNote(
+                    code="ambiguous_key",
+                    message=(
+                        f"Key is ambiguous around {key_profile.primary.key}."
+                        f"{suffix}"
+                    ),
+                    severity="info",
+                )
+            )
 
         _emit(progress, "estimating_chords", "Estimating probable triads by bar.")
         chord_spans = self.chord_estimator(harmonic.path, grid.bar_times, duration)
