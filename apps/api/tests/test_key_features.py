@@ -45,6 +45,26 @@ def test_relative_major_minor_ambiguity_is_flagged():
     assert profile.relative_key_ambiguity is True
 
 
+def test_parallel_key_ambiguity_is_flagged_when_scores_are_close():
+    vector = _vector({C: 1.0, E: 1.0, Eb: 1.0, G: 1.0})
+
+    profile = key_profile_from_pitch_classes(vector)
+
+    top_two_tonics = {candidate.key.split()[0] for candidate in profile.candidates[:2]}
+    assert top_two_tonics == {"C"}
+    assert profile.relative_key_ambiguity is True
+    assert profile.confidence < 0.6
+
+
+def test_multiple_close_key_candidates_are_flagged_as_ambiguous():
+    vector = _vector({C: 1.0, Eb: 0.9, G: 0.95, Ab: 0.85})
+
+    profile = key_profile_from_pitch_classes(vector)
+
+    assert profile.relative_key_ambiguity is True
+    assert profile.confidence < 0.5
+
+
 def test_empty_pitch_classes_returns_empty_profile():
     profile = key_profile_from_pitch_classes(np.zeros(12))
 
