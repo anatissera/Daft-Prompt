@@ -27,6 +27,9 @@ export function describeReferenceSummary(profile) {
         tempoConfidence,
       )}`,
     );
+    for (const alternative of getTempoAlternatives(audio.tempo)) {
+      rows.push(`Also plausible: ${Math.round(alternative.bpm)} BPM ${formatTempoRelation(alternative.relation)}`);
+    }
   }
   const key = audio.harmony?.key?.primary?.key ?? audio.key;
   const keyConfidence = audio.harmony?.key?.confidence ?? audio.key_confidence;
@@ -37,6 +40,22 @@ export function describeReferenceSummary(profile) {
   }
   rows.push(`Overall confidence ${formatPercent(audio.overall_confidence || audio.confidence || 0)}`);
   return rows;
+}
+
+function getTempoAlternatives(tempoProfile) {
+  const primary = tempoProfile?.primary_bpm;
+  return (tempoProfile?.candidates ?? [])
+    .filter((candidate) => candidate.relation !== "primary")
+    .filter((candidate) => candidate.bpm !== primary)
+    .filter((candidate) => Number.isFinite(candidate.bpm))
+    .filter((candidate) => candidate.confidence >= 0.4)
+    .slice(0, 3);
+}
+
+function formatTempoRelation(relation) {
+  if (relation === "half_time") return "half-time";
+  if (relation === "double_time") return "double-time";
+  return "alternate";
 }
 
 export function getTopChordEstimates(profile, limit = 4) {
