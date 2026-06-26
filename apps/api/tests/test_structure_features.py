@@ -23,6 +23,15 @@ def _phrase(start_bar: int, chords: list[str]) -> list[ChordSpan]:
     return [_span(start_bar + offset, chord) for offset, chord in enumerate(chords)]
 
 
+def _repetitive_spans_with_one_tail_bar() -> list[ChordSpan]:
+    spans: list[ChordSpan] = []
+    for bar in range(1, 117):
+        progression = ["Am", "F", "C", "G"]
+        spans.append(_span(bar, progression[(bar - 1) % len(progression)]))
+    spans.append(_span(117, "E"))
+    return spans
+
+
 def test_a_b_c_b_pattern_reuses_label_for_matching_progression():
     spans = (
         _phrase(1, ["Am", "F", "C", "G"])      # A
@@ -81,3 +90,14 @@ def test_labels_stay_abstract():
     labels = {section.label for section in structure.sections}
     assert labels <= set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     assert not labels & {"verse", "chorus", "bridge"}
+
+
+def test_rejects_one_huge_section_plus_one_bar_tail_as_low_value_structure():
+    structure, progressions = detect_structure(_repetitive_spans_with_one_tail_bar())
+
+    assert structure.confidence < 0.4
+    assert len(structure.sections) == 1
+    assert structure.sections[0].label == "A"
+    assert structure.sections[0].start_bar == 1
+    assert structure.sections[0].end_bar == 117
+    assert progressions[0].chords
