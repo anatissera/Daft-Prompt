@@ -7,7 +7,24 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from llm_band.application.chat_music import ChatRequest, ChatResponse
 from llm_band.domain.song_state import Header, RosterItem, SongState
+
+__all__ = [
+    "ChatRequest",
+    "ChatResponse",
+    "ComposeRequest",
+    "ComposeResponse",
+    "Artifacts",
+    "DirectorEvent",
+    "AgentPassEvent",
+    "ConvergenceEvent",
+    "ErrorEvent",
+    "DoneEvent",
+    "ComposeEvent",
+    "event_payload",
+    "sse_data",
+]
 
 
 class ComposeRequest(BaseModel):
