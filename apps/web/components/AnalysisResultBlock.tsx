@@ -2,10 +2,9 @@ import type { ReferenceProfile } from "@/lib/types";
 import HarmonyTimeline from "@/components/HarmonyTimeline";
 import {
   describeReferenceSummary,
-  formatConfidence,
-  formatDuration,
   getAnalysisNotes,
   getKeyCandidateSummary,
+  getLegacyEnergySections,
   getMainProgression,
   getTopChordEstimates,
 } from "@/lib/referenceProfileView.mjs";
@@ -17,6 +16,7 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
   const keyCandidates = getKeyCandidateSummary(profile);
   const mainProgression = getMainProgression(profile);
   const analysisNotes = getAnalysisNotes(profile);
+  const legacyEnergySections = getLegacyEnergySections(profile);
 
   return (
     <section className="result-block" aria-label="Reference analysis result">
@@ -105,25 +105,20 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
         </details>
       ) : null}
 
-      {audio && audio.sections.length > 0 ? (
+      {legacyEnergySections.length > 0 ? (
         <details className="details-panel">
           <summary className="details-summary">Legacy energy</summary>
           <ul className="section-list">
-            {audio.sections.slice(0, 6).map((section) => (
-              <li key={`${section.name}-${section.start_seconds}`} className="section-row">
+            {legacyEnergySections.slice(0, 6).map((section) => (
+              <li key={`${section.name}-${section.timeRange}`} className="section-row">
                 <div className="section-row-main">
                   <span className="section-row-name">{section.name}</span>
-                  <span className="context-muted">
-                    {formatDuration(section.start_seconds)}-{formatDuration(section.end_seconds)}
-                  </span>
+                  <span className="context-muted">{section.timeRange}</span>
                 </div>
-                <div className="energy-meter" aria-label={`Energy ${Math.round((section.energy ?? 0) * 100)} percent`}>
-                  <span style={{ width: `${Math.round((section.energy ?? 0) * 100)}%` }} />
+                <div className="energy-meter" aria-label={`Energy ${section.energy} percent`}>
+                  <span style={{ width: `${section.energy}%` }} />
                 </div>
-                <span className="context-muted">
-                  Energy {section.energy === null ? "unknown" : `${Math.round(section.energy * 100)}%`} ·{" "}
-                  {formatConfidence(section.energy_confidence >= 0.75 ? "high" : section.energy_confidence >= 0.5 ? "medium" : "low", section.energy_confidence)}
-                </span>
+                <span className="context-muted">Energy {section.energy}% · {section.confidence}</span>
               </li>
             ))}
           </ul>

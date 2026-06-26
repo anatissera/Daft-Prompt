@@ -31,6 +31,13 @@ export interface DisplayAnalysisNote {
   message: string;
 }
 
+export interface DisplayLegacyEnergySection {
+  name: string;
+  timeRange: string;
+  energy: number;
+  confidence: string;
+}
+
 export function formatDuration(seconds: number): string;
 
 export function formatPercent(value: number): string;
@@ -48,6 +55,8 @@ export function getMainProgression(profile: ReferenceProfile): DisplayProgressio
 export function getStructureTimeline(profile: ReferenceProfile): DisplayStructureSection[];
 
 export function getAnalysisNotes(profile: ReferenceProfile): DisplayAnalysisNote[];
+
+export function getLegacyEnergySections(profile: ReferenceProfile): DisplayLegacyEnergySection[];
 
 export function isReferenceQuestion(prompt: string): boolean;
 

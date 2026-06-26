@@ -37,6 +37,10 @@ export function describeReferenceSummary(profile) {
     rows.push(
       `Likely key ${key} · ${confidenceLabel(keyConfidence)} · ${formatPercent(keyConfidence)}`,
     );
+    const alternatives = getCloseKeyAlternatives(audio.harmony?.key);
+    if (alternatives.length > 0) {
+      rows.push(`Close alternatives: ${alternatives.join(", ")}`);
+    }
   }
   rows.push(`Overall confidence ${formatPercent(audio.overall_confidence || audio.confidence || 0)}`);
   return rows;
@@ -80,10 +84,15 @@ export function getTopChordEstimates(profile, limit = 4) {
 }
 
 export function getKeyCandidateSummary(profile, limit = 4) {
-  const candidates = profile.audio?.harmony?.key?.candidates ?? [];
+  const keyProfile = profile.audio?.harmony?.key;
+  const candidates = keyProfile?.candidates ?? [];
+  const globalConfidence = keyProfile?.confidence;
   return candidates.slice(0, limit).map((candidate) => ({
     label: candidate.key,
-    confidence: formatConfidence(confidenceLabel(candidate.confidence), candidate.confidence),
+    confidence: formatConfidence(
+      confidenceLabel(Math.min(candidate.confidence, globalConfidence ?? candidate.confidence)),
+      Math.min(candidate.confidence, globalConfidence ?? candidate.confidence),
+    ),
   }));
 }
 
@@ -115,6 +124,29 @@ export function getAnalysisNotes(profile) {
     label: note.severity,
     message: note.message,
   }));
+}
+
+export function getLegacyEnergySections(profile) {
+  const sections = profile.audio?.sections ?? [];
+  const usefulSections = sections.filter((section) => {
+    const hasEnergy = section.energy !== null && section.energy !== undefined;
+    return hasEnergy && section.energy_confidence > 0;
+  });
+  if (usefulSections.length === 0) return [];
+  return usefulSections.map((section) => ({
+    name: section.name,
+    timeRange: `${formatDuration(section.start_seconds)}-${formatDuration(section.end_seconds)}`,
+    energy: Math.round((section.energy ?? 0) * 100),
+    confidence: formatConfidence(confidenceLabel(section.energy_confidence), section.energy_confidence),
+  }));
+}
+
+function getCloseKeyAlternatives(keyProfile) {
+  if (!keyProfile?.primary || !keyProfile.relative_key_ambiguity) return [];
+  return keyProfile.candidates
+    .slice(1, 4)
+    .filter((candidate) => keyProfile.confidence - candidate.confidence <= 0.12)
+    .map((candidate) => candidate.key);
 }
 
 export function isReferenceQuestion(prompt) {
