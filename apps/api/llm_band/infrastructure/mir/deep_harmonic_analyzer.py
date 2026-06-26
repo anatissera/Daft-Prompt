@@ -153,6 +153,17 @@ class DeepHarmonicAnalyzer:
 
         _emit(progress, "detecting_structure", "Detecting repeated progressions and A/B/C structure.")
         structure, progressions = self.structure_detector(chord_spans)
+        if structure.sections and structure.confidence < 0.4:
+            notes.append(
+                AnalysisNote(
+                    code="unclear_structure",
+                    message=(
+                        "Structure is unclear from harmonic repetition; "
+                        "sections are approximate."
+                    ),
+                    severity="info",
+                )
+            )
 
         harmony = HarmonicProfile(
             key=key_profile,
