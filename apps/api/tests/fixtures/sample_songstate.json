@@ -1,0 +1,495 @@
+{
+  "request": "fixture",
+  "header": {
+    "genre": "demo",
+    "key": "C major",
+    "tempo_bpm": 100.0,
+    "time_signature": [
+      4,
+      4
+    ],
+    "num_bars": 4,
+    "sections": [
+      {
+        "name": "loop",
+        "start_bar": 0,
+        "end_bar": 4
+      }
+    ],
+    "chord_progression": [
+      {
+        "bar": 0,
+        "chord": "C"
+      },
+      {
+        "bar": 1,
+        "chord": "G"
+      },
+      {
+        "bar": 2,
+        "chord": "Am"
+      },
+      {
+        "bar": 3,
+        "chord": "F"
+      }
+    ]
+  },
+  "roster": [
+    {
+      "id": "lead",
+      "instrument": "acoustic_grand_piano",
+      "midi_program": 0,
+      "midi_range": [
+        48,
+        84
+      ],
+      "role": "melody",
+      "is_drum": false
+    },
+    {
+      "id": "bass",
+      "instrument": "electric_bass",
+      "midi_program": 33,
+      "midi_range": [
+        28,
+        55
+      ],
+      "role": "root motion",
+      "is_drum": false
+    },
+    {
+      "id": "drums",
+      "instrument": "drum_kit",
+      "midi_program": 0,
+      "midi_range": [
+        35,
+        81
+      ],
+      "role": "four-on-the-floor",
+      "is_drum": true
+    }
+  ],
+  "parts": {
+    "lead": {
+      "instrument_id": "lead",
+      "version": 1,
+      "notes": [
+        {
+          "bar": 0,
+          "start_beat": 0.0,
+          "pitch": 60,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 0,
+          "start_beat": 1.0,
+          "pitch": 64,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 0,
+          "start_beat": 2.0,
+          "pitch": 67,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 0,
+          "start_beat": 3.0,
+          "pitch": 64,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 1,
+          "start_beat": 0.0,
+          "pitch": 62,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 1,
+          "start_beat": 1.0,
+          "pitch": 67,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 1,
+          "start_beat": 2.0,
+          "pitch": 71,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 1,
+          "start_beat": 3.0,
+          "pitch": 67,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 2,
+          "start_beat": 0.0,
+          "pitch": 60,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 2,
+          "start_beat": 1.0,
+          "pitch": 64,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 2,
+          "start_beat": 2.0,
+          "pitch": 69,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 2,
+          "start_beat": 3.0,
+          "pitch": 64,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 3,
+          "start_beat": 0.0,
+          "pitch": 60,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 3,
+          "start_beat": 1.0,
+          "pitch": 65,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 3,
+          "start_beat": 2.0,
+          "pitch": 69,
+          "dur": 1.0,
+          "velocity": 92
+        },
+        {
+          "bar": 3,
+          "start_beat": 3.0,
+          "pitch": 65,
+          "dur": 1.0,
+          "velocity": 92
+        }
+      ],
+      "notes_summary": "quarter-note chord-tone melody, one per beat",
+      "self_notes": ""
+    },
+    "bass": {
+      "instrument_id": "bass",
+      "version": 1,
+      "notes": [
+        {
+          "bar": 0,
+          "start_beat": 0.0,
+          "pitch": 36,
+          "dur": 1.0,
+          "velocity": 100
+        },
+        {
+          "bar": 0,
+          "start_beat": 2.0,
+          "pitch": 36,
+          "dur": 1.0,
+          "velocity": 96
+        },
+        {
+          "bar": 1,
+          "start_beat": 0.0,
+          "pitch": 43,
+          "dur": 1.0,
+          "velocity": 100
+        },
+        {
+          "bar": 1,
+          "start_beat": 2.0,
+          "pitch": 43,
+          "dur": 1.0,
+          "velocity": 96
+        },
+        {
+          "bar": 2,
+          "start_beat": 0.0,
+          "pitch": 45,
+          "dur": 1.0,
+          "velocity": 100
+        },
+        {
+          "bar": 2,
+          "start_beat": 2.0,
+          "pitch": 45,
+          "dur": 1.0,
+          "velocity": 96
+        },
+        {
+          "bar": 3,
+          "start_beat": 0.0,
+          "pitch": 41,
+          "dur": 1.0,
+          "velocity": 100
+        },
+        {
+          "bar": 3,
+          "start_beat": 2.0,
+          "pitch": 41,
+          "dur": 1.0,
+          "velocity": 96
+        }
+      ],
+      "notes_summary": "root on beats 1 and 3",
+      "self_notes": ""
+    },
+    "drums": {
+      "instrument_id": "drums",
+      "version": 1,
+      "notes": [
+        {
+          "bar": 0,
+          "start_beat": 0.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 0,
+          "start_beat": 0.0,
+          "pitch": 36,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 0,
+          "start_beat": 1.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 0,
+          "start_beat": 1.0,
+          "pitch": 38,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 0,
+          "start_beat": 2.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 0,
+          "start_beat": 2.0,
+          "pitch": 36,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 0,
+          "start_beat": 3.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 0,
+          "start_beat": 3.0,
+          "pitch": 38,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 1,
+          "start_beat": 0.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 1,
+          "start_beat": 0.0,
+          "pitch": 36,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 1,
+          "start_beat": 1.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 1,
+          "start_beat": 1.0,
+          "pitch": 38,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 1,
+          "start_beat": 2.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 1,
+          "start_beat": 2.0,
+          "pitch": 36,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 1,
+          "start_beat": 3.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 1,
+          "start_beat": 3.0,
+          "pitch": 38,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 2,
+          "start_beat": 0.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 2,
+          "start_beat": 0.0,
+          "pitch": 36,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 2,
+          "start_beat": 1.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 2,
+          "start_beat": 1.0,
+          "pitch": 38,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 2,
+          "start_beat": 2.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 2,
+          "start_beat": 2.0,
+          "pitch": 36,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 2,
+          "start_beat": 3.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 2,
+          "start_beat": 3.0,
+          "pitch": 38,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 3,
+          "start_beat": 0.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 3,
+          "start_beat": 0.0,
+          "pitch": 36,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 3,
+          "start_beat": 1.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 3,
+          "start_beat": 1.0,
+          "pitch": 38,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 3,
+          "start_beat": 2.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 3,
+          "start_beat": 2.0,
+          "pitch": 36,
+          "dur": 0.5,
+          "velocity": 100
+        },
+        {
+          "bar": 3,
+          "start_beat": 3.0,
+          "pitch": 42,
+          "dur": 0.5,
+          "velocity": 70
+        },
+        {
+          "bar": 3,
+          "start_beat": 3.0,
+          "pitch": 38,
+          "dur": 0.5,
+          "velocity": 100
+        }
+      ],
+      "notes_summary": "four-on-the-floor",
+      "self_notes": ""
+    }
+  },
+  "negotiation_requests": [],
+  "round": 0,
+  "converged": true,
+  "errors": []
+}
