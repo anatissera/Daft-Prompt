@@ -58,7 +58,13 @@ def _full_stems() -> list[SeparatedStem]:
     ]
 
 
-def _analyzer(tmp_path: Path, *, stems=None, bar_grid_confidence=0.8) -> DeepHarmonicAnalyzer:
+def _analyzer(
+    tmp_path: Path,
+    *,
+    stems=None,
+    bar_grid_confidence=0.8,
+    structure_confidence=0.8,
+) -> DeepHarmonicAnalyzer:
     stems = stems if stems is not None else _full_stems()
     chord_spans = [
         _chord_span(1, "Am"),
@@ -83,11 +89,11 @@ def _analyzer(tmp_path: Path, *, stems=None, bar_grid_confidence=0.8) -> DeepHar
                 end_bar=4,
                 start_seconds=0.0,
                 end_seconds=8.0,
-                confidence=0.8,
+                confidence=structure_confidence,
                 main_progression=["Am", "F", "C", "G"],
             )
         ],
-        confidence=0.8,
+        confidence=structure_confidence,
     )
     progressions = [
         ProgressionEstimate(start_bar=1, end_bar=4, chords=["Am", "F", "C", "G"], confidence=0.8, repetitions=1)
@@ -166,6 +172,14 @@ def test_ambiguous_key_adds_note(tmp_path):
     notes = profile.audio.analysis_notes
     assert any(note.code == "ambiguous_key" for note in notes)
     assert any("ambiguous" in note.message.lower() for note in notes)
+
+
+def test_unclear_structure_adds_note(tmp_path):
+    profile = _analyzer(tmp_path, structure_confidence=0.25).analyze(_source(tmp_path))
+
+    notes = profile.audio.analysis_notes
+    assert any(note.code == "unclear_structure" for note in notes)
+    assert any("structure is unclear" in note.message.lower() for note in notes)
 
 
 def test_non_local_source_is_rejected(tmp_path):
