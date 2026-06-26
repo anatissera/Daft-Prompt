@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import numpy as np
 
 from llm_band.domain.audio_profile import ChordCandidate, ChordSpan
-from llm_band.infrastructure.mir.chord_features import apply_key_context, chords_from_bar_chromas
+from llm_band.infrastructure.mir.chord_features import (
+    _default_chroma_time_provider,
+    apply_key_context,
+    chords_from_bar_chromas,
+)
 
 # Pitch-class index order: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B
 C, Cs, D, Eb, E, F, Fs, G, Ab, A, Bb, B = range(12)
@@ -117,3 +124,28 @@ def test_key_context_does_not_replace_isolated_non_diatonic_chord():
     assert adjusted[1].chosen is not None
     assert adjusted[1].chosen.label == "B"
     assert adjusted[1].confidence < spans[1].confidence
+
+
+def test_default_chroma_time_provider_labels_against_a440_without_relabeling_for_tuning(monkeypatch):
+    calls = {}
+
+    fake_librosa = SimpleNamespace(
+        load=lambda path, sr, mono: (np.ones(1024), sr),
+        estimate_tuning=lambda y, sr: -0.28,
+        feature=SimpleNamespace(
+            chroma_cqt=lambda y, sr, hop_length, tuning: calls.setdefault("tuning", tuning)
+            or np.ones((12, 3))
+        ),
+        frames_to_time=lambda frames, sr, hop_length: np.asarray(frames, dtype=float),
+    )
+    monkeypatch.setitem(sys.modules, "librosa", fake_librosa)
+    monkeypatch.setattr(
+        "llm_band.infrastructure.mir.librosa_analyzer._prepare_librosa_import",
+        lambda: None,
+    )
+
+    chroma, frame_times = _default_chroma_time_provider("/fake/harmonic.wav", 22_050)
+
+    assert calls["tuning"] == 0.0
+    assert chroma.shape == (12, 3)
+    assert frame_times.tolist() == [0.0, 1.0, 2.0]

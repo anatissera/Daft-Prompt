@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import numpy as np
 
 from llm_band.infrastructure.mir.key_features import (
+    _default_chroma_provider,
     estimate_key,
     key_profile_from_pitch_classes,
 )
@@ -100,3 +104,26 @@ def test_estimate_key_uses_injected_chroma_provider():
 
     assert profile.primary is not None
     assert profile.primary.mode in {"major", "minor"}
+
+
+def test_default_chroma_provider_labels_against_a440_without_relabeling_for_tuning(monkeypatch):
+    calls = {}
+
+    fake_librosa = SimpleNamespace(
+        load=lambda path, sr, mono: (np.ones(1024), sr),
+        estimate_tuning=lambda y, sr: 0.31,
+        feature=SimpleNamespace(
+            chroma_cqt=lambda y, sr, tuning: calls.setdefault("tuning", tuning)
+            or np.ones((12, 4))
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "librosa", fake_librosa)
+    monkeypatch.setattr(
+        "llm_band.infrastructure.mir.librosa_analyzer._prepare_librosa_import",
+        lambda: None,
+    )
+
+    chroma = _default_chroma_provider("/fake/harmonic.wav", 22_050)
+
+    assert calls["tuning"] == 0.0
+    assert chroma.shape == (12,)

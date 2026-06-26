@@ -34,9 +34,14 @@ export function describeReferenceSummary(profile) {
   const key = audio.harmony?.key?.primary?.key ?? audio.key;
   const keyConfidence = audio.harmony?.key?.confidence ?? audio.key_confidence;
   if (key) {
-    rows.push(
-      `Likely key ${key} · ${confidenceLabel(keyConfidence)} · ${formatPercent(keyConfidence)}`,
-    );
+    if (keyConfidence < 0.5 || audio.harmony?.key?.relative_key_ambiguity) {
+      const candidates = [key, ...getCloseKeyCandidates(audio.harmony?.key)].slice(0, 3);
+      rows.push(`Tonal center is ambiguous; close candidates include ${candidates.join(", ")}.`);
+    } else {
+      rows.push(
+        `Likely key ${key} · ${confidenceLabel(keyConfidence)} · ${formatPercent(keyConfidence)}`,
+      );
+    }
     const alternatives = getCloseKeyAlternatives(audio.harmony?.key);
     if (alternatives.length > 0) {
       rows.push(`Close alternatives: ${alternatives.join(", ")}`);
@@ -100,8 +105,9 @@ export function getMainProgression(profile) {
   const progressions = profile.audio?.harmony?.progressions ?? [];
   const main = progressions.find((progression) => progression.chords.length > 0);
   if (!main) return null;
+  const progression = main.chords.join(" - ");
   return {
-    label: `Probably ${main.chords.join(" - ")}`,
+    label: main.confidence < 0.5 ? `Weak chord loop candidate: ${progression}` : `Probably ${progression}`,
     bars: `bars ${main.start_bar}-${main.end_bar}`,
     repetitions: main.repetitions,
     confidence: formatConfidence(confidenceLabel(main.confidence), main.confidence),
@@ -149,6 +155,11 @@ function getCloseKeyAlternatives(keyProfile) {
     .map((candidate) => candidate.key);
 }
 
+function getCloseKeyCandidates(keyProfile) {
+  if (!keyProfile?.primary) return [];
+  return keyProfile.candidates.slice(1, 4).map((candidate) => candidate.key);
+}
+
 export function isReferenceQuestion(prompt) {
   const normalized = prompt.toLowerCase();
   if (/\b(compose|generate|make|write|create)\b/.test(normalized)) return false;
@@ -169,6 +180,10 @@ export function answerReferenceQuestion(prompt, profile) {
       return "I do not have probable chord estimates for this reference yet.";
     }
     if (main) {
+      const progression = main.label.replace("Weak chord loop candidate: ", "").replace("Probably ", "");
+      if (main.label.startsWith("Weak chord loop candidate:")) {
+        return `Weak chord loop candidate: ${progression} across ${main.bars}, with ${main.confidence} confidence.`;
+      }
       return `The main progression is estimated as ${main.label} across ${main.bars}, with ${main.confidence} confidence.`;
     }
     const summary = estimates
@@ -195,6 +210,10 @@ export function answerReferenceQuestion(prompt, profile) {
     if (!key) {
       return "I do not have a reliable key estimate for this reference yet.";
     }
+    if (keyConfidence < 0.5 || audio.harmony?.key?.relative_key_ambiguity) {
+      const candidates = [key, ...getCloseKeyCandidates(audio.harmony?.key)].slice(0, 3);
+      return `Tonal center is ambiguous; close candidates include ${candidates.join(", ")}, with ${formatConfidence(confidenceLabel(keyConfidence), keyConfidence)} confidence.`;
+    }
     return `The key is probably ${key} with ${formatConfidence(confidenceLabel(keyConfidence), keyConfidence)} confidence.`;
   }
 
@@ -205,6 +224,9 @@ export function answerReferenceQuestion(prompt, profile) {
         .slice(0, 5)
         .map((section) => `${section.label} bars ${section.bars} (${section.confidence})`)
         .join(" / ");
+      if ((audio.structure?.confidence ?? 0) < 0.4) {
+        return `Structure is approximate/unclear: ${sections}.`;
+      }
       return `The structure appears to repeat as ${sections}.`;
     }
   }

@@ -31,6 +31,11 @@ def detect_structure(
     labels = _assign_labels(windows)
     sections = _merge_sections(windows, labels)
     progressions = _progressions(windows)
+    fuzzy_progression = find_repeated_progression_candidate(
+        chord_spans, phrase_bars=phrase_bars
+    )
+    if fuzzy_progression and _should_prepend_fuzzy_progression(fuzzy_progression, progressions):
+        progressions = [fuzzy_progression, *progressions]
     sections = _fallback_sections_if_degenerate(chord_spans, sections)
 
     structure_confidence = (
@@ -39,6 +44,43 @@ def detect_structure(
         else 0.0
     )
     return StructureProfile(sections=sections, confidence=structure_confidence), progressions
+
+
+def find_repeated_progression_candidate(
+    chord_spans: list[ChordSpan],
+    *,
+    phrase_bars: int = PHRASE_BARS,
+) -> ProgressionEstimate | None:
+    if len(chord_spans) < phrase_bars * 2:
+        return None
+
+    windows = _windows(chord_spans, phrase_bars)
+    best_group: list[dict] = []
+    best_score = 0.0
+    for seed in windows:
+        group = [window for window in windows if _fuzzy_window_match(seed, window)]
+        if len(group) < 2:
+            continue
+        confidence = _fuzzy_group_confidence(group)
+        score = len(group) + confidence
+        if score > best_score:
+            best_group = group
+            best_score = score
+
+    if not best_group:
+        return None
+
+    chords = _consensus_chords(best_group)
+    if not chords:
+        return None
+    confidence = _fuzzy_group_confidence(best_group)
+    return ProgressionEstimate(
+        start_bar=best_group[0]["start_bar"],
+        end_bar=best_group[0]["end_bar"],
+        chords=chords,
+        confidence=confidence,
+        repetitions=len(best_group),
+    )
 
 
 def _windows(
@@ -126,6 +168,68 @@ def _progressions(windows: list[dict]) -> list[ProgressionEstimate]:
             )
         )
     return progressions
+
+
+def _should_prepend_fuzzy_progression(
+    fuzzy: ProgressionEstimate, progressions: list[ProgressionEstimate]
+) -> bool:
+    if not progressions:
+        return True
+    if any(
+        progression.chords == fuzzy.chords
+        and progression.start_bar == fuzzy.start_bar
+        and progression.end_bar == fuzzy.end_bar
+        for progression in progressions
+    ):
+        return False
+    first = progressions[0]
+    if fuzzy.repetitions > first.repetitions:
+        return True
+    return fuzzy.repetitions == first.repetitions and len(fuzzy.chords) > len(first.chords)
+
+
+def _fuzzy_window_match(left: dict, right: dict) -> bool:
+    comparable = 0
+    matches = 0
+    for left_chord, right_chord in zip(left["chords"], right["chords"]):
+        if left_chord == "?" or right_chord == "?":
+            continue
+        comparable += 1
+        if left_chord == right_chord:
+            matches += 1
+    if comparable == 0:
+        return False
+    mismatches = comparable - matches
+    return matches >= max(2, comparable - 1) and mismatches <= 1
+
+
+def _consensus_chords(windows: list[dict]) -> list[str]:
+    chords: list[str] = []
+    width = max((len(window["chords"]) for window in windows), default=0)
+    for index in range(width):
+        counts: dict[str, int] = {}
+        for window in windows:
+            if index >= len(window["chords"]):
+                continue
+            chord = window["chords"][index]
+            if chord == "?":
+                continue
+            counts[chord] = counts.get(chord, 0) + 1
+        if counts:
+            chords.append(max(counts.items(), key=lambda item: (item[1], item[0]))[0])
+    return chords[:16]
+
+
+def _fuzzy_group_confidence(windows: list[dict]) -> float:
+    if not windows:
+        return 0.0
+    confidences = [window["confidence"] for window in windows]
+    unknown_count = sum(
+        1 for window in windows for chord in window["chords"] if chord == "?"
+    )
+    total_slots = sum(len(window["chords"]) for window in windows)
+    unknown_penalty = unknown_count / max(1, total_slots) * 0.2
+    return round(max(0.0, sum(confidences) / len(confidences) - unknown_penalty), 3)
 
 
 def _fallback_sections_if_degenerate(

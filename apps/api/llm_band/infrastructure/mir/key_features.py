@@ -153,8 +153,18 @@ def _default_chroma_provider(path: str, sample_rate: int) -> np.ndarray:
     import librosa
 
     samples, sr = librosa.load(path, sr=sample_rate, mono=True)
-    tuning = librosa.estimate_tuning(y=samples, sr=sr)
-    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, tuning=tuning)
+    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, tuning=0.0)
     if not chroma.size:
         return np.zeros(12)
     return np.mean(chroma, axis=1)
+
+
+def estimate_tuning_deviation(path: str, *, sample_rate: int = SAMPLE_RATE) -> float | None:
+    """Estimate detuning for notes only; labels still assume A=440."""
+    from llm_band.infrastructure.mir.librosa_analyzer import _prepare_librosa_import
+
+    _prepare_librosa_import()
+    import librosa
+
+    samples, sr = librosa.load(path, sr=sample_rate, mono=True)
+    return float(librosa.estimate_tuning(y=samples, sr=sr))
