@@ -31,6 +31,7 @@ def detect_structure(
     labels = _assign_labels(windows)
     sections = _merge_sections(windows, labels)
     progressions = _progressions(windows)
+    sections = _fallback_sections_if_degenerate(chord_spans, sections)
 
     structure_confidence = (
         round(sum(section.confidence for section in sections) / len(sections), 3)
@@ -125,6 +126,35 @@ def _progressions(windows: list[dict]) -> list[ProgressionEstimate]:
             )
         )
     return progressions
+
+
+def _fallback_sections_if_degenerate(
+    spans: list[ChordSpan], sections: list[StructuralSection]
+) -> list[StructuralSection]:
+    if not spans or len(sections) != 2:
+        return sections
+
+    total_bars = spans[-1].end_bar - spans[0].start_bar + 1
+    if total_bars <= 0:
+        return sections
+    first, tail = sections
+    first_bars = first.end_bar - first.start_bar + 1
+    tail_bars = tail.end_bar - tail.start_bar + 1
+    if first_bars / total_bars <= 0.85 or tail_bars >= 2:
+        return sections
+
+    chosen = [span.chosen.label for span in spans[:PHRASE_BARS] if span.chosen]
+    return [
+        StructuralSection(
+            label="A",
+            start_bar=spans[0].start_bar,
+            end_bar=spans[-1].end_bar,
+            start_seconds=spans[0].start_seconds,
+            end_seconds=spans[-1].end_seconds,
+            confidence=0.25,
+            main_progression=chosen[:16],
+        )
+    ]
 
 
 def _ordinal_label(index: int) -> str:
