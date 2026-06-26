@@ -8,6 +8,7 @@ import {
   formatDuration,
   getAnalysisNotes,
   getKeyCandidateSummary,
+  getLegacyEnergySections,
   getMainProgression,
   getStructureTimeline,
   getTopChordEstimates,
@@ -305,6 +306,75 @@ test("describeReferenceSummary includes double-time tempo alternative", () => {
   const rows = describeReferenceSummary(tempoProfile);
 
   assert(rows.some((row) => row === "Also plausible: 172 BPM double-time"));
+});
+
+test("describeReferenceSummary includes close key alternatives for ambiguous key", () => {
+  const ambiguousProfile = {
+    ...harmonicProfile,
+    audio: {
+      ...harmonicProfile.audio,
+      harmony: {
+        ...harmonicProfile.audio.harmony,
+        key: {
+          primary: { key: "Ab major", mode: "major", confidence: 0.44 },
+          candidates: [
+            { key: "Ab major", mode: "major", confidence: 0.44 },
+            { key: "F minor", mode: "minor", confidence: 0.42 },
+            { key: "C# minor", mode: "minor", confidence: 0.38 },
+            { key: "Ab minor", mode: "minor", confidence: 0.36 },
+          ],
+          relative_key_ambiguity: true,
+          confidence: 0.44,
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(getKeyCandidateSummary(ambiguousProfile, 2), [
+    { label: "Ab major", confidence: "low · 44%" },
+    { label: "F minor", confidence: "low · 42%" },
+  ]);
+  assert(describeReferenceSummary(ambiguousProfile).includes("Close alternatives: F minor, C# minor, Ab minor"));
+});
+
+test("legacy energy is hidden when all sections have unknown zero energy", () => {
+  const energyProfile = {
+    ...profile,
+    audio: {
+      ...profile.audio,
+      sections: [
+        {
+          name: "A",
+          start_seconds: 0,
+          end_seconds: 16,
+          confidence: 0.2,
+          energy: null,
+          energy_confidence: 0,
+          chord_estimates: [],
+        },
+        {
+          name: "B",
+          start_seconds: 16,
+          end_seconds: 32,
+          confidence: 0.2,
+          energy: 0,
+          energy_confidence: 0,
+          chord_estimates: [],
+        },
+      ],
+    },
+  };
+
+  assert.deepEqual(getLegacyEnergySections(energyProfile), []);
+});
+
+test("analysis notes stay compact for display", () => {
+  assert.deepEqual(getAnalysisNotes(harmonicProfile), [
+    {
+      label: "info",
+      message: "The bar grid was unstable; chord and structure estimates are less reliable.",
+    },
+  ]);
 });
 
 test("getTopChordEstimates returns probable chord labels with time ranges", () => {
