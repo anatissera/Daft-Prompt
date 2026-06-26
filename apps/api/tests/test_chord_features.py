@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from llm_band.infrastructure.mir.chord_features import chords_from_bar_chromas
+from llm_band.domain.audio_profile import ChordCandidate, ChordSpan
+from llm_band.infrastructure.mir.chord_features import apply_key_context, chords_from_bar_chromas
 
 # Pitch-class index order: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B
 C, Cs, D, Eb, E, F, Fs, G, Ab, A, Bb, B = range(12)
@@ -19,6 +20,21 @@ def _triad(*notes: int) -> np.ndarray:
 
 def _bar_spans(count: int) -> list[tuple[int, int, float, float]]:
     return [(i + 1, i + 1, float(i * 2), float((i + 1) * 2)) for i in range(count)]
+
+
+def _chosen_span(bar: int, label: str, confidence: float) -> ChordSpan:
+    root = label.rstrip("mdim")
+    quality = "minor" if label.endswith("m") else "diminished" if label.endswith("dim") else "major"
+    chosen = ChordCandidate(root=root, quality=quality, label=label, confidence=confidence)
+    return ChordSpan(
+        start_bar=bar,
+        end_bar=bar,
+        start_seconds=float((bar - 1) * 2),
+        end_seconds=float(bar * 2),
+        candidates=[chosen],
+        chosen=chosen,
+        confidence=confidence,
+    )
 
 
 def test_four_bar_am_f_c_g_progression():
@@ -70,3 +86,34 @@ def test_diminished_triad_is_recognized():
     assert spans[0].chosen is not None
     assert spans[0].chosen.quality == "diminished"
     assert spans[0].chosen.label == "Bdim"
+
+
+def test_key_context_boosts_diatonic_chords_without_forcing_them():
+    spans = chords_from_bar_chromas(
+        [
+            _triad(F, Ab, C),  # Fm
+            _triad(Cs, F, Ab),  # Db
+            _triad(Ab, C, Eb),  # Ab
+            _triad(Eb, G, Bb),  # Eb
+        ],
+        _bar_spans(4),
+    )
+
+    adjusted = apply_key_context(spans, key_label="F minor")
+
+    assert [span.chosen.label for span in adjusted] == ["Fm", "Db", "Ab", "Eb"]
+    assert adjusted[0].confidence >= spans[0].confidence
+
+
+def test_key_context_does_not_replace_isolated_non_diatonic_chord():
+    spans = [
+        _chosen_span(1, "Fm", 0.8),
+        _chosen_span(2, "B", 0.42),
+        _chosen_span(3, "Ab", 0.8),
+    ]
+
+    adjusted = apply_key_context(spans, key_label="F minor")
+
+    assert adjusted[1].chosen is not None
+    assert adjusted[1].chosen.label == "B"
+    assert adjusted[1].confidence < spans[1].confidence
