@@ -260,7 +260,8 @@ export type AnalysisProgressType =
   | "estimating_tempo_grid"
   | "estimating_key"
   | "estimating_chords"
-  | "detecting_structure";
+  | "detecting_structure"
+  | "analysis_keepalive";
 
 export type AnalysisEvent =
   | { type: AnalysisProgressType; message: string }

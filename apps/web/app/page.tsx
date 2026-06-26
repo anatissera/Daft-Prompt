@@ -103,7 +103,7 @@ export default function Home() {
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
-      const message = err instanceof Error ? err.message : "unknown analysis error";
+      const message = normalizeAnalysisError(err);
       setError(message);
       appendMessage(createTextMessage("assistant", `I could not analyze that file: ${message}`, nextMessageIndex()));
     } finally {
@@ -221,6 +221,23 @@ async function readApiError(response: Response) {
   } catch {
     return `backend error ${response.status}`;
   }
+}
+
+function normalizeAnalysisError(err: unknown) {
+  const message = err instanceof Error ? err.message : "unknown analysis error";
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("load failed") ||
+    normalized.includes("body timeout") ||
+    normalized.includes("terminated") ||
+    normalized.includes("networkerror")
+  ) {
+    return (
+      "analysis timed out while the backend was still working. "
+      + "Long songs can take several minutes during stem separation; try again after this update or use a shorter excerpt."
+    );
+  }
+  return message;
 }
 
 function analysisReadyMessage(profile: ReferenceProfile) {
