@@ -23,7 +23,7 @@ from llm_band.domain.audio_profile import (
     SectionProfile,
     StemProfile,
 )
-from llm_band.infrastructure.mir.chord_features import estimate_chords
+from llm_band.infrastructure.mir.chord_features import apply_key_context, estimate_chords
 from llm_band.infrastructure.mir.demucs_separator import DemucsSeparator
 from llm_band.infrastructure.mir.harmonic_source import build_harmonic_source
 from llm_band.infrastructure.mir.key_features import estimate_key
@@ -134,6 +134,9 @@ class DeepHarmonicAnalyzer:
 
         _emit(progress, "estimating_chords", "Estimating probable triads by bar.")
         chord_spans = self.chord_estimator(harmonic.path, grid.bar_times, duration)
+        chord_spans = apply_key_context(
+            chord_spans, key_profile.primary.key if key_profile.primary else None
+        )
 
         grid_confidence = grid.tempo.bar_grid_confidence
         if grid_confidence < WEAK_BAR_GRID_CONFIDENCE and chord_spans:
