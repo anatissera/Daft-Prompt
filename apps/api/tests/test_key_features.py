@@ -62,6 +62,17 @@ def test_confidence_adjustment_lowers_confidence():
     assert penalized.confidence < full.confidence
 
 
+def test_close_key_candidates_are_marked_ambiguous_not_high_confidence():
+    vector = _vector({C: 1.0, Eb: 0.9, G: 0.95, Ab: 0.85})
+
+    profile = key_profile_from_pitch_classes(vector)
+
+    assert profile.primary is not None
+    assert profile.confidence < 0.5
+    assert profile.candidates[0].confidence <= 0.6
+    assert profile.candidates[1].confidence <= 0.6
+
+
 def test_estimate_key_uses_injected_chroma_provider():
     vector = _vector({A: 1.0, C: 0.7, E: 0.8, D: 0.3, F: 0.3, G: 0.3, B: 0.2})
 
