@@ -69,8 +69,28 @@ def _answer_key(profile: ReferenceProfile) -> ExplanationAnswer:
         f"{candidate.key} ({_percent(candidate.confidence)})"
         for candidate in key_profile.candidates[1:4]
     ]
+    alternative_labels = [candidate.key for candidate in key_profile.candidates[1:4]]
     suffix = f" Close alternatives: {', '.join(alternatives)}." if alternatives else ""
     ambiguity = " There is relative-key ambiguity." if key_profile.relative_key_ambiguity else ""
+    if confidence_label(key_profile.confidence) == "low" or key_profile.relative_key_ambiguity:
+        candidates = [primary.key, *alternative_labels]
+        confidence_sentence = (
+            f"Low confidence ({_percent(key_profile.confidence)})."
+            if confidence_label(key_profile.confidence) == "low"
+            else f"Confidence {_percent(key_profile.confidence)}."
+        )
+        return ExplanationAnswer(
+            reference_id=profile.reference_id,
+            answer=(
+                "Tonal center is ambiguous; close candidates include "
+                f"{', '.join(candidates)}. {confidence_sentence}"
+                f"{suffix}{ambiguity}"
+            ),
+            evidence=[
+                f"Primary key candidate: {primary.key}, confidence {_percent(primary.confidence)}.",
+                *[f"Alternative key candidate: {candidate}." for candidate in alternatives],
+            ],
+        )
     confidence_text = (
         f"low confidence ({_percent(key_profile.confidence)})"
         if confidence_label(key_profile.confidence) == "low"
@@ -102,6 +122,18 @@ def _answer_chords(profile: ReferenceProfile) -> ExplanationAnswer:
     main = next((progression for progression in harmony.progressions if progression.chords), None)
     if main is not None:
         progression = " - ".join(main.chords)
+        if main.confidence < 0.5:
+            return ExplanationAnswer(
+                reference_id=profile.reference_id,
+                answer=(
+                    f"Weak chord loop candidate: {progression} across bars "
+                    f"{main.start_bar}-{main.end_bar}, with {_percent(main.confidence)} confidence."
+                ),
+                evidence=[
+                    f"Progression bars {main.start_bar}-{main.end_bar}: {progression}, confidence {_percent(main.confidence)}.",
+                    f"Detected repetitions: {main.repetitions}.",
+                ],
+            )
         return ExplanationAnswer(
             reference_id=profile.reference_id,
             answer=(

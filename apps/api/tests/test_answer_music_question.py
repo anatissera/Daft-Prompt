@@ -117,8 +117,9 @@ def test_answers_key_questions_from_key_profile():
 
     assert answer.reference_id == "ref_demo"
     assert answer.answer == (
-        "The key is likely A minor with 72% confidence. "
-        "Close alternatives: C major (66%). There is relative-key ambiguity."
+        "Tonal center is ambiguous; close candidates include A minor, C major. "
+        "Confidence 72%. Close alternatives: C major (66%). "
+        "There is relative-key ambiguity."
     )
     assert "Primary key candidate: A minor" in answer.evidence[0]
 
@@ -132,6 +133,26 @@ def test_answers_chord_questions_from_progression_estimates():
     )
     assert "Progression bars 1-4" in answer.evidence[0]
     assert "Detected repetitions: 2." in answer.evidence
+
+
+def test_answers_chord_questions_with_weak_loop_candidate_before_triads():
+    profile = _profile()
+    profile.audio.harmony.progressions = [
+        ProgressionEstimate(
+            start_bar=1,
+            end_bar=4,
+            chords=["Am", "F", "C", "G"],
+            confidence=0.38,
+            repetitions=3,
+        )
+    ]
+
+    answer = AnswerMusicQuestion().execute("what chords repeat?", profile)
+
+    assert answer.answer == (
+        "Weak chord loop candidate: Am - F - C - G across bars 1-4, "
+        "with 38% confidence."
+    )
 
 
 def test_answers_structure_questions_from_structure_profile():
@@ -159,7 +180,9 @@ def test_key_answer_mentions_close_alternatives_when_confidence_is_low():
 
     answer = AnswerMusicQuestion().execute("what key is this in?", profile)
 
-    assert "probably" in answer.answer.lower() or "likely" in answer.answer.lower()
+    assert answer.answer.startswith("Tonal center is ambiguous")
+    assert "probably" not in answer.answer.lower()
+    assert "likely" not in answer.answer.lower()
     assert "low confidence" in answer.answer.lower()
     assert "close alternatives" in answer.answer.lower()
     assert "F minor" in answer.answer

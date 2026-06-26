@@ -64,6 +64,10 @@ def _analyzer(
     stems=None,
     bar_grid_confidence=0.8,
     structure_confidence=0.8,
+    key_confidence=0.7,
+    relative_key_ambiguity=True,
+    tuning_deviation=None,
+    section_structure=None,
 ) -> DeepHarmonicAnalyzer:
     stems = stems if stems is not None else _full_stems()
     chord_spans = [
@@ -73,13 +77,14 @@ def _analyzer(
         _chord_span(4, "G"),
     ]
     key_profile = KeyProfile(
-        primary=KeyCandidate(key="A minor", mode="minor", confidence=0.7),
+        primary=KeyCandidate(key="A minor", mode="minor", confidence=key_confidence),
         candidates=[
-            KeyCandidate(key="A minor", mode="minor", confidence=0.7),
-            KeyCandidate(key="C major", mode="major", confidence=0.66),
+            KeyCandidate(key="A minor", mode="minor", confidence=key_confidence),
+            KeyCandidate(key="C major", mode="major", confidence=max(0.0, key_confidence - 0.04)),
+            KeyCandidate(key="F major", mode="major", confidence=max(0.0, key_confidence - 0.08)),
         ],
-        relative_key_ambiguity=True,
-        confidence=0.7,
+        relative_key_ambiguity=relative_key_ambiguity,
+        confidence=key_confidence,
     )
     structure = StructureProfile(
         sections=[
@@ -109,6 +114,8 @@ def _analyzer(
         key_estimator=lambda path, confidence_adjustment=0.0: key_profile,
         chord_estimator=lambda path, bar_times, duration: chord_spans,
         structure_detector=lambda spans: (structure, progressions),
+        tuning_deviation_provider=(lambda path: tuning_deviation) if tuning_deviation is not None else None,
+        section_detector=(lambda spans: section_structure) if section_structure is not None else None,
         duration_provider=lambda path: 8.0,
     )
 
@@ -180,6 +187,66 @@ def test_unclear_structure_adds_note(tmp_path):
     notes = profile.audio.analysis_notes
     assert any(note.code == "unclear_structure" for note in notes)
     assert any("structure is unclear" in note.message.lower() for note in notes)
+
+
+def test_possible_detuning_adds_a440_note_without_changing_labels(tmp_path):
+    profile = _analyzer(tmp_path, tuning_deviation=0.27).analyze(_source(tmp_path))
+
+    audio = profile.audio
+    assert audio.key == "A minor"
+    assert any(note.code == "possible_detuning" for note in audio.analysis_notes)
+    assert any("Labels assume A=440" in note.message for note in audio.analysis_notes)
+
+
+def test_summary_does_not_say_likely_key_or_structure_when_confidence_is_low(tmp_path):
+    profile = _analyzer(
+        tmp_path,
+        key_confidence=0.44,
+        relative_key_ambiguity=True,
+        structure_confidence=0.25,
+    ).analyze(_source(tmp_path))
+
+    summary = profile.summary
+    assert "The key is likely" not in summary
+    assert "Tonal center is ambiguous" in summary
+    assert "A minor" in summary
+    assert "C major" in summary
+    assert "Structure is approximate/unclear" in summary
+    assert "The structure looks like" not in summary
+
+
+def test_orchestrator_uses_approximate_section_boundaries_when_harmonic_structure_is_weak(tmp_path):
+    approximate_structure = StructureProfile(
+        sections=[
+            StructuralSection(
+                label="A",
+                start_bar=1,
+                end_bar=8,
+                start_seconds=0.0,
+                end_seconds=16.0,
+                confidence=0.58,
+                main_progression=["Am", "F", "C", "G"],
+            ),
+            StructuralSection(
+                label="B",
+                start_bar=9,
+                end_bar=16,
+                start_seconds=16.0,
+                end_seconds=32.0,
+                confidence=0.58,
+                main_progression=["Am", "F", "C", "G"],
+            ),
+        ],
+        confidence=0.58,
+    )
+    profile = _analyzer(
+        tmp_path,
+        structure_confidence=0.25,
+        section_structure=approximate_structure,
+    ).analyze(_source(tmp_path))
+
+    assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
+    assert any(note.code == "approximate_sections" for note in profile.audio.analysis_notes)
 
 
 def test_non_local_source_is_rejected(tmp_path):

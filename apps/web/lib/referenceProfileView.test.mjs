@@ -334,7 +334,57 @@ test("describeReferenceSummary includes close key alternatives for ambiguous key
     { label: "Ab major", confidence: "low · 44%" },
     { label: "F minor", confidence: "low · 42%" },
   ]);
+  assert(!describeReferenceSummary(ambiguousProfile).some((row) => row.startsWith("Likely key")));
+  assert(
+    describeReferenceSummary(ambiguousProfile).includes(
+      "Tonal center is ambiguous; close candidates include Ab major, F minor, C# minor.",
+    ),
+  );
   assert(describeReferenceSummary(ambiguousProfile).includes("Close alternatives: F minor, C# minor, Ab minor"));
+});
+
+test("weak progression and low-confidence structure use candidate copy", () => {
+  const weakProfile = {
+    ...harmonicProfile,
+    audio: {
+      ...harmonicProfile.audio,
+      harmony: {
+        ...harmonicProfile.audio.harmony,
+        progressions: [
+          {
+            start_bar: 1,
+            end_bar: 4,
+            chords: ["D", "A", "Bm", "G"],
+            confidence: 0.38,
+            repetitions: 3,
+          },
+        ],
+      },
+      structure: {
+        ...harmonicProfile.audio.structure,
+        confidence: 0.25,
+        sections: harmonicProfile.audio.structure.sections.map((section) => ({
+          ...section,
+          confidence: 0.25,
+        })),
+      },
+    },
+  };
+
+  assert.deepEqual(getMainProgression(weakProfile), {
+    label: "Weak chord loop candidate: D - A - Bm - G",
+    bars: "bars 1-4",
+    repetitions: 3,
+    confidence: "low · 38%",
+  });
+  assert.equal(
+    answerReferenceQuestion("What chords repeat?", weakProfile),
+    "Weak chord loop candidate: D - A - Bm - G across bars 1-4, with low · 38% confidence.",
+  );
+  assert.equal(
+    answerReferenceQuestion("What is the A/B/C structure?", weakProfile),
+    "Structure is approximate/unclear: A bars 1-4 (low · 25%) / B bars 5-8 (low · 25%).",
+  );
 });
 
 test("legacy energy is hidden when all sections have unknown zero energy", () => {
