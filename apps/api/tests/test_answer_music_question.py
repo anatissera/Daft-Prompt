@@ -118,7 +118,7 @@ def test_answers_key_questions_from_key_profile():
     assert answer.reference_id == "ref_demo"
     assert answer.answer == (
         "The key is likely A minor with 72% confidence. "
-        "Closest alternatives: C major (66%). There is relative-key ambiguity."
+        "Close alternatives: C major (66%). There is relative-key ambiguity."
     )
     assert "Primary key candidate: A minor" in answer.evidence[0]
 

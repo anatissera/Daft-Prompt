@@ -5,7 +5,12 @@ from __future__ import annotations
 import re
 from typing import Protocol
 
-from llm_band.domain.audio_profile import ChordSpan, ExplanationAnswer, ReferenceProfile
+from llm_band.domain.audio_profile import (
+    ChordSpan,
+    ExplanationAnswer,
+    ReferenceProfile,
+    confidence_label,
+)
 
 
 class MusicQuestionExplainer(Protocol):
@@ -64,13 +69,18 @@ def _answer_key(profile: ReferenceProfile) -> ExplanationAnswer:
         f"{candidate.key} ({_percent(candidate.confidence)})"
         for candidate in key_profile.candidates[1:4]
     ]
-    suffix = f" Closest alternatives: {', '.join(alternatives)}." if alternatives else ""
+    suffix = f" Close alternatives: {', '.join(alternatives)}." if alternatives else ""
     ambiguity = " There is relative-key ambiguity." if key_profile.relative_key_ambiguity else ""
+    confidence_text = (
+        f"low confidence ({_percent(key_profile.confidence)})"
+        if confidence_label(key_profile.confidence) == "low"
+        else f"{_percent(key_profile.confidence)} confidence"
+    )
     return ExplanationAnswer(
         reference_id=profile.reference_id,
         answer=(
-            f"The key is likely {primary.key} with {_percent(key_profile.confidence)} "
-            f"confidence.{suffix}{ambiguity}"
+            f"The key is likely {primary.key} with {confidence_text}."
+            f"{suffix}{ambiguity}"
         ),
         evidence=[
             f"Primary key candidate: {primary.key}, confidence {_percent(primary.confidence)}.",
@@ -133,6 +143,21 @@ def _answer_structure(profile: ReferenceProfile) -> ExplanationAnswer:
         f"{section.label} bars {section.start_bar}-{section.end_bar}"
         for section in structure.sections
     )
+    if structure.confidence < 0.4:
+        return ExplanationAnswer(
+            reference_id=profile.reference_id,
+            answer=(
+                f"The structure is unclear; an approximate low confidence "
+                f"A/B/C read is {form}."
+            ),
+            evidence=[
+                (
+                    f"Section {section.label}: bars {section.start_bar}-{section.end_bar}, "
+                    f"confidence {_percent(section.confidence)}."
+                )
+                for section in structure.sections
+            ],
+        )
     return ExplanationAnswer(
         reference_id=profile.reference_id,
         answer=f"The structure appears to repeat as {form}.",
