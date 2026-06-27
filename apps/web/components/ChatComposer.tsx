@@ -48,8 +48,12 @@ export default function ChatComposer({
         </label>
         {selectedFileName ? <span className="selected-file">{selectedFileName}</span> : null}
         <button type="submit" disabled={busy} className="send-button">
-          {busy ? <span className="spinner" aria-hidden="true" /> : null}
-          {busy ? "Working..." : "Send"}
+          {busy ? (
+            <span className="spinner" aria-hidden="true">
+              <span />
+            </span>
+          ) : null}
+          {busy ? "Processing..." : "Send"}
         </button>
       </div>
     </form>

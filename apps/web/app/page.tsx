@@ -184,13 +184,25 @@ export default function Home() {
 
   return (
     <main className="chat-workspace">
-      <section className="chat-hero" aria-label="LLMinem chat workspace">
+      <section className="chat-hero" aria-label="Daft Prompt chat workspace">
         <p className="hero-eyebrow">
           <span className="hero-eyebrow-dot" aria-hidden="true" />
-          Conversational studio
+          Digital Studio // AI Music Lab
         </p>
-        <h1 className="hero-title">LLMinem</h1>
-        <p className="hero-subtitle">Analyze a local song, ask musical questions, or compose a new sketch from the same chat.</p>
+        <h1 className="hero-title" aria-label="Daft Prompt">
+          <span className="logo-wrapper">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/daft-prompt-logo.png"
+              alt="Daft Prompt"
+              className="logo-image"
+              width={340}
+              height={340}
+            />
+            <span className="logo-shimmer" aria-hidden="true" />
+          </span>
+        </h1>
+        <p className="hero-subtitle">Upload a track for harmonic analysis, ask musical questions, or compose a new sketch — all from the same chat.</p>
       </section>
 
       <section className="chat-panel" aria-label="Conversation">
