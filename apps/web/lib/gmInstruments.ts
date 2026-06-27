@@ -45,6 +45,100 @@ export function folderForProgram(program: number): string {
   return GM_PROGRAM_FOLDER[program] ?? "acoustic_grand_piano";
 }
 
+// Director-LLM frequently leaves midi_program at the default 0 (piano) even
+// when the `instrument` string is "flute" / "viola" / "808 kick", so every
+// channel ends up sounding like a grand piano. This inferrer takes the human
+// name and returns the most plausible GM program — used as a fallback or
+// override whenever midi_program is 0.
+const NAME_TO_PROGRAM: Array<[RegExp, number]> = [
+  // strings
+  [/\bvioloncello\b|\bcello\b/i, 42],
+  [/\bcontrabass\b|\bupright bass\b|\bdouble bass\b/i, 43],
+  [/\bviolin\b|\bfiddle\b/i, 40],
+  [/\bviola\b/i, 41],
+  [/\bharp\b/i, 46],
+  [/pizzicato/i, 45],
+  [/\bstrings?\b|\bensemble\b|orchestra/i, 48],
+  // woodwinds / pipe
+  [/\bpiccolo\b/i, 72],
+  [/\bflute\b/i, 73],
+  [/\brecorder\b/i, 74],
+  [/\bpan ?flute\b/i, 75],
+  [/\bshakuhachi\b/i, 77],
+  [/\bocarina\b/i, 79],
+  [/\bclarinet\b/i, 71],
+  [/\boboe\b/i, 68],
+  [/\bbassoon\b/i, 70],
+  [/english horn|cor anglais/i, 69],
+  [/\bsax\b|saxophone/i, 65],
+  // brass
+  [/muted trumpet/i, 59],
+  [/\btrumpet\b/i, 56],
+  [/\btrombone\b/i, 57],
+  [/\btuba\b/i, 58],
+  [/french horn|\bhorn\b/i, 60],
+  [/\bbrass\b/i, 61],
+  // organ / accordion / harmonica
+  [/church organ/i, 19],
+  [/rock organ/i, 18],
+  [/drawbar organ|hammond/i, 16],
+  [/\borgan\b/i, 17],
+  [/accordion/i, 21],
+  [/harmonica/i, 22],
+  // bass family (electric / synth)
+  [/synth ?bass/i, 38],
+  [/slap bass/i, 36],
+  [/fretless bass/i, 35],
+  [/electric bass|\bbass guitar\b|\be\.?bass\b/i, 33],
+  [/acoustic bass/i, 32],
+  [/\bbass\b|\bsub\b|\b808\b/i, 33],
+  // guitar family
+  [/distortion guitar|distorted/i, 30],
+  [/overdriven|overdrive/i, 29],
+  [/electric guitar.*muted/i, 28],
+  [/electric guitar.*clean|clean guitar/i, 27],
+  [/electric guitar.*jazz/i, 26],
+  [/acoustic guitar.*steel|steel.*guitar/i, 25],
+  [/acoustic guitar|nylon|classical guitar/i, 24],
+  [/\bguitar\b/i, 24],
+  // keys
+  [/electric piano|rhodes|wurli/i, 4],
+  [/honkytonk|honky-tonk/i, 3],
+  [/harpsichord/i, 6],
+  [/clavinet|clav\b/i, 7],
+  [/celesta/i, 8],
+  [/glockenspiel/i, 9],
+  [/music box/i, 10],
+  [/vibraphone|vibes/i, 11],
+  [/marimba/i, 12],
+  [/xylophone/i, 13],
+  [/tubular bells?/i, 14],
+  [/\bpiano\b/i, 0],
+  // voice / pads / leads
+  [/choir|aahs|oohs|vox|vocal/i, 52],
+  [/synth pad|warm pad|pad\b/i, 89],
+  [/synth lead|lead synth|saw lead/i, 81],
+  [/synth\b/i, 81],
+  // ethnic
+  [/sitar/i, 104],
+  [/banjo/i, 105],
+  [/kalimba/i, 108],
+  [/steel drum|steelpan/i, 114],
+  // drums / percussion — handled by is_drum, but include for completeness
+  [/shaker|tambourine|woodblock|cowbell|congas?|bongo|cajon|claves|maracas|timbales|hi-?hat|snare|kick|drum|percussion|\bperc\b/i, 0],
+];
+
+export function inferProgramFromName(name: string): number | null {
+  for (const [re, prog] of NAME_TO_PROGRAM) if (re.test(name)) return prog;
+  return null;
+}
+
+const PERCUSSION_RE = /\b(drum|drums|kit|percussion|perc|shaker|tambourine|woodblock|cowbell|congas?|bongo|cajon|claves|maracas|timbales|hi-?hat|hat|snare|kick|cymbal|tom)\b/i;
+
+export function isDrumByName(name: string): boolean {
+  return PERCUSSION_RE.test(name);
+}
+
 // MIDI note number → letter name Tone.Sampler expects (e.g. 60 -> "C4").
 const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 export function midiToName(midi: number): string {
