@@ -535,6 +535,29 @@ code, pre, .mono { font-family: var(--font-mono); }
   margin-top: 6px;
   letter-spacing: 0.04em;
 }
+
+/* Typewriter caret — a small block that blinks while typing, fades out when done. */
+.type-caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: currentColor;
+  opacity: 0.85;
+  animation: type-caret-blink 0.9s steps(2) infinite;
+}
+.type-caret-done {
+  animation: type-caret-fade 0.45s ease forwards;
+}
+@keyframes type-caret-blink {
+  0%   { opacity: 0.85; }
+  50%  { opacity: 0; }
+  100% { opacity: 0.85; }
+}
+@keyframes type-caret-fade {
+  to { opacity: 0; transform: scaleX(0); }
+}
 .chat-meta-inline {
   font-family: var(--font-mono);
   font-size: 12px;
