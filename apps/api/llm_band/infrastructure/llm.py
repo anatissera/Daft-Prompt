@@ -231,6 +231,41 @@ def _record_usage(raw_message: Any) -> None:
     tracker.add(usage)
 
 
+def _usage_callbacks() -> list:
+    """Return a callback that records usage from the underlying chat call.
+
+    Lives at call-time (not on the chat model) because the tracker is request-
+    scoped via contextvar; the callback closes over the *current* tracker.
+    """
+    try:
+        from langchain_core.callbacks import BaseCallbackHandler
+        from langchain_core.outputs import LLMResult
+    except Exception:
+        return []
+
+    tracker = USAGE_TRACKER.get()
+    if tracker is None:
+        return []
+
+    class _UsageCB(BaseCallbackHandler):  # type: ignore[misc]
+        def on_llm_end(self, response: "LLMResult", **_: Any) -> None:
+            for generations in response.generations:
+                for generation in generations:
+                    message = getattr(generation, "message", None)
+                    if message is None:
+                        continue
+                    usage = getattr(message, "usage_metadata", None)
+                    if not usage:
+                        meta = getattr(message, "response_metadata", {}) or {}
+                        usage = meta.get("token_usage") or meta.get("usage")
+                    tracker.add(usage)
+            llm_output = response.llm_output or {}
+            if (usage := llm_output.get("token_usage")):
+                tracker.add(usage)
+
+    return [_UsageCB()]
+
+
 class _FallbackStructuredInvoker:
     def __init__(self, role: str, schema: type, settings: Settings):
         self.role = role
@@ -241,14 +276,11 @@ class _FallbackStructuredInvoker:
         def operation(provider: str, model: str):
             _RATE_LIMITER.wait(self.settings.llm_rpm_limit)
             chat = _build_chat_model(provider, model, self.settings)
-            structured = chat.with_structured_output(self.schema, include_raw=True)
-            result = structured.invoke(messages)
-            if isinstance(result, dict):
-                _record_usage(result.get("raw"))
-                # Return parsed (or None) — callers already handle the None
-                # fallback path; raising here would break that contract.
-                return result.get("parsed")
-            return result
+            structured = chat.with_structured_output(self.schema)
+            callbacks = _usage_callbacks()
+            if callbacks:
+                return structured.invoke(messages, config={"callbacks": callbacks})
+            return structured.invoke(messages)
 
         return with_fallbacks(self.role, self.settings, operation)
 
