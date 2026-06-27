@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import numpy as np
 
 from llm_band.infrastructure.mir.key_features import (
@@ -45,6 +48,26 @@ def test_relative_major_minor_ambiguity_is_flagged():
     assert profile.relative_key_ambiguity is True
 
 
+def test_parallel_key_ambiguity_is_flagged_when_scores_are_close():
+    vector = _vector({C: 1.0, E: 1.0, Eb: 1.0, G: 1.0})
+
+    profile = key_profile_from_pitch_classes(vector)
+
+    top_two_tonics = {candidate.key.split()[0] for candidate in profile.candidates[:2]}
+    assert top_two_tonics == {"C"}
+    assert profile.relative_key_ambiguity is True
+    assert profile.confidence < 0.6
+
+
+def test_multiple_close_key_candidates_are_flagged_as_ambiguous():
+    vector = _vector({C: 1.0, Eb: 0.9, G: 0.95, Ab: 0.85})
+
+    profile = key_profile_from_pitch_classes(vector)
+
+    assert profile.relative_key_ambiguity is True
+    assert profile.confidence < 0.5
+
+
 def test_empty_pitch_classes_returns_empty_profile():
     profile = key_profile_from_pitch_classes(np.zeros(12))
 
@@ -62,6 +85,17 @@ def test_confidence_adjustment_lowers_confidence():
     assert penalized.confidence < full.confidence
 
 
+def test_close_key_candidates_are_marked_ambiguous_not_high_confidence():
+    vector = _vector({C: 1.0, Eb: 0.9, G: 0.95, Ab: 0.85})
+
+    profile = key_profile_from_pitch_classes(vector)
+
+    assert profile.primary is not None
+    assert profile.confidence < 0.5
+    assert profile.candidates[0].confidence <= 0.6
+    assert profile.candidates[1].confidence <= 0.6
+
+
 def test_estimate_key_uses_injected_chroma_provider():
     vector = _vector({A: 1.0, C: 0.7, E: 0.8, D: 0.3, F: 0.3, G: 0.3, B: 0.2})
 
@@ -69,3 +103,34 @@ def test_estimate_key_uses_injected_chroma_provider():
 
     assert profile.primary is not None
     assert profile.primary.mode in {"major", "minor"}
+
+
+def test_chroma_is_tuned_for_scoring_while_labels_stay_a440(monkeypatch):
+    calls = {}
+
+    def fake_chroma_cqt(y, sr, tuning):
+        calls["tuning"] = tuning
+        # Tuned chroma lands cleanly on a C major triad (C, E, G).
+        vector = np.zeros((12, 1))
+        for pitch_class in (C, E, G):
+            vector[pitch_class, 0] = 1.0
+        return vector
+
+    fake_librosa = SimpleNamespace(
+        load=lambda path, sr, mono: (np.ones(1024), sr),
+        estimate_tuning=lambda y, sr: 0.31,
+        feature=SimpleNamespace(chroma_cqt=fake_chroma_cqt),
+    )
+    monkeypatch.setitem(sys.modules, "librosa", fake_librosa)
+    monkeypatch.setattr(
+        "llm_band.infrastructure.mir.librosa_analyzer._prepare_librosa_import",
+        lambda: None,
+    )
+
+    profile = estimate_key("/fake/harmonic.wav")
+
+    # The estimated tuning is applied to the CQT bins (scoring), not discarded.
+    assert calls["tuning"] == 0.31
+    # The label is still a standard A=440 name from the pitch-class index.
+    assert profile.primary is not None
+    assert profile.primary.key == "C major"
