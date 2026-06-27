@@ -12,6 +12,7 @@ import {
   getMainProgression,
   getStructureTimeline,
   getTopChordEstimates,
+  isLowUsefulness,
   isReferenceQuestion,
 } from "./referenceProfileView.mjs";
 
@@ -425,6 +426,24 @@ test("analysis notes stay compact for display", () => {
       message: "The bar grid was unstable; chord and structure estimates are less reliable.",
     },
   ]);
+});
+
+test("low usefulness summary leads with the limitation", () => {
+  const weakProfile = {
+    ...harmonicProfile,
+    audio: {
+      ...harmonicProfile.audio,
+      analysis_notes: [
+        { code: "low_usefulness", message: "Key, chord, and structure evidence are all weak.", severity: "warning" },
+      ],
+    },
+  };
+
+  assert.equal(isLowUsefulness(weakProfile), true);
+  assert.equal(isLowUsefulness(harmonicProfile), false);
+
+  const rows = describeReferenceSummary(weakProfile);
+  assert.ok(rows.some((row) => row.includes("rough sketch")));
 });
 
 test("getTopChordEstimates returns probable chord labels with time ranges", () => {

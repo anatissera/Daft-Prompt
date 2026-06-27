@@ -41,6 +41,9 @@ from llm_band.infrastructure.mir.tempo_grid import estimate_tempo_grid
 
 WEAK_BAR_GRID_CONFIDENCE = 0.4
 SIGNIFICANT_TUNING_DEVIATION = 0.2
+# When key, chord, grid, and structure confidence are all below this, the
+# analysis is too weak to lead with candidate claims; the summary says so first.
+LOW_USEFULNESS_THRESHOLD = 0.5
 # A bar-phase offset must clear this confidence before we trust it enough to
 # shift the bar grid; below it, the downbeat is ambiguous and we keep offset 0.
 BAR_PHASE_MIN_CONFIDENCE = 0.15
@@ -234,6 +237,23 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
+        if _is_low_usefulness(
+            key_profile.confidence,
+            _chord_mean_confidence(chord_spans),
+            grid_confidence,
+            structure.confidence,
+        ):
+            notes.append(
+                AnalysisNote(
+                    code="low_usefulness",
+                    message=(
+                        "Key, chord, and structure evidence are all weak in this "
+                        "recording; treat the harmonic read as a rough sketch."
+                    ),
+                    severity="warning",
+                )
+            )
+
         harmony = HarmonicProfile(
             key=key_profile,
             chord_spans=chord_spans,
@@ -414,17 +434,40 @@ def _harmonic_rhythm_label(chord_spans) -> str:
     return "slow — chords held across bars"
 
 
-def _harmony_confidence(key_profile, chord_spans, grid_confidence: float) -> float:
+def _chord_mean_confidence(chord_spans) -> float:
     chord_confidences = [span.chosen.confidence for span in chord_spans if span.chosen]
-    chord_mean = sum(chord_confidences) / len(chord_confidences) if chord_confidences else 0.0
+    return sum(chord_confidences) / len(chord_confidences) if chord_confidences else 0.0
+
+
+def _harmony_confidence(key_profile, chord_spans, grid_confidence: float) -> float:
+    chord_mean = _chord_mean_confidence(chord_spans)
     combined = 0.5 * chord_mean + 0.3 * key_profile.confidence + 0.2 * grid_confidence
     return round(_clamp(combined), 3)
+
+
+def _is_low_usefulness(
+    key_confidence: float,
+    chord_confidence: float,
+    grid_confidence: float,
+    structure_confidence: float,
+) -> bool:
+    return (
+        key_confidence < LOW_USEFULNESS_THRESHOLD
+        and chord_confidence < LOW_USEFULNESS_THRESHOLD
+        and grid_confidence < LOW_USEFULNESS_THRESHOLD
+        and structure_confidence < LOW_USEFULNESS_THRESHOLD
+    )
 
 
 def _summarize(audio: AudioProfile) -> str:
     parts = [f"Analyzed about {audio.duration_seconds:.1f}s of audio."]
     if audio.tempo_bpm:
         parts.append(f"Tempo is around {audio.tempo_bpm:.0f} BPM.")
+    if any(note.code == "low_usefulness" for note in audio.analysis_notes):
+        parts.append(
+            "The chord and structure evidence is weak in this recording, so treat "
+            "the harmonic read below as a rough sketch."
+        )
     key_profile = audio.harmony.key if audio.harmony else None
     key_is_uncertain = bool(
         key_profile

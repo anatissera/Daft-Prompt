@@ -36,8 +36,8 @@ def _source(tmp_path: Path) -> ReferenceSource:
     )
 
 
-def _chord_span(bar: int, label: str) -> ChordSpan:
-    chosen = ChordCandidate(root=label[0], quality="minor" if label.endswith("m") else "major", label=label, confidence=0.8)
+def _chord_span(bar: int, label: str, confidence: float = 0.8) -> ChordSpan:
+    chosen = ChordCandidate(root=label[0], quality="minor" if label.endswith("m") else "major", label=label, confidence=confidence)
     return ChordSpan(
         start_bar=bar,
         end_bar=bar,
@@ -45,7 +45,7 @@ def _chord_span(bar: int, label: str) -> ChordSpan:
         end_seconds=float(bar * 2),
         candidates=[chosen],
         chosen=chosen,
-        confidence=0.8,
+        confidence=confidence,
     )
 
 
@@ -68,13 +68,14 @@ def _analyzer(
     relative_key_ambiguity=True,
     tuning_deviation=None,
     section_structure=None,
+    chord_confidence=0.8,
 ) -> DeepHarmonicAnalyzer:
     stems = stems if stems is not None else _full_stems()
     chord_spans = [
-        _chord_span(1, "Am"),
-        _chord_span(2, "F"),
-        _chord_span(3, "C"),
-        _chord_span(4, "G"),
+        _chord_span(1, "Am", chord_confidence),
+        _chord_span(2, "F", chord_confidence),
+        _chord_span(3, "C", chord_confidence),
+        _chord_span(4, "G", chord_confidence),
     ]
     key_profile = KeyProfile(
         primary=KeyCandidate(key="A minor", mode="minor", confidence=key_confidence),
@@ -253,6 +254,26 @@ def test_orchestrator_uses_approximate_section_boundaries_when_harmonic_structur
 
     assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
     assert any(note.code == "approximate_sections" for note in profile.audio.analysis_notes)
+
+
+def test_orchestrator_flags_low_usefulness_when_all_evidence_is_weak(tmp_path):
+    profile = _analyzer(
+        tmp_path,
+        key_confidence=0.3,
+        structure_confidence=0.25,
+        bar_grid_confidence=0.3,
+        chord_confidence=0.3,
+    ).analyze(_source(tmp_path))
+
+    assert any(note.code == "low_usefulness" for note in profile.audio.analysis_notes)
+    assert "rough sketch" in profile.summary
+
+
+def test_orchestrator_does_not_flag_low_usefulness_for_mixed_evidence(tmp_path):
+    profile = _analyzer(tmp_path).analyze(_source(tmp_path))
+
+    assert not any(note.code == "low_usefulness" for note in profile.audio.analysis_notes)
+    assert "rough sketch" not in profile.summary
 
 
 def test_orchestrator_applies_confident_bar_phase_offset(tmp_path):
