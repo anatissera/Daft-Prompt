@@ -460,18 +460,18 @@ code, pre, .mono { font-family: var(--font-mono); }
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
   box-shadow:
     /* top rim light (sky reflection) */
-    0 2px 0 rgba(255, 255, 255, 0.55) inset,
-    0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    /* darker inner band just below the top — fakes a 3D curve */
-    0 22px 30px -28px rgba(0, 0, 0, 0.85) inset,
-    /* hot fire reflection eating up the bottom 30% */
-    0 -28px 38px -18px rgba(255, 122, 31, 0.85) inset,
-    0 -10px 18px -10px rgba(255, 220, 120, 0.6)  inset,
+    0 2px 0 rgba(255, 255, 255, 0.6) inset,
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    /* very soft inner band just below the top — hints at curvature */
+    0 10px 18px -16px rgba(0, 0, 0, 0.45) inset,
+    /* hot fire reflection eating up the bottom 25% */
+    0 -22px 30px -18px rgba(255, 122, 31, 0.75) inset,
+    0 -8px 14px -10px rgba(255, 220, 120, 0.55) inset,
     /* depth: thick contact shadow */
     0 22px 32px -14px rgba(0, 0, 0, 0.8),
     0 6px 12px -4px rgba(0, 0, 0, 0.6),
     /* dark bevel outline */
-    0 0 0 1px rgba(0, 0, 0, 0.7);
+    0 0 0 1px rgba(0, 0, 0, 0.6);
 }
 
 /* Highlight layer: top sheen + a single specular sparkle (helmet star)
@@ -542,17 +542,17 @@ code, pre, .mono { font-family: var(--font-mono); }
   background:
     linear-gradient(
       180deg,
-      #2a3548 0%,            /* deep sky reflected on the top of the dome */
-      #5a6275 6%,
-      #9aa2b3 18%,
-      #d6dae5 30%,
-      #f6f7fc 38%,           /* bright chrome midline */
-      #cfd2dd 48%,
-      #7e8290 60%,           /* steel shadow ridge */
-      #3d404a 72%,
-      #5e3f1c 84%,           /* fire reflection starting */
-      #c66a16 92%,
-      #ffb347 100%
+      #8e98ac 0%,            /* sky reflection */
+      #c9cedb 8%,
+      #e7eaf2 20%,
+      #f4f5fa 34%,           /* bright chrome midline */
+      #fafbff 44%,
+      #eef0f6 56%,
+      #c8ccd6 70%,           /* gentle shadow */
+      #aab0bc 82%,
+      #d68f4b 90%,           /* fire reflection */
+      #ffb347 96%,
+      #ffd28a 100%
     );
 }
 
@@ -564,17 +564,17 @@ code, pre, .mono { font-family: var(--font-mono); }
   background:
     linear-gradient(
       180deg,
-      #2a1e08 0%,
-      #5a3f10 6%,
-      #9c7820 18%,
-      #d4ab2c 30%,
-      #ffe9a3 38%,           /* bright gold midline */
-      #f3c45a 48%,
-      #b3892a 60%,
-      #5c3f0d 72%,
-      #6e3208 84%,
-      #d8651a 92%,
-      #ffb347 100%
+      #a4822c 0%,
+      #d8b04a 8%,
+      #f3cf6a 20%,
+      #ffe39a 32%,           /* bright gold midline */
+      #fff3c8 44%,
+      #ffe39a 56%,
+      #f0c25a 70%,
+      #c99830 82%,
+      #c66e1a 90%,
+      #ff8a3a 96%,
+      #ffd28a 100%
     );
 }
 
