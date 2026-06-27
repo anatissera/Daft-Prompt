@@ -80,27 +80,30 @@ html, body {
 
 body {
   overflow: hidden;
-  /* Twilight-dominant sky with a tight blaze hugging the bottom edge */
+  /* Twilight sky → fire ramp positioned ABOVE the composer slab so the
+     warm yellows and oranges actually appear in the visible window. */
   background:
-    /* hot core glow only at the very bottom */
-    radial-gradient(45% 14% at 50% 100%, #fff1a8 0%, #ffd24a 25%, transparent 70%) no-repeat,
-    /* compact blaze radial — narrower + shorter than before */
-    radial-gradient(100% 32% at 50% 106%, #ffae3a 0%, #ff7a1f 25%, #d83608 50%, #6a1206 70%, transparent 85%) no-repeat,
-    /* tight haze meeting the sky */
-    radial-gradient(120% 22% at 50% 102%, rgba(255, 100, 20, 0.45) 0%, transparent 80%) no-repeat,
-    /* vertical: most of the screen is twilight, fire only in the last band */
+    /* hot yellow core lifted up to mid-screen */
+    radial-gradient(55% 22% at 50% 88%, #fff1a8 0%, #ffd24a 30%, transparent 75%) no-repeat,
+    /* main blaze pushed up so orange/red sit higher */
+    radial-gradient(120% 42% at 50% 92%, #ffae3a 0%, #ff7a1f 25%, #d83608 50%, #6a1206 70%, transparent 88%) no-repeat,
+    /* widening haze that ties fire into the sky */
+    radial-gradient(140% 32% at 50% 86%, rgba(255, 110, 25, 0.45) 0%, transparent 85%) no-repeat,
+    /* vertical: sky takes top 50%, the rest is a full fire ramp */
     linear-gradient(
       180deg,
       var(--sky-deep) 0%,
-      var(--sky-mid) 30%,
-      var(--sky-glow) 55%,
-      #2a2b4a 68%,            /* sky → dusk indigo */
-      #3a1d44 76%,            /* dusk → mauve */
-      #5a1838 83%,            /* mauve → wine */
-      #7e1a16 89%,            /* wine → deep red */
-      #b53112 93%,            /* deep red → red-orange */
-      #ee6b1c 97%,            /* orange */
-      #ffe17a 100%            /* yellow embers */
+      var(--sky-mid) 22%,
+      var(--sky-glow) 38%,
+      #2a2b4a 48%,
+      #3a1d44 55%,
+      #5a1838 62%,
+      #7e1a16 68%,
+      #b53112 74%,
+      #ee6b1c 80%,            /* orange band visible above composer */
+      #ffae3a 86%,            /* amber */
+      #ffd24a 92%,            /* yellow */
+      #ffe17a 100%            /* bright yellow embers */
     ) no-repeat;
   background-attachment: fixed;
   position: relative;
