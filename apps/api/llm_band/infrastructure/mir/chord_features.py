@@ -41,6 +41,17 @@ TRIAD_INTERVALS: dict[str, tuple[int, int, int]] = {
 # (path, sample_rate) -> (chroma[12, frames], frame_times[frames])
 ChromaTimeProvider = Callable[[str, int], "tuple[np.ndarray, np.ndarray]"]
 
+NOTE_INDEX = {name: index for index, name in enumerate(NOTE_NAMES)}
+ENHARMONIC_TO_INDEX = {
+    **NOTE_INDEX,
+    "Db": 1,
+    "D#": 3,
+    "Gb": 6,
+    "G#": 8,
+    "A#": 10,
+}
+FLAT_NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
+
 
 def chords_from_bar_chromas(
     bar_chromas: list[np.ndarray],
@@ -88,6 +99,49 @@ def estimate_chords(
     )
 
 
+def apply_key_context(chord_spans: list[ChordSpan], key_label: str | None) -> list[ChordSpan]:
+    if not key_label:
+        return chord_spans
+    diatonic = _diatonic_triads(key_label)
+    if not diatonic:
+        return chord_spans
+
+    adjusted: list[ChordSpan] = []
+    for index, span in enumerate(chord_spans):
+        chosen = span.chosen
+        if chosen is None:
+            adjusted.append(span)
+            continue
+
+        normalized_label = _normalize_chord_label(chosen)
+        is_diatonic = normalized_label in diatonic
+        confidence = span.confidence
+        chosen_confidence = chosen.confidence
+        if is_diatonic:
+            confidence = _clamp(confidence + 0.05)
+            chosen_confidence = _clamp(chosen_confidence + 0.05)
+        elif confidence < 0.5 and _is_isolated_outlier(chord_spans, index, diatonic):
+            confidence = _clamp(confidence - 0.08)
+            chosen_confidence = _clamp(chosen_confidence - 0.08)
+
+        updated_chosen = chosen.model_copy(
+            update={
+                "root": _chord_root(normalized_label),
+                "label": normalized_label,
+                "confidence": round(chosen_confidence, 3),
+            }
+        )
+        adjusted.append(
+            span.model_copy(
+                update={
+                    "chosen": updated_chosen,
+                    "confidence": round(confidence, 3),
+                }
+            )
+        )
+    return adjusted
+
+
 def _bar_spans_from_times(
     bar_times: list[float], end_seconds: float
 ) -> list[tuple[int, int, float, float]]:
@@ -108,6 +162,66 @@ def _mean_chroma(
         nearest = int(np.argmin(np.abs(frame_times - start)))
         return chroma[:, nearest]
     return np.mean(chroma[:, mask], axis=1)
+
+
+def _diatonic_triads(key_label: str) -> set[str]:
+    parts = key_label.split()
+    if len(parts) < 2:
+        return set()
+    tonic_index = ENHARMONIC_TO_INDEX.get(parts[0])
+    mode = parts[1].lower()
+    if tonic_index is None:
+        return set()
+    if mode == "major":
+        intervals = [0, 2, 4, 5, 7, 9, 11]
+        qualities = ["major", "minor", "minor", "major", "major", "minor", "diminished"]
+    elif mode == "minor":
+        intervals = [0, 2, 3, 5, 7, 8, 10]
+        qualities = ["minor", "diminished", "major", "minor", "minor", "major", "major"]
+    else:
+        return set()
+
+    prefer_flats = "b" in parts[0] or mode == "minor"
+    return {
+        _triad_label_for_key((tonic_index + interval) % 12, quality, prefer_flats)
+        for interval, quality in zip(intervals, qualities)
+    }
+
+
+def _normalize_chord_label(chosen: ChordCandidate) -> str:
+    root_index = ENHARMONIC_TO_INDEX.get(chosen.root)
+    if root_index is None:
+        root_index = ENHARMONIC_TO_INDEX.get(_chord_root(chosen.label))
+    if root_index is None:
+        return chosen.label
+    return _triad_label_for_key(root_index, chosen.quality, prefer_flats=True)
+
+
+def _is_isolated_outlier(
+    spans: list[ChordSpan], index: int, diatonic: set[str]
+) -> bool:
+    neighbors = []
+    for neighbor_index in (index - 1, index + 1):
+        if 0 <= neighbor_index < len(spans) and spans[neighbor_index].chosen:
+            neighbors.append(_normalize_chord_label(spans[neighbor_index].chosen))
+    return bool(neighbors) and all(label in diatonic for label in neighbors)
+
+
+def _triad_label_for_key(root: int, quality: str, prefer_flats: bool) -> str:
+    name = FLAT_NOTE_NAMES[root] if prefer_flats else NOTE_NAMES[root]
+    if quality == "major":
+        return name
+    if quality == "minor":
+        return f"{name}m"
+    return f"{name}dim"
+
+
+def _chord_root(label: str) -> str:
+    if label.endswith("dim"):
+        return label[:-3]
+    if label.endswith("m"):
+        return label[:-1]
+    return label
 
 
 def _score_bar(chroma_vector: np.ndarray) -> tuple[list[ChordCandidate], float]:
@@ -181,8 +295,7 @@ def _default_chroma_time_provider(path: str, sample_rate: int) -> tuple[np.ndarr
     import librosa
 
     samples, sr = librosa.load(path, sr=sample_rate, mono=True)
-    tuning = librosa.estimate_tuning(y=samples, sr=sr)
-    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, hop_length=HOP_LENGTH, tuning=tuning)
+    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, hop_length=HOP_LENGTH, tuning=0.0)
     frame_times = librosa.frames_to_time(
         np.arange(chroma.shape[1]), sr=sr, hop_length=HOP_LENGTH
     )

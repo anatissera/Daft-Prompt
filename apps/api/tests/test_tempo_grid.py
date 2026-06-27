@@ -40,6 +40,15 @@ def test_stable_beats_produce_primary_half_double_and_bars():
     assert grid.meter.source == "assumed"
 
 
+def test_tempo_profile_includes_half_and_double_time_candidates():
+    tracker, _ = _stable_tracker(86.0, beats=16)
+
+    grid = estimate_tempo_grid("/fake/mix.wav", beat_tracker=tracker)
+
+    relations = {candidate.relation for candidate in grid.tempo.candidates}
+    assert {"primary", "half_time", "double_time"} <= relations
+
+
 def test_bars_span_four_beats_each():
     tracker, _ = _stable_tracker(100.0, beats=12)
 
