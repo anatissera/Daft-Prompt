@@ -275,23 +275,6 @@ code, pre, .mono { font-family: var(--font-mono); }
   overflow: hidden;       /* clip overflow so composer stays pinned at bottom */
 }
 
-/* Veil over the body fire bg so the chat zone reads as its own surface
-   (fire still glows from below, but it doesn't bleed into bubble whitespace). */
-.app-main::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(8, 10, 18, 0.45) 0%,
-      rgba(8, 10, 18, 0.7) 50%,
-      rgba(8, 10, 18, 0.92) 88%,
-      rgba(8, 10, 18, 1) 100%
-    );
-}
 .app-main > * { position: relative; z-index: 1; }
 
 .app-topbar {
