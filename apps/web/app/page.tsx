@@ -201,33 +201,68 @@ export default function Home() {
     setError(null);
   }
 
+  const studioRoster = [
+    { tag: "KCK", color: "#ff5a3c" }, { tag: "BAS", color: "#c84dff" },
+    { tag: "RHD", color: "#4d9fff" }, { tag: "LED", color: "#ffd24d" },
+    { tag: "PAD", color: "#46e0c0" }, { tag: "VOX", color: "#ff6ec7" },
+    { tag: "HAT", color: "#9bff5a" }, { tag: "ARP", color: "#ff944d" },
+  ];
+
   return (
     <main className="app-shell">
       <aside className="app-sidebar" aria-label="Sessions">
-        <div className="sidebar-header">
-          <span className="sidebar-brand">Daft Prompt</span>
-          <button type="button" className="sidebar-new" onClick={resetConversation}>+ New chat</button>
+        <div className="sidebar-brand-block">
+          <span className="sidebar-brand">DAFT PROMPT</span>
+          <span className="sidebar-tagline">MULTI-AGENT STUDIO</span>
         </div>
-        <nav className="sidebar-section" aria-label="Current session">
-          <span className="sidebar-section-title">Current</span>
-          <span className="sidebar-item sidebar-item-active">Untitled conversation</span>
-        </nav>
+
+        <button type="button" className="sidebar-new" onClick={resetConversation}>
+          <span className="sidebar-new-plus" aria-hidden="true">+</span>
+          New session
+        </button>
+
+        <div className="sidebar-section">
+          <span className="sidebar-section-title">Recent sessions</span>
+          <div className="sidebar-recent-list">
+            <button type="button" className="sidebar-recent">
+              <span className="sidebar-recent-title">Untitled conversation</span>
+              <span className="sidebar-recent-meta">NOW · LIVE</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="sidebar-section">
+          <span className="sidebar-section-title">Studio roster</span>
+          <div className="sidebar-chip-row">
+            {studioRoster.map((r) => (
+              <span key={r.tag} className="sidebar-chip" title={r.tag}>
+                <span className="sidebar-chip-dot" style={{ background: r.color, boxShadow: `0 0 8px ${r.color}88` }} />
+                <span className="sidebar-chip-tag">{r.tag}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+
         {referenceProfile ? (
           <div className="sidebar-section">
-            <span className="sidebar-section-title">Reference</span>
-            <span className="sidebar-item">{referenceProfile.source.label}</span>
+            <span className="sidebar-section-title">Reference loaded</span>
+            <span className="sidebar-item sidebar-item-active">{referenceProfile.source.label}</span>
           </div>
         ) : null}
+
         <div className="sidebar-footer">
           <span className="sidebar-model-dot" aria-hidden="true" />
-          <span>backend · /chat</span>
+          <span>STUDIO LIVE · 8 AGENTS IDLE</span>
         </div>
       </aside>
 
       <section className="app-main" aria-label="Conversation">
         <header className="app-topbar">
-          <span className="app-topbar-title">Untitled conversation</span>
-          <span className="app-topbar-meta">multi-agent · {referenceProfile ? "reference loaded" : "no reference"}</span>
+          <div className="app-topbar-left">
+            <span className="app-topbar-dot" aria-hidden="true" />
+            <span className="app-topbar-title">Untitled session</span>
+          </div>
+          <span className="app-topbar-meta">TWILIGHT · OUTPUT MIDI</span>
         </header>
         <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} />
         {error ? (
