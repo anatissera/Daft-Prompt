@@ -80,30 +80,24 @@ html, body {
 
 body {
   overflow: hidden;
-  /* Twilight sky → fire ramp positioned ABOVE the composer slab so the
-     warm yellows and oranges actually appear in the visible window. */
+  /* Twilight-dominant sky with the warm fire band hugging the bottom edge */
   background:
-    /* hot yellow core lifted up to mid-screen */
-    radial-gradient(55% 22% at 50% 88%, #fff1a8 0%, #ffd24a 30%, transparent 75%) no-repeat,
-    /* main blaze pushed up so orange/red sit higher */
-    radial-gradient(120% 42% at 50% 92%, #ffae3a 0%, #ff7a1f 25%, #d83608 50%, #6a1206 70%, transparent 88%) no-repeat,
-    /* widening haze that ties fire into the sky */
-    radial-gradient(140% 32% at 50% 86%, rgba(255, 110, 25, 0.45) 0%, transparent 85%) no-repeat,
-    /* vertical: sky takes top 50%, the rest is a full fire ramp */
+    radial-gradient(50% 18% at 50% 100%, #fff1a8 0%, #ffd24a 30%, transparent 75%) no-repeat,
+    radial-gradient(110% 36% at 50% 104%, #ffae3a 0%, #ff7a1f 25%, #d83608 50%, #6a1206 70%, transparent 88%) no-repeat,
+    radial-gradient(130% 26% at 50% 100%, rgba(255, 110, 25, 0.45) 0%, transparent 85%) no-repeat,
     linear-gradient(
       180deg,
       var(--sky-deep) 0%,
-      var(--sky-mid) 22%,
-      var(--sky-glow) 38%,
-      #2a2b4a 48%,
-      #3a1d44 55%,
-      #5a1838 62%,
-      #7e1a16 68%,
-      #b53112 74%,
-      #ee6b1c 80%,            /* orange band visible above composer */
-      #ffae3a 86%,            /* amber */
-      #ffd24a 92%,            /* yellow */
-      #ffe17a 100%            /* bright yellow embers */
+      var(--sky-mid) 30%,
+      var(--sky-glow) 55%,
+      #2a2b4a 68%,
+      #3a1d44 76%,
+      #5a1838 83%,
+      #7e1a16 89%,
+      #b53112 93%,
+      #ee6b1c 96%,
+      #ffd24a 99%,
+      #ffe17a 100%
     ) no-repeat;
   background-attachment: fixed;
   position: relative;
@@ -582,22 +576,6 @@ code, pre, .mono { font-family: var(--font-mono); }
   z-index: 2;
 }
 
-/* Solid black slab behind the composer that fades in upward, so fire from
-   the body bg never shows through the composer's padding gaps. */
-.chat-composer::before {
-  content: "";
-  position: absolute;
-  inset: 0 -100vw 0 -100vw;   /* extend full viewport width so it spans */
-  pointer-events: none;
-  z-index: -1;
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(5, 6, 8, 0.65) 30%,
-    rgba(5, 6, 8, 0.95) 65%,
-    var(--night) 100%
-  );
-}
 
 .chat-input {
   width: 100%;
