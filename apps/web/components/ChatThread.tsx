@@ -10,14 +10,17 @@ interface ChatThreadProps {
   onCancel?: () => void;
 }
 
-// Rough timeline of the compose pipeline — the backend doesn't stream
-// per-step progress, so we mark stages by elapsed time as a heuristic.
+// Rough timeline of the compose pipeline. We can't show this list until the
+// classifier on the server has decided the prompt is in scope (music) — until
+// then the request might bounce back as off-topic in < 1s and we'd flash a
+// fake list of stages. Wait until the classifier window has clearly passed
+// AND the busy label is the "Thinking…" one (analyze uses its own label).
+const PIPELINE_REVEAL_AFTER_SEC = 9;     // longer than the 8s classifier timeout
 const PIPELINE_STAGES: Array<{ label: string; atSec: number }> = [
-  { label: "Classifying your intent",                 atSec: 0 },
-  { label: "Director arranging the band",             atSec: 4 },
-  { label: "Instrument agents composing parts",       atSec: 40 },
-  { label: "Arbiter finalizing the arrangement",      atSec: 180 },
-  { label: "Rendering MIDI + score",                  atSec: 230 },
+  { label: "Director arranging the band",             atSec: PIPELINE_REVEAL_AFTER_SEC },
+  { label: "Instrument agents composing parts",       atSec: PIPELINE_REVEAL_AFTER_SEC + 30 },
+  { label: "Arbiter finalizing the arrangement",      atSec: PIPELINE_REVEAL_AFTER_SEC + 170 },
+  { label: "Rendering MIDI + score",                  atSec: PIPELINE_REVEAL_AFTER_SEC + 220 },
 ];
 
 function activeStageIndex(elapsedSec: number): number {
@@ -30,6 +33,8 @@ function activeStageIndex(elapsedSec: number): number {
 export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCancel }: ChatThreadProps) {
   const elapsedSec = (busyElapsedMs ?? 0) / 1000;
   const activeIdx = activeStageIndex(elapsedSec);
+  const showPipeline =
+    busyLabel === "Thinking…" && elapsedSec >= PIPELINE_REVEAL_AFTER_SEC;
   return (
     <div className="chat-thread" aria-live="polite">
       {messages.map((message) => (
@@ -65,20 +70,22 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
                 </button>
               ) : null}
             </p>
-            <ol className="pipeline-steps">
-              {PIPELINE_STAGES.map((stage, idx) => {
-                const state =
-                  idx < activeIdx ? "done" : idx === activeIdx ? "active" : "pending";
-                return (
-                  <li key={stage.label} className={`pipeline-step pipeline-step-${state}`}>
-                    <span className="pipeline-step-marker" aria-hidden="true">
-                      {state === "done" ? "✓" : state === "active" ? "›" : "·"}
-                    </span>
-                    <span className="pipeline-step-label">{stage.label}</span>
-                  </li>
-                );
-              })}
-            </ol>
+            {showPipeline ? (
+              <ol className="pipeline-steps">
+                {PIPELINE_STAGES.map((stage, idx) => {
+                  const state =
+                    idx < activeIdx ? "done" : idx === activeIdx ? "active" : "pending";
+                  return (
+                    <li key={stage.label} className={`pipeline-step pipeline-step-${state}`}>
+                      <span className="pipeline-step-marker" aria-hidden="true">
+                        {state === "done" ? "✓" : state === "active" ? "›" : "·"}
+                      </span>
+                      <span className="pipeline-step-label">{stage.label}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : null}
           </div>
         </article>
       ) : null}
