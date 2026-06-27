@@ -11,7 +11,9 @@ from llm_band.domain.audio_profile import ChordCandidate, ChordSpan
 from llm_band.infrastructure.mir.chord_features import (
     _default_chroma_time_provider,
     apply_key_context,
+    bass_root_from_chroma,
     chords_from_bar_chromas,
+    estimate_bass_roots,
 )
 
 # Pitch-class index order: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B
@@ -124,6 +126,54 @@ def test_key_context_does_not_replace_isolated_non_diatonic_chord():
     assert adjusted[1].chosen is not None
     assert adjusted[1].chosen.label == "B"
     assert adjusted[1].confidence < spans[1].confidence
+
+
+def test_bass_root_breaks_a_near_tie_between_overlapping_triads():
+    # C and E strong, with A and G equally weak: Am (A,C,E) and C (C,E,G) tie.
+    chroma = np.zeros(12, dtype=float)
+    chroma[C] = 1.0
+    chroma[E] = 1.0
+    chroma[A] = 0.6
+    chroma[G] = 0.6
+
+    chose_am = chords_from_bar_chromas([chroma], _bar_spans(1), bass_roots=[A])
+    chose_c = chords_from_bar_chromas([chroma], _bar_spans(1), bass_roots=[C])
+
+    assert chose_am[0].candidates[0].label == "Am"
+    assert chose_c[0].candidates[0].label == "C"
+
+
+def test_bass_root_does_not_override_a_confident_triad():
+    spans = chords_from_bar_chromas([_triad(C, E, G)], _bar_spans(1), bass_roots=[A])
+
+    assert spans[0].chosen is not None
+    assert spans[0].chosen.label == "C"
+
+
+def test_bass_root_from_chroma_returns_dominant_pitch_class():
+    vector = np.zeros(12, dtype=float)
+    vector[A] = 1.0
+    vector[E] = 0.2
+
+    assert bass_root_from_chroma(vector) == A
+
+
+def test_bass_root_from_chroma_returns_none_when_ambiguous():
+    assert bass_root_from_chroma(np.ones(12, dtype=float)) is None
+    assert bass_root_from_chroma(np.zeros(12, dtype=float)) is None
+
+
+def test_estimate_bass_roots_aligns_to_bar_spans():
+    chroma = np.zeros((12, 4), dtype=float)
+    chroma[A, 0:2] = 1.0  # frames at t=0,1 -> bar 1
+    chroma[G, 2:4] = 1.0  # frames at t=2,3 -> bar 2
+    frame_times = np.array([0.0, 1.0, 2.0, 3.0])
+
+    roots = estimate_bass_roots(
+        "bass.wav", [0.0, 2.0], 4.0, chroma_time_provider=lambda path, sr: (chroma, frame_times)
+    )
+
+    assert roots == [A, G]
 
 
 def test_default_chroma_time_provider_labels_against_a440_without_relabeling_for_tuning(monkeypatch):

@@ -24,7 +24,11 @@ from llm_band.domain.audio_profile import (
     StemProfile,
 )
 from llm_band.infrastructure.mir.bar_energy import per_bar_energy, per_stem_activity_by_bar
-from llm_band.infrastructure.mir.chord_features import apply_key_context, estimate_chords
+from llm_band.infrastructure.mir.chord_features import (
+    apply_key_context,
+    estimate_bass_roots,
+    estimate_chords,
+)
 from llm_band.infrastructure.mir.demucs_separator import DemucsSeparator
 from llm_band.infrastructure.mir.harmonic_source import build_harmonic_source
 from llm_band.infrastructure.mir.key_features import estimate_key, estimate_tuning_deviation
@@ -49,6 +53,7 @@ class DeepHarmonicAnalyzer:
         tempo_estimator: Callable = estimate_tempo_grid,
         key_estimator: Callable = estimate_key,
         chord_estimator: Callable = estimate_chords,
+        bass_root_provider: Callable | None = estimate_bass_roots,
         structure_detector: Callable = detect_structure,
         section_detector: Callable | None = detect_sections_from_bar_signals,
         energy_provider: Callable | None = per_bar_energy,
@@ -62,6 +67,7 @@ class DeepHarmonicAnalyzer:
         self.tempo_estimator = tempo_estimator
         self.key_estimator = key_estimator
         self.chord_estimator = chord_estimator
+        self.bass_root_provider = bass_root_provider
         self.structure_detector = structure_detector
         self.section_detector = section_detector
         self.energy_provider = energy_provider
@@ -155,7 +161,13 @@ class DeepHarmonicAnalyzer:
             )
 
         _emit(progress, "estimating_chords", "Estimating probable triads by bar.")
-        chord_spans = self.chord_estimator(harmonic.path, grid.bar_times, duration)
+        bass_path = next((stem.path for stem in stems if stem.name == "bass"), None)
+        bass_roots = _safe_bass_roots(
+            self.bass_root_provider, bass_path, grid.bar_times, duration
+        )
+        chord_spans = self.chord_estimator(
+            harmonic.path, grid.bar_times, duration, bass_roots=bass_roots or None
+        )
         chord_spans = apply_key_context(
             chord_spans, key_profile.primary.key if key_profile.primary else None
         )
@@ -261,6 +273,17 @@ def _safe_tuning_deviation(
         return provider(path)
     except Exception:
         return None
+
+
+def _safe_bass_roots(
+    provider: Callable | None, bass_path: str | None, bar_times, duration: float
+) -> list[int | None]:
+    if provider is None or bass_path is None or not bar_times:
+        return []
+    try:
+        return provider(bass_path, bar_times, duration)
+    except Exception:
+        return []
 
 
 def _safe_bar_energy(
