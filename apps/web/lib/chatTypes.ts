@@ -8,6 +8,7 @@ interface BaseChatMessage {
   id: string;
   role: ChatRole;
   text: string;
+  meta?: string;
 }
 
 export interface TextChatMessage extends BaseChatMessage {

@@ -52,12 +52,13 @@ class DirectorOutput(BaseModel):
 
 
 _SYSTEM = (
-    "You are the musical director of an ensemble. Given a style description, decide "
+    "/no_think You are the musical director of an ensemble. Given a style description, decide "
     "the key, tempo, time signature, number of bars, a section/form map, and the "
     f"instrumentation — choose {MIN_ROSTER}-{MAX_ROSTER} instruments and {MIN_BARS}-{MAX_BARS} bars that genuinely "
-    "fit the style (reason about it; do not use a fixed genre table). For each "
+    "fit the style (do not use a fixed genre table). For each "
     "instrument give a General MIDI program, a sensible MIDI pitch range, and its "
-    "role. Mark drum/percussion kits with is_drum=true."
+    "role. Mark drum/percussion kits with is_drum=true. "
+    "Respond directly with the structured output only. Do not think out loud or write any reasoning."
 )
 
 

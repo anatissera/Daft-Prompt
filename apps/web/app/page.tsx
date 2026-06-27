@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
@@ -11,7 +11,15 @@ import {
   createTextMessage,
 } from "@/lib/chatActionAdapter.mjs";
 
-type Intent = "answer_reference" | "compose" | "compose_from_reference" | "clarify";
+type Intent = "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
+
+interface UsageInfo {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  calls?: number;
+  elapsed_seconds?: number;
+}
 
 interface ChatResponse {
   intent: Intent;
@@ -20,6 +28,7 @@ interface ChatResponse {
   answer?: { answer: string; confidence?: string } | null;
   compose?: { song: SongState; source: string } | null;
   clarification?: string | null;
+  usage?: UsageInfo | null;
 }
 
 export default function Home() {
@@ -30,15 +39,44 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     createTextMessage(
       "assistant",
-      "Hi — say \"compose a slow blues\", upload an audio file to analyze, or ask about a reference once you've shared one.",
+      "Daft Prompt — multi-agent music studio. Ask me to compose a sketch (\"slow blues in F minor\"), upload audio to analyze, or ask about a loaded reference.",
       0,
     ),
   ]);
   const [referenceProfile, setReferenceProfile] = useState<ReferenceProfile | null>(null);
   const [activeWork, setActiveWork] = useState<string | null>(null);
+  const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
+  const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const busy = activeWork !== null;
+
+  useEffect(() => {
+    if (busyStartedAt === null) {
+      setBusyElapsedMs(0);
+      return;
+    }
+    const id = setInterval(() => setBusyElapsedMs(performance.now() - busyStartedAt), 100);
+    return () => clearInterval(id);
+  }, [busyStartedAt]);
+
+  function startWork(label: string) {
+    setActiveWork(label);
+    setBusyStartedAt(performance.now());
+  }
+
+  function stopWork() {
+    setActiveWork(null);
+    setBusyStartedAt(null);
+    abortRef.current = null;
+  }
+
+  function cancelWork() {
+    if (abortRef.current) abortRef.current.abort();
+    appendMessage(createTextMessage("assistant", "(cancelled)", nextMessageIndex()));
+    stopWork();
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -63,11 +101,15 @@ export default function Home() {
   }
 
   async function chat(message: string) {
-    setActiveWork("Thinking…");
+    startWork("Thinking…");
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const startedAt = performance.now();
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           message,
           reference_id: referenceProfile?.reference_id ?? null,
@@ -75,23 +117,28 @@ export default function Home() {
       });
       if (!res.ok) throw new Error(await readApiError(res));
       const data = (await res.json()) as ChatResponse;
-      appendMessage(createTextMessage("assistant", data.reply, nextMessageIndex()));
+      const meta = formatMeta(data, performance.now() - startedAt);
+      const msg = createTextMessage("assistant", data.reply, nextMessageIndex());
+      appendMessage({ ...msg, meta });
     } catch (err) {
+      if (controller.signal.aborted) return;
       const m = err instanceof Error ? err.message : "unknown chat error";
       setError(m);
       appendMessage(createTextMessage("assistant", `Chat failed: ${m}`, nextMessageIndex()));
     } finally {
-      setActiveWork(null);
+      if (!controller.signal.aborted) stopWork();
     }
   }
 
   async function analyzeReference(file: File) {
-    setActiveWork("Analyzing audio (tempo, key, energy, sections, chords)…");
+    startWork("Analyzing audio (tempo, key, energy, sections, chords)…");
+    const controller = new AbortController();
+    abortRef.current = controller;
     setReferenceProfile(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/references/analyze", { method: "POST", body: formData });
+      const res = await fetch("/api/references/analyze", { method: "POST", body: formData, signal: controller.signal });
       if (!res.ok) throw new Error(await readApiError(res));
 
       const profile = (await res.json()) as ReferenceProfile;
@@ -100,11 +147,12 @@ export default function Home() {
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
+      if (controller.signal.aborted) return;
       const m = err instanceof Error ? err.message : "unknown analysis error";
       setError(m);
       appendMessage(createTextMessage("assistant", `I could not analyze that file: ${m}`, nextMessageIndex()));
     } finally {
-      setActiveWork(null);
+      if (!controller.signal.aborted) stopWork();
     }
   }
 
@@ -149,7 +197,7 @@ export default function Home() {
           <span className="app-topbar-title">Untitled conversation</span>
           <span className="app-topbar-meta">multi-agent · {referenceProfile ? "reference loaded" : "no reference"}</span>
         </header>
-        <ChatThread messages={messages} busyLabel={activeWork} />
+        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} />
         {error ? (
           <p className="error-banner" role="alert">{error}</p>
         ) : null}
@@ -176,6 +224,24 @@ async function readApiError(response: Response) {
   } catch {
     return `backend error ${response.status}`;
   }
+}
+
+function formatMeta(data: ChatResponse, elapsedMs: number): string {
+  const seconds = elapsedMs / 1000;
+  const usage = data.usage;
+  if (usage && (usage.output_tokens || usage.total_tokens || usage.calls)) {
+    const elapsedReal = usage.elapsed_seconds ?? seconds;
+    const out = usage.output_tokens ?? 0;
+    const total = usage.total_tokens ?? 0;
+    const calls = usage.calls ?? 0;
+    const tps = out > 0 ? out / Math.max(elapsedReal, 0.01) : 0;
+    const tpsLabel = tps > 0 ? ` · ${tps.toFixed(1)} tok/s` : "";
+    const callsLabel = calls ? ` · ${calls} llm call${calls === 1 ? "" : "s"}` : "";
+    return `${elapsedReal.toFixed(1)}s · ${out} out / ${total} total tokens${tpsLabel}${callsLabel}`;
+  }
+  const approxTokens = Math.max(1, Math.round(data.reply.length / 4));
+  const tps = approxTokens / Math.max(seconds, 0.01);
+  return `${seconds.toFixed(1)}s · ~${approxTokens} tok · ~${tps.toFixed(1)} tok/s (estimate)`;
 }
 
 function analysisReadyMessage(profile: ReferenceProfile) {

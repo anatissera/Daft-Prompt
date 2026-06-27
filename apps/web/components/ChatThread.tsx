@@ -5,15 +5,18 @@ import GeneratedSongBlock from "@/components/GeneratedSongBlock";
 interface ChatThreadProps {
   messages: ChatMessage[];
   busyLabel: string | null;
+  busyElapsedMs?: number;
+  onCancel?: () => void;
 }
 
-export default function ChatThread({ messages, busyLabel }: ChatThreadProps) {
+export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCancel }: ChatThreadProps) {
   return (
     <div className="chat-thread" aria-live="polite">
       {messages.map((message) => (
         <article key={message.id} className={`chat-message chat-message-${message.role}`}>
           <span className="chat-role">{message.role}</span>
           <p>{message.text}</p>
+          {message.meta ? <span className="chat-meta">{message.meta}</span> : null}
           {message.kind === "analysis" ? <AnalysisResultBlock profile={message.profile} /> : null}
           {message.kind === "composition" ? <GeneratedSongBlock message={message} /> : null}
         </article>
@@ -21,7 +24,17 @@ export default function ChatThread({ messages, busyLabel }: ChatThreadProps) {
       {busyLabel ? (
         <article className="chat-message chat-message-system">
           <span className="chat-role">working</span>
-          <p>{busyLabel}</p>
+          <p>
+            {busyLabel}
+            {typeof busyElapsedMs === "number" ? (
+              <span className="chat-meta-inline"> · {(busyElapsedMs / 1000).toFixed(1)}s</span>
+            ) : null}
+            {onCancel ? (
+              <button type="button" className="cancel-button" onClick={onCancel}>
+                Stop
+              </button>
+            ) : null}
+          </p>
         </article>
       ) : null}
     </div>
