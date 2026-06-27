@@ -136,6 +136,12 @@ def _low_usefulness_profile() -> ReferenceProfile:
     )
 
 
+def test_chorus_question_routes_to_structure_not_chords():
+    answer = AnswerMusicQuestion().execute("Where is the chorus?", _profile())
+
+    assert answer.answer.startswith("The structure appears to repeat as")
+
+
 def test_general_answer_leads_with_limitation_when_usefulness_is_low():
     answer = AnswerMusicQuestion().execute("Give me an overview.", _low_usefulness_profile())
 

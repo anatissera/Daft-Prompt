@@ -181,7 +181,8 @@ export function answerReferenceQuestion(prompt, profile) {
   const audio = profile.audio;
   if (!audio) return "I do not have an audio profile for this reference yet.";
 
-  if (/\b(chord|chords|chorus|harmony|harmonic)\b/.test(normalized)) {
+  // "chorus"/"verse" are structural terms, handled by the structure branch below.
+  if (/\b(chord|chords|harmony|harmonic)\b/.test(normalized)) {
     const main = getMainProgression(profile);
     const estimates = getTopChordEstimates(profile, 4);
     if (!main && estimates.length === 0) {

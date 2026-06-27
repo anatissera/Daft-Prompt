@@ -39,7 +39,9 @@ class DeterministicMusicQuestionExplainer:
         normalized = question.lower()
         if re.search(r"\b(key|tonality|tonal)\b", normalized):
             return _answer_key(profile)
-        if re.search(r"\b(chord|chords|progression|harmony|harmonic|chorus)\b", normalized):
+        # "chorus"/"verse" are structural terms; keep them out of the chord branch
+        # so "where is the chorus" routes to structure, not chord estimates.
+        if re.search(r"\b(chord|chords|progression|harmony|harmonic)\b", normalized):
             return _answer_chords(profile)
         if re.search(r"\b(structure|form|section|sections|repeat|a/b/c|abc|verse|chorus)\b", normalized):
             return _answer_structure(profile)

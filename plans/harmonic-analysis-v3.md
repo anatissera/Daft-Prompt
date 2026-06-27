@@ -146,11 +146,15 @@ found the work is architecturally sound, honest in its copy, and fully tested
 - Modify `apps/api/llm_band/infrastructure/mir/deep_harmonic_analyzer.py`
 - Modify `apps/api/llm_band/infrastructure/mir/structure_features.py`
 
-- [ ] Route `"chorus"`/`"verse"` to the structure branch, not the chord branch.
-- [ ] Document (and ideally collapse) the three structure heuristics
+- [x] Route `"chorus"`/`"verse"` to the structure branch, not the chord branch.
+  (Removed `"chorus"` from the chord regex in backend Q&A and frontend view.)
+- [x] Document (and ideally collapse) the three structure heuristics
   (`detect_structure`, `_fallback_sections_if_degenerate`, `section_features`)
-  into one clearly-ordered path.
-- [ ] Remove or clearly mark the unused buffered `analyze_with_progress`.
+  into one clearly-ordered path. (Documented the three ordered tiers inline in the
+  orchestrator; kept the paths since each is independently tested.)
+- [x] Remove or clearly mark the unused buffered `analyze_with_progress`.
+  (Removed the dead buffered method; real streaming is the API queue/thread, now
+  noted on `analyze`.)
 
 ## Verification Before Completion
 
