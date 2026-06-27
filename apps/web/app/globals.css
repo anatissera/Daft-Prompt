@@ -222,7 +222,16 @@ code, pre, .mono { font-family: var(--font-mono); }
   max-width: 80%;
 }
 
-.chat-message-assistant p { padding: 4px 0; color: var(--text); }
+.chat-message-assistant { align-items: flex-start; }
+.chat-message-assistant p {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  align-self: flex-start;
+  max-width: 92%;
+  color: var(--text);
+}
 
 .chat-message-system p {
   font-size: 13px;
