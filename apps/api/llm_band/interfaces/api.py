@@ -15,6 +15,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from llm_band.agents.director import run_director
 from llm_band.application.analyze_reference import AnalyzeReference
+from llm_band.application.answer_music_question import AnswerMusicQuestion
+from llm_band.application.chat_music import ChatMusic
 from llm_band.application.compose_song import ComposeSong
 from llm_band.canned import canned_song
 from llm_band.config import get_settings
@@ -22,6 +24,7 @@ from llm_band.domain.audio_profile import ReferenceProfile, ReferenceSource
 from llm_band.domain.song_state import Part
 from llm_band.graph import iter_negotiation_events, run_negotiation
 from llm_band.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
+from llm_band.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from llm_band.infrastructure.storage.render_artifacts import render_artifacts
 from llm_band.infrastructure.storage.local_store import LocalArtifactStore
 from llm_band.infrastructure.llm import LLMAllProvidersFailed, LLMError
@@ -30,6 +33,8 @@ from llm_band.interfaces.api_models import (
     AnalysisErrorEvent,
     AnalysisProgressEvent,
     Artifacts,
+    ChatRequest,
+    ChatResponse,
     ComposeRequest,
     ComposeResponse,
     DoneEvent,
@@ -40,6 +45,7 @@ from llm_band.interfaces.api_models import (
 OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
 REFERENCE_UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
+REFERENCE_STORE = InMemoryReferenceStore()
 SUPPORTED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 ANALYSIS_KEEPALIVE_SECONDS = 15.0
@@ -63,7 +69,7 @@ def health() -> dict[str, str]:
 async def analyze_reference_upload(file: UploadFile | None = File(None)) -> ReferenceProfile:
     source = await _store_reference_upload(file)
     try:
-        return AnalyzeReference(_reference_analyzer()).execute(source)
+        profile = AnalyzeReference(_reference_analyzer()).execute(source)
     except HTTPException:
         raise
     except Exception as exc:
@@ -71,6 +77,8 @@ async def analyze_reference_upload(file: UploadFile | None = File(None)) -> Refe
             status_code=422,
             detail=f"could not analyze uploaded audio: {exc}",
         ) from exc
+    REFERENCE_STORE.save(profile)
+    return profile
 
 
 @app.post("/references/analyze/stream")
@@ -144,6 +152,7 @@ def _reference_analysis_stream_events(source: ReferenceSource) -> Iterator[dict]
         analyzer = _reference_analyzer()
         try:
             profile = _analyze_with_progress(analyzer, source, progress)
+            REFERENCE_STORE.save(profile)
             events.put(AnalysisDoneEvent(profile=profile).model_dump(mode="json"))
         except Exception as exc:
             events.put(
@@ -180,6 +189,24 @@ def _analyze_with_progress(analyzer, source: ReferenceSource, progress) -> Refer
 
 def _reference_analyzer() -> DeepHarmonicAnalyzer:
     return DeepHarmonicAnalyzer(output_root=_reference_upload_root())
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(req: ChatRequest) -> ChatResponse:
+    if req.reference_id and REFERENCE_STORE.get(req.reference_id) is None:
+        raise HTTPException(status_code=404, detail=f"reference_id not found: {req.reference_id}")
+    try:
+        return _chat_music().handle(req)
+    except LLMError as exc:
+        raise HTTPException(status_code=503, detail=_llm_error_event(exc, partial=False)) from exc
+
+
+def _chat_music() -> ChatMusic:
+    return ChatMusic(
+        compose_song=_compose_song(),
+        answer_music_question=AnswerMusicQuestion(),
+        reference_store=REFERENCE_STORE,
+    )
 
 
 def _reference_upload_root() -> Path:
