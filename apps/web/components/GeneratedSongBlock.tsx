@@ -6,7 +6,7 @@ import NegotiationFeed from "@/components/NegotiationFeed";
 import RosterView from "@/components/RosterView";
 
 const ScoreViewer = dynamic(() => import("@/components/ScoreViewer"), { ssr: false });
-const TrackMixer = dynamic(() => import("@/components/TrackMixer"), { ssr: false });
+const MidiPlayer = dynamic(() => import("@/components/MidiPlayer"), { ssr: false });
 
 export default function GeneratedSongBlock({ message }: { message: CompositionChatMessage }) {
   const result = message.result;
@@ -42,7 +42,7 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
 
       {hasPlayableParts ? (
         <>
-          <TrackMixer song={result.song} />
+          <MidiPlayer midiUrl={result.artifacts.midi} />
           <a className="artifact-link" href={result.artifacts.midi}>
             ↓ Download full MIDI
           </a>
