@@ -114,12 +114,15 @@ found the work is architecturally sound, honest in its copy, and fully tested
 - Modify `apps/web/lib/referenceProfileView.mjs`
 - Update matching tests
 
-- [ ] When key, chord, grid, and structure confidence are all low, emit a
+- [x] When key, chord, grid, and structure confidence are all low, emit a
   `low_usefulness` analysis note and lead the summary with the limitation before
-  listing candidates.
-- [ ] Q&A and the frontend summary respect the same gate.
-- [ ] Test: an all-low-confidence profile leads with the limitation; a mixed
-  profile still shows candidates.
+  listing candidates. (`_is_low_usefulness`, threshold 0.5; summary inserts the
+  limitation right after the objective duration/tempo facts.)
+- [x] Q&A and the frontend summary respect the same gate. (Q&A general answer
+  leads with the caveat; `isLowUsefulness` + `describeReferenceSummary` in the
+  frontend.)
+- [x] Test: an all-low-confidence profile leads with the limitation; a mixed
+  profile still shows candidates. → backend 165 passed, frontend 17 passed.
 
 ## Phase 5: Decouple Tuning From Labeling
 
