@@ -331,13 +331,14 @@ code, pre, .mono { font-family: var(--font-mono); }
 
 /* ─── METALLIC BUBBLES ───────────────────────────────────────────────────── */
 
-/* Shared bubble construction:
-   - vertical brushed-metal gradient (top = sky reflection, bottom = fire)
-   - ::before = the polished curved highlight (helmet gloss + sky reflection
-     up top) plus a specular sparkle dot
-   - ::after  = real molten-edge fire glow at the bottom, sitting BEHIND the
-     bubble so it spills onto the bg
-   - layered box-shadows for rim light, bottom fire spill, depth, contact
+/* ═══ Metalmorphism bubbles ═══════════════════════════════════════════════
+   Machined-metal panel:
+     - top edge: 1px bright rim (light catching the bevel)
+     - body: dome gradient (sky → specular midline → shadow ridge → fire)
+     - bottom edge: 1px dark hairline (etched shadow)
+     - ::before: micro-knurled brushing + dome gloss + corner sparkle
+     - ::after: hot orange halo bleeding behind the panel
+     - text: letterpressed (light bottom + dark top) for engraved feel
 */
 .chat-message-user p,
 .chat-message-assistant p {
@@ -346,30 +347,37 @@ code, pre, .mono { font-family: var(--font-mono); }
   padding: 18px 22px;
   border-radius: var(--radius-lg);
   color: var(--text-on-metal);
-  font-weight: 500;
+  font-weight: 600;
   word-wrap: break-word;
   white-space: pre-wrap;
-  overflow: visible;        /* so the fire halo (::after) bleeds out */
+  overflow: visible;
   isolation: isolate;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+  /* Letterpress: bright bottom highlight + soft dark top — text reads carved */
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.55),
+    0 -1px 0 rgba(0, 0, 0, 0.18);
   box-shadow:
-    /* top rim light (sky reflection) */
-    0 2px 0 rgba(255, 255, 255, 0.6) inset,
-    0 1px 0 rgba(255, 255, 255, 0.95) inset,
-    /* very soft inner band just below the top — hints at curvature */
-    0 10px 18px -16px rgba(0, 0, 0, 0.45) inset,
-    /* hot fire reflection eating up the bottom 25% */
-    0 -22px 30px -18px rgba(255, 122, 31, 0.75) inset,
-    0 -8px 14px -10px rgba(255, 220, 120, 0.55) inset,
-    /* depth: thick contact shadow */
-    0 22px 32px -14px rgba(0, 0, 0, 0.8),
-    0 6px 12px -4px rgba(0, 0, 0, 0.6),
-    /* dark bevel outline */
-    0 0 0 1px rgba(0, 0, 0, 0.6);
+    /* hairline bright rim along the top edge */
+    0 1px 0 rgba(255, 255, 255, 1) inset,
+    /* second-pixel softer light */
+    0 2px 0 rgba(255, 255, 255, 0.35) inset,
+    /* hairline dark etch along the bottom edge */
+    0 -1px 0 rgba(0, 0, 0, 0.6) inset,
+    /* inner top curvature shadow (light entering the bevel) */
+    0 8px 14px -14px rgba(0, 0, 0, 0.5) inset,
+    /* hot fire reflection eating up the bottom 30% */
+    0 -24px 32px -18px rgba(255, 122, 31, 0.8) inset,
+    0 -10px 16px -10px rgba(255, 220, 120, 0.55) inset,
+    /* outer bevel: razor-thin dark outline */
+    0 0 0 1px rgba(0, 0, 0, 0.75),
+    /* outer bevel: razor-thin light line outside the dark one */
+    0 0 0 2px rgba(255, 255, 255, 0.06),
+    /* lifted contact shadow */
+    0 18px 32px -12px rgba(0, 0, 0, 0.7),
+    0 4px 8px -2px rgba(0, 0, 0, 0.55);
 }
 
-/* Highlight layer: top sheen + a single specular sparkle (helmet star)
-   + a faint vertical brushed pattern to keep the metal feel. */
+/* Highlight overlay: dome gloss + sparkle + fine vertical knurl */
 .chat-message-user p::before,
 .chat-message-assistant p::before {
   content: "";
@@ -379,45 +387,65 @@ code, pre, .mono { font-family: var(--font-mono); }
   pointer-events: none;
   z-index: 1;
   background:
-    /* sparkle (top-left helmet star) */
+    /* corner sparkle (helmet star) */
     radial-gradient(
-      6px 6px at 22% 26%,
-      rgba(255, 255, 255, 0.95) 0%,
-      rgba(255, 255, 255, 0.55) 35%,
+      7px 7px at 18% 22%,
+      rgba(255, 255, 255, 0.98) 0%,
+      rgba(255, 255, 255, 0.55) 30%,
       transparent 70%
     ),
-    /* horizontal top sheen — bright band that tapers off */
+    /* secondary sparkle */
+    radial-gradient(
+      4px 4px at 82% 32%,
+      rgba(255, 255, 255, 0.7) 0%,
+      transparent 70%
+    ),
+    /* curved dome gloss — bright arc near the top, tapering to nothing */
+    radial-gradient(
+      ellipse 120% 60% at 50% -10%,
+      rgba(255, 255, 255, 0.45) 0%,
+      rgba(255, 255, 255, 0.12) 30%,
+      transparent 55%
+    ),
+    /* horizontal hot midline kiss */
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.55) 0%,
-      rgba(255, 255, 255, 0.12) 14%,
-      transparent 28%,
-      transparent 100%
+      transparent 32%,
+      rgba(255, 255, 255, 0.22) 42%,
+      transparent 50%
     ),
-    /* faint vertical brushing */
+    /* micro knurl — very fine, low-alpha vertical brushing */
     repeating-linear-gradient(
       90deg,
       transparent 0px,
-      rgba(0, 0, 0, 0.06) 1px,
+      rgba(0, 0, 0, 0.04) 1px,
       transparent 2px,
-      transparent 5px
+      transparent 4px
+    ),
+    /* horizontal brush at low alpha for cross-hatch texture */
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      rgba(255, 255, 255, 0.03) 1px,
+      transparent 2px,
+      transparent 6px
     );
   mix-blend-mode: screen;
 }
 
-/* Fire halo: large soft glow sitting behind the bottom of the bubble. */
+/* Fire halo bleeding behind the panel */
 .chat-message-user p::after,
 .chat-message-assistant p::after {
   content: "";
   position: absolute;
-  left: -6%;
-  right: -6%;
-  bottom: -16px;
-  height: 36px;
+  left: -8%;
+  right: -8%;
+  bottom: -18px;
+  height: 40px;
   background:
-    radial-gradient(closest-side, rgba(255, 200, 80, 0.7), transparent 75%),
-    radial-gradient(closest-side, rgba(255, 100, 30, 0.55), transparent 80%);
-  filter: blur(12px);
+    radial-gradient(closest-side, rgba(255, 200, 80, 0.75), transparent 75%),
+    radial-gradient(closest-side, rgba(255, 100, 30, 0.6), transparent 80%);
+  filter: blur(14px);
   pointer-events: none;
   z-index: -1;
 }
@@ -752,18 +780,38 @@ code, pre, .mono { font-family: var(--font-mono); }
   font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  padding: 8px 14px;
+  padding: 9px 16px;
   border-radius: var(--radius-md);
   background:
-    linear-gradient(180deg, var(--gold-mid) 0%, var(--gold-bright) 50%, var(--gold-mid) 100%);
+    linear-gradient(
+      180deg,
+      #b3892a 0%,
+      #f3cf6a 18%,
+      #fff3c8 38%,
+      #f3c45a 55%,
+      #c99830 75%,
+      #6b4d10 100%
+    );
   color: var(--text-on-metal);
   border: 0;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.55),
+    0 -1px 0 rgba(0, 0, 0, 0.18);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.4) inset,
-    0 -8px 14px -8px rgba(255, 122, 31, 0.6) inset,
-    0 6px 12px -4px rgba(0, 0, 0, 0.5);
+    0 1px 0 rgba(255, 255, 255, 1) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.55) inset,
+    0 -8px 14px -10px rgba(255, 122, 31, 0.6) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.7),
+    0 0 0 2px rgba(255, 255, 255, 0.06),
+    0 6px 12px -4px rgba(0, 0, 0, 0.6);
+  transition: filter 160ms ease, transform 120ms ease;
 }
-.artifact-link:hover { filter: brightness(1.1); text-decoration: none; }
+.artifact-link:hover {
+  filter: brightness(1.08);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+.artifact-link:active { transform: translateY(0); }
 
 .analysis-status {
   font-family: var(--font-tech);
