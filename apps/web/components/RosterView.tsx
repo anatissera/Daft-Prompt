@@ -41,11 +41,11 @@ export default function RosterView({
       </div>
 
       <ul className="roster-list">
-        {roster.map((r) => {
+        {roster.map((r, idx) => {
           const muted = mutedTrackIds?.has(r.id) ?? false;
           const solo = soloTrackIds?.has(r.id) ?? false;
           return (
-            <li key={r.id} className="roster-item">
+            <li key={`${r.id || "agent"}-${idx}`} className="roster-item">
               <span className="avatar" style={{ background: instrumentColor(r.id) }}>
                 {r.instrument.slice(0, 1).toUpperCase()}
               </span>
