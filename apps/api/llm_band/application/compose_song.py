@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator
 from typing import Any
 
 from llm_band.domain.song_state import SongState
+
+log = logging.getLogger(__name__)
 
 
 class ComposeSong:
@@ -26,7 +29,11 @@ class ComposeSong:
 
     def compose(self, style: str) -> tuple[SongState, str]:
         if self.llm_configured():
-            song = self.director(style)
+            try:
+                song = self.director(style)
+            except Exception as exc:  # noqa: BLE001 — fall back to canned on director-level LLM failure
+                log.warning("director failed (%s); falling back to canned arrangement", exc)
+                return self.canned(style), "canned"
             return self.negotiator(song), "director"
         return self.canned(style), "canned"
 

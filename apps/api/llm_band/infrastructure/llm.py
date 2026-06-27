@@ -5,11 +5,10 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from contextvars import ContextVar
-from dataclasses import dataclass, field
 from typing import Any, Optional, TypeVar
 
 from llm_band.config import DEFAULT_MODELS, Settings, get_settings
+from llm_band.domain.usage import USAGE_TRACKER, UsageTracker
 
 T = TypeVar("T")
 
@@ -221,25 +220,6 @@ def with_fallbacks(role: str, settings: Settings, operation: Callable[[str, str]
     raise LLMAllProvidersFailed(failures)
 
 
-@dataclass
-class UsageTracker:
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
-    calls: int = 0
-
-    def add(self, usage: dict[str, Any] | None) -> None:
-        if not usage:
-            return
-        self.input_tokens += int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
-        self.output_tokens += int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
-        self.total_tokens += int(usage.get("total_tokens", 0) or 0)
-        self.calls += 1
-
-
-USAGE_TRACKER: ContextVar[Optional[UsageTracker]] = ContextVar("usage_tracker", default=None)
-
-
 def _record_usage(raw_message: Any) -> None:
     tracker = USAGE_TRACKER.get()
     if tracker is None:
@@ -265,13 +245,9 @@ class _FallbackStructuredInvoker:
             result = structured.invoke(messages)
             if isinstance(result, dict):
                 _record_usage(result.get("raw"))
-                parsed = result.get("parsed")
-                if parsed is None:
-                    err = result.get("parsing_error")
-                    raise LLMStructuredOutputError(
-                        provider=provider, model=model, detail=str(err) if err else "no parsed output",
-                    )
-                return parsed
+                # Return parsed (or None) — callers already handle the None
+                # fallback path; raising here would break that contract.
+                return result.get("parsed")
             return result
 
         return with_fallbacks(self.role, self.settings, operation)
