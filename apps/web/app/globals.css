@@ -267,8 +267,10 @@ code, pre, .mono { font-family: var(--font-mono); }
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;          /* let chat-thread's overflow actually kick in */
   background: transparent;
   position: relative;
+  overflow: hidden;       /* clip overflow so composer stays pinned at bottom */
 }
 
 .app-topbar {
@@ -301,11 +303,13 @@ code, pre, .mono { font-family: var(--font-mono); }
 
 .chat-thread {
   flex: 1 1 auto;
+  min-height: 0;          /* required in column flex for overflow-y to work */
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  padding: var(--space-8) var(--space-6) calc(28vh + var(--space-6));
+  padding: var(--space-8) var(--space-6) var(--space-6);
   scroll-behavior: smooth;
   position: relative;
   z-index: 1;
