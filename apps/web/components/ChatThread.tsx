@@ -30,6 +30,11 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
         <article className="chat-message chat-message-system">
           <span className="chat-role">working</span>
           <p>
+            <span className="sound-wave" aria-hidden="true">
+              <span /><span /><span /><span /><span />
+              <span /><span /><span /><span /><span />
+              <span /><span /><span /><span /><span />
+            </span>
             {busyLabel}
             {typeof busyElapsedMs === "number" ? (
               <span className="chat-meta-inline"> · {(busyElapsedMs / 1000).toFixed(1)}s</span>
