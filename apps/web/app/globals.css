@@ -536,6 +536,86 @@ code, pre, .mono { font-family: var(--font-mono); }
   letter-spacing: 0.04em;
 }
 
+/* ─── Pipeline steps (busy state bullets) ────────────────────────────────── */
+
+.busy-block { display: flex; flex-direction: column; gap: 10px; }
+
+.busy-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.pipeline-steps {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0 2px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left: 1px solid rgba(243, 196, 90, 0.18);
+}
+
+.pipeline-step {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-tech);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: color 200ms ease, opacity 200ms ease;
+}
+
+.pipeline-step-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+.pipeline-step-pending {
+  color: var(--text-faint);
+  opacity: 0.55;
+}
+.pipeline-step-pending .pipeline-step-marker {
+  color: var(--text-faint);
+}
+
+.pipeline-step-active {
+  color: var(--gold-spec);
+}
+.pipeline-step-active .pipeline-step-marker {
+  color: var(--gold-spec);
+  background: rgba(243, 196, 90, 0.12);
+  box-shadow: 0 0 12px rgba(243, 196, 90, 0.55);
+  animation: pipeline-pulse 1.2s ease-in-out infinite;
+}
+.pipeline-step-active .pipeline-step-label {
+  text-shadow: 0 0 12px rgba(243, 196, 90, 0.35);
+}
+
+.pipeline-step-done {
+  color: var(--success);
+  opacity: 0.85;
+}
+.pipeline-step-done .pipeline-step-marker {
+  color: var(--success);
+  text-shadow: 0 0 8px rgba(110, 224, 166, 0.55);
+}
+
+@keyframes pipeline-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(243, 196, 90, 0.4); }
+  50%      { box-shadow: 0 0 18px rgba(243, 196, 90, 0.85); }
+}
+
 /* ─── Sound wave (busy indicator) ────────────────────────────────────────── */
 
 .sound-wave {
