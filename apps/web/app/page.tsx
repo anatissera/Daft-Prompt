@@ -8,6 +8,7 @@ import type { ReferenceProfile, SongState } from "@/lib/types";
 import {
   chooseChatAction,
   createAnalysisMessage,
+  createCompositionMessage,
   createTextMessage,
 } from "@/lib/chatActionAdapter.mjs";
 
@@ -21,12 +22,23 @@ interface UsageInfo {
   elapsed_seconds?: number;
 }
 
+interface ChatArtifacts {
+  midi: string;
+  musicxml: string;
+}
+
+interface ChatComposeResult {
+  song: SongState;
+  source: string;
+  artifacts?: ChatArtifacts | null;
+}
+
 interface ChatResponse {
   intent: Intent;
   reply: string;
   reference_id?: string | null;
   answer?: { answer: string; confidence?: string } | null;
-  compose?: { song: SongState; source: string } | null;
+  compose?: ChatComposeResult | null;
   clarification?: string | null;
   usage?: UsageInfo | null;
 }
@@ -118,8 +130,28 @@ export default function Home() {
       if (!res.ok) throw new Error(await readApiError(res));
       const data = (await res.json()) as ChatResponse;
       const meta = formatMeta(data, performance.now() - startedAt);
-      const msg = createTextMessage("assistant", data.reply, nextMessageIndex());
-      appendMessage({ ...msg, meta });
+      const idx = nextMessageIndex();
+      if (data.compose && data.compose.artifacts) {
+        const composeResponse = {
+          job_id: "chat",
+          source: data.compose.source as "director" | "canned",
+          song: data.compose.song,
+          artifacts: data.compose.artifacts,
+        };
+        const msg = createCompositionMessage(
+          "assistant",
+          data.reply,
+          composeResponse,
+          [],
+          data.compose.song.header,
+          composeResponse.source,
+          idx,
+        );
+        appendMessage({ ...msg, meta });
+      } else {
+        const msg = createTextMessage("assistant", data.reply, idx);
+        appendMessage({ ...msg, meta });
+      }
     } catch (err) {
       if (controller.signal.aborted) return;
       const m = err instanceof Error ? err.message : "unknown chat error";

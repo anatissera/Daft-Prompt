@@ -35,9 +35,15 @@ class ChatRequest(BaseModel):
     reference_id: Optional[str] = None
 
 
+class ChatArtifacts(BaseModel):
+    midi: str
+    musicxml: str
+
+
 class ChatComposeResult(BaseModel):
     song: SongState
     source: str
+    artifacts: Optional[ChatArtifacts] = None
 
 
 class UsageInfo(BaseModel):
