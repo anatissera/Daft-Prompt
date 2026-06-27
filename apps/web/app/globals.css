@@ -175,7 +175,17 @@ code, pre, .mono { font-family: var(--font-mono); }
   gap: var(--space-4);
 }
 
+.sidebar-brand-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+  padding: 0 4px 4px;
+  gap: 6px;
+}
+
 .sidebar-brand {
+  display: block;
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 15px;
@@ -185,6 +195,14 @@ code, pre, .mono { font-family: var(--font-mono); }
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+.sidebar-tagline {
+  display: block;
+  font-family: var(--font-tech);
+  font-size: 8.5px;
+  letter-spacing: 0.42em;
+  color: rgba(255, 150, 70, 0.7);
 }
 
 .sidebar-new {
