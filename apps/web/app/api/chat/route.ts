@@ -7,8 +7,22 @@
 // Same-origin proxy, browser never holds backend or LLM URLs.
 
 import { NextRequest } from "next/server";
+import { Agent } from "undici";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 1800; // 30 min cap for the Next route itself
+
+// undici's default headersTimeout (5 min) kills slow LLM composes — disable.
+// Connect timeout stays sensible so a dead backend fails fast.
+const noTimeoutDispatcher = new Agent({
+  headersTimeout: 0,
+  bodyTimeout: 0,
+  connectTimeout: 10_000,
+});
+
+function withDispatcher<T extends RequestInit>(init: T): T {
+  return { ...init, dispatcher: noTimeoutDispatcher } as unknown as T;
+}
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 const LLM_BASE_URL = process.env.LLM_BASE_URL ?? "http://localhost:8080";
@@ -67,12 +81,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const upstream = await fetch(`${API_BASE_URL}/chat`, {
+    const upstream = await fetch(`${API_BASE_URL}/chat`, withDispatcher({
       method: "POST",
       headers: { "content-type": "application/json" },
       signal: req.signal,
       body: JSON.stringify({ message, reference_id: referenceId }),
-    });
+    }));
     const text = await upstream.text();
     return new Response(text, {
       status: upstream.status,
@@ -96,7 +110,7 @@ async function classify(message: string): Promise<Verdict | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CLASSIFIER_TIMEOUT_MS);
   try {
-    const res = await fetch(`${LLM_BASE_URL}/v1/chat/completions`, {
+    const res = await fetch(`${LLM_BASE_URL}/v1/chat/completions`, withDispatcher({
       method: "POST",
       headers: { "content-type": "application/json" },
       signal: controller.signal,
@@ -111,7 +125,7 @@ async function classify(message: string): Promise<Verdict | null> {
           { role: "user", content: message },
         ],
       }),
-    });
+    }));
     if (!res.ok) return null;
     const data = await res.json();
     const content: string | undefined = data?.choices?.[0]?.message?.content;
