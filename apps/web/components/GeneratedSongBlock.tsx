@@ -1,23 +1,34 @@
 "use client";
 
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import type { CompositionChatMessage } from "@/lib/chatTypes";
 import NegotiationFeed from "@/components/NegotiationFeed";
 import RosterView from "@/components/RosterView";
 
 const ScoreViewer = dynamic(() => import("@/components/ScoreViewer"), { ssr: false });
-const MidiPlayer = dynamic(() => import("@/components/MidiPlayer"), { ssr: false });
+const TrackMixer = dynamic(() => import("@/components/TrackMixer"), { ssr: false });
+
+function toggleSetItem(prev: Set<string>, id: string): Set<string> {
+  const next = new Set(prev);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
 
 export default function GeneratedSongBlock({ message }: { message: CompositionChatMessage }) {
   const result = message.result;
   const hasPlayableParts = Object.keys(result.song.parts).length > 0;
-
   const h = result.song.header;
   const partsCount = Object.keys(result.song.parts).length;
 
+  // Lifted so Roster cards (display + buttons) and TrackMixer (audio gain)
+  // share the same Mute/Solo state.
+  const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(() => new Set());
+  const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
+
   return (
     <section className="song-deck" aria-label="Generated song">
-      {/* Track-card header — like a vinyl sleeve label */}
       <header className="song-deck-header">
         <div className="song-deck-stencil">
           <span className="song-deck-stencil-label">TRK</span>
@@ -37,12 +48,27 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
       </header>
 
       {message.header ? (
-        <RosterView header={message.header} roster={result.song.roster} source={message.source ?? "canned"} embedded />
+        <RosterView
+          header={message.header}
+          roster={result.song.roster}
+          source={message.source ?? "canned"}
+          embedded
+          mutedTrackIds={mutedTrackIds}
+          soloTrackIds={soloTrackIds}
+          onToggleMute={(id) => setMutedTrackIds((prev) => toggleSetItem(prev, id))}
+          onToggleSolo={(id) => setSoloTrackIds((prev) => toggleSetItem(prev, id))}
+        />
       ) : null}
 
       {hasPlayableParts ? (
         <>
-          <MidiPlayer midiUrl={result.artifacts.midi} />
+          <TrackMixer
+            song={result.song}
+            mutedTrackIds={mutedTrackIds}
+            soloTrackIds={soloTrackIds}
+            onMutedChange={setMutedTrackIds}
+            onSoloChange={setSoloTrackIds}
+          />
           <a className="artifact-link" href={result.artifacts.midi}>
             ↓ Download full MIDI
           </a>
