@@ -12,6 +12,7 @@ import {
   getMainProgression,
   getStructureTimeline,
   getTopChordEstimates,
+  isLowUsefulness,
   isReferenceQuestion,
 } from "./referenceProfileView.mjs";
 
@@ -216,6 +217,11 @@ test("answerReferenceQuestion answers structure and harmonic progression questio
   );
   assert.equal(
     answerReferenceQuestion("What is the A/B/C structure?", harmonicProfile),
+    "The structure appears to repeat as A bars 1-4 (high · 78%) / B bars 5-8 (medium · 74%).",
+  );
+  // "chorus" is structural: it must route to structure, not chord estimates.
+  assert.equal(
+    answerReferenceQuestion("Where is the chorus?", harmonicProfile),
     "The structure appears to repeat as A bars 1-4 (high · 78%) / B bars 5-8 (medium · 74%).",
   );
 });
@@ -425,6 +431,24 @@ test("analysis notes stay compact for display", () => {
       message: "The bar grid was unstable; chord and structure estimates are less reliable.",
     },
   ]);
+});
+
+test("low usefulness summary leads with the limitation", () => {
+  const weakProfile = {
+    ...harmonicProfile,
+    audio: {
+      ...harmonicProfile.audio,
+      analysis_notes: [
+        { code: "low_usefulness", message: "Key, chord, and structure evidence are all weak.", severity: "warning" },
+      ],
+    },
+  };
+
+  assert.equal(isLowUsefulness(weakProfile), true);
+  assert.equal(isLowUsefulness(harmonicProfile), false);
+
+  const rows = describeReferenceSummary(weakProfile);
+  assert.ok(rows.some((row) => row.includes("rough sketch")));
 });
 
 test("getTopChordEstimates returns probable chord labels with time ranges", () => {

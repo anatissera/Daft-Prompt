@@ -28,6 +28,12 @@ SAMPLE_RATE = 22_050
 CHOSEN_THRESHOLD = 0.45
 SMOOTHING_STRONG_THRESHOLD = 0.55
 MAX_CANDIDATES = 5
+# A confident bass root nudges matching-root triads. The bonus is small and
+# capped so it only breaks a near-tie; a clearly-winning non-bass triad stands.
+BASS_ROOT_BONUS = 0.06
+# The dominant bass pitch class must be at least this many times the mean bass
+# chroma energy to be trusted as a root (otherwise the bar's bass is ambiguous).
+BASS_ROOT_PROMINENCE = 1.3
 
 # (start_bar, end_bar, start_seconds, end_seconds)
 BarSpan = "tuple[int, int, float, float]"
@@ -58,10 +64,14 @@ def chords_from_bar_chromas(
     bar_spans: list[tuple[int, int, float, float]],
     *,
     confidence_threshold: float = CHOSEN_THRESHOLD,
+    bass_roots: list[int | None] | None = None,
 ) -> list[ChordSpan]:
     spans: list[ChordSpan] = []
-    for chroma, (start_bar, end_bar, start_seconds, end_seconds) in zip(bar_chromas, bar_spans):
-        candidates, confidence = _score_bar(np.asarray(chroma, dtype=float))
+    for index, (chroma, (start_bar, end_bar, start_seconds, end_seconds)) in enumerate(
+        zip(bar_chromas, bar_spans)
+    ):
+        bass_root = bass_roots[index] if bass_roots and index < len(bass_roots) else None
+        candidates, confidence = _score_bar(np.asarray(chroma, dtype=float), bass_root=bass_root)
         chosen = candidates[0] if candidates and confidence >= confidence_threshold else None
         spans.append(
             ChordSpan(
@@ -87,6 +97,7 @@ def estimate_chords(
     sample_rate: int = SAMPLE_RATE,
     confidence_threshold: float = CHOSEN_THRESHOLD,
     chroma_time_provider: ChromaTimeProvider | None = None,
+    bass_roots: list[int | None] | None = None,
 ) -> list[ChordSpan]:
     if len(bar_times) < 1:
         return []
@@ -95,8 +106,45 @@ def estimate_chords(
     bar_spans = _bar_spans_from_times(bar_times, end_seconds)
     bar_chromas = [_mean_chroma(chroma, frame_times, start, end) for _, _, start, end in bar_spans]
     return chords_from_bar_chromas(
-        bar_chromas, bar_spans, confidence_threshold=confidence_threshold
+        bar_chromas,
+        bar_spans,
+        confidence_threshold=confidence_threshold,
+        bass_roots=bass_roots,
     )
+
+
+def bass_root_from_chroma(
+    chroma_vector: np.ndarray, *, prominence: float = BASS_ROOT_PROMINENCE
+) -> int | None:
+    """Dominant bass pitch class as a root, or ``None`` if the bass is ambiguous."""
+    vector = np.asarray(chroma_vector, dtype=float).reshape(-1)
+    if vector.shape != (12,) or not np.any(vector):
+        return None
+    top = int(np.argmax(vector))
+    mean = float(np.mean(vector))
+    if mean <= 0.0 or vector[top] < prominence * mean:
+        return None
+    return top
+
+
+def estimate_bass_roots(
+    bass_path: str,
+    bar_times: list[float],
+    end_seconds: float,
+    *,
+    sample_rate: int = SAMPLE_RATE,
+    chroma_time_provider: ChromaTimeProvider | None = None,
+) -> list[int | None]:
+    """Per-bar bass root pitch class aligned to the same bar spans as the chords."""
+    if len(bar_times) < 1:
+        return []
+    provider = chroma_time_provider or _default_chroma_time_provider
+    chroma, frame_times = provider(bass_path, sample_rate)
+    bar_spans = _bar_spans_from_times(bar_times, end_seconds)
+    return [
+        bass_root_from_chroma(_mean_chroma(chroma, frame_times, start, end))
+        for _, _, start, end in bar_spans
+    ]
 
 
 def apply_key_context(chord_spans: list[ChordSpan], key_label: str | None) -> list[ChordSpan]:
@@ -224,30 +272,55 @@ def _chord_root(label: str) -> str:
     return label
 
 
-def _score_bar(chroma_vector: np.ndarray) -> tuple[list[ChordCandidate], float]:
+def best_triad_fit(chroma_vector: np.ndarray) -> float:
+    """Best cosine fit of any major/minor/diminished triad to a chroma vector.
+
+    A single-chord bar fits one triad tightly (near 1.0); a bar that straddles
+    two chords smears the chroma and fits every triad worse. Used to score
+    bar-phase alignment without committing to a specific chord.
+    """
+    vector = np.asarray(chroma_vector, dtype=float).reshape(-1)
+    if vector.shape != (12,) or not np.any(vector):
+        return 0.0
+    best = 0.0
+    for root in range(12):
+        for intervals in TRIAD_INTERVALS.values():
+            best = max(best, _cosine_similarity(vector, _triad_template(root, intervals)))
+    return float(best)
+
+
+def _score_bar(
+    chroma_vector: np.ndarray, *, bass_root: int | None = None
+) -> tuple[list[ChordCandidate], float]:
     if chroma_vector.shape != (12,) or not np.any(chroma_vector):
         return [], 0.0
 
-    scored: list[tuple[float, int, str]] = []
+    # (ranked_score, raw_score, root, quality). A confident bass root adds a
+    # capped bonus to matching-root triads; ranking uses the bonus, displayed
+    # candidate confidences keep the raw template fit.
+    scored: list[tuple[float, float, int, str]] = []
     for root in range(12):
         for quality, intervals in TRIAD_INTERVALS.items():
             template = _triad_template(root, intervals)
-            scored.append((_cosine_similarity(chroma_vector, template), root, quality))
-    scored.sort(reverse=True)
+            raw = _cosine_similarity(chroma_vector, template)
+            ranked = raw + BASS_ROOT_BONUS if bass_root is not None and root == bass_root else raw
+            scored.append((ranked, raw, root, quality))
+    scored.sort(key=lambda item: item[0], reverse=True)
 
     best = scored[0][0]
     second = scored[1][0] if len(scored) > 1 else 0.0
     # Lean on candidate separation: a flat/ambiguous bar (best ~= second) should
-    # stay low even though its absolute template fit is moderate.
+    # stay low even though its absolute template fit is moderate. When the bass
+    # only just broke a tie, this separation stays small, so confidence stays low.
     confidence = round(_clamp(0.15 + (best - second) * 1.8 + best * 0.1), 3)
     candidates = [
         ChordCandidate(
             root=NOTE_NAMES[root],
             quality=quality,
             label=_triad_label(root, quality),
-            confidence=round(_clamp(score), 3),
+            confidence=round(_clamp(raw), 3),
         )
-        for score, root, quality in scored[:MAX_CANDIDATES]
+        for _ranked, raw, root, quality in scored[:MAX_CANDIDATES]
     ]
     return candidates, confidence
 
@@ -295,7 +368,10 @@ def _default_chroma_time_provider(path: str, sample_rate: int) -> tuple[np.ndarr
     import librosa
 
     samples, sr = librosa.load(path, sr=sample_rate, mono=True)
-    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, hop_length=HOP_LENGTH, tuning=0.0)
+    # Tune the CQT bins for SCORING (detuned recordings land on the right pitch
+    # classes); labels stay A=440 since note names come from the pitch-class index.
+    tuning = librosa.estimate_tuning(y=samples, sr=sr)
+    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, hop_length=HOP_LENGTH, tuning=tuning)
     frame_times = librosa.frames_to_time(
         np.arange(chroma.shape[1]), sr=sr, hop_length=HOP_LENGTH
     )

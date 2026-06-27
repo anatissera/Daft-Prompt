@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import numpy as np
 
 from llm_band.infrastructure.mir.key_features import (
-    _default_chroma_provider,
     estimate_key,
     key_profile_from_pitch_classes,
 )
@@ -106,16 +105,21 @@ def test_estimate_key_uses_injected_chroma_provider():
     assert profile.primary.mode in {"major", "minor"}
 
 
-def test_default_chroma_provider_labels_against_a440_without_relabeling_for_tuning(monkeypatch):
+def test_chroma_is_tuned_for_scoring_while_labels_stay_a440(monkeypatch):
     calls = {}
+
+    def fake_chroma_cqt(y, sr, tuning):
+        calls["tuning"] = tuning
+        # Tuned chroma lands cleanly on a C major triad (C, E, G).
+        vector = np.zeros((12, 1))
+        for pitch_class in (C, E, G):
+            vector[pitch_class, 0] = 1.0
+        return vector
 
     fake_librosa = SimpleNamespace(
         load=lambda path, sr, mono: (np.ones(1024), sr),
         estimate_tuning=lambda y, sr: 0.31,
-        feature=SimpleNamespace(
-            chroma_cqt=lambda y, sr, tuning: calls.setdefault("tuning", tuning)
-            or np.ones((12, 4))
-        ),
+        feature=SimpleNamespace(chroma_cqt=fake_chroma_cqt),
     )
     monkeypatch.setitem(sys.modules, "librosa", fake_librosa)
     monkeypatch.setattr(
@@ -123,7 +127,10 @@ def test_default_chroma_provider_labels_against_a440_without_relabeling_for_tuni
         lambda: None,
     )
 
-    chroma = _default_chroma_provider("/fake/harmonic.wav", 22_050)
+    profile = estimate_key("/fake/harmonic.wav")
 
-    assert calls["tuning"] == 0.0
-    assert chroma.shape == (12,)
+    # The estimated tuning is applied to the CQT bins (scoring), not discarded.
+    assert calls["tuning"] == 0.31
+    # The label is still a standard A=440 name from the pitch-class index.
+    assert profile.primary is not None
+    assert profile.primary.key == "C major"

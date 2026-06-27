@@ -39,15 +39,23 @@ class DeterministicMusicQuestionExplainer:
         normalized = question.lower()
         if re.search(r"\b(key|tonality|tonal)\b", normalized):
             return _answer_key(profile)
-        if re.search(r"\b(chord|chords|progression|harmony|harmonic|chorus)\b", normalized):
+        # "chorus"/"verse" are structural terms; keep them out of the chord branch
+        # so "where is the chorus" routes to structure, not chord estimates.
+        if re.search(r"\b(chord|chords|progression|harmony|harmonic)\b", normalized):
             return _answer_chords(profile)
         if re.search(r"\b(structure|form|section|sections|repeat|a/b/c|abc|verse|chorus)\b", normalized):
             return _answer_structure(profile)
 
+        lead = (
+            "The chord and structure evidence is weak here, so this is a rough "
+            "sketch. "
+            if _is_low_usefulness(profile)
+            else ""
+        )
         return ExplanationAnswer(
             reference_id=profile.reference_id,
             answer=(
-                "I can answer from the current analysis about likely key, "
+                f"{lead}I can answer from the current analysis about likely key, "
                 "probable chords, repeated progressions, and A/B/C structure."
             ),
             evidence=_general_evidence(profile),
@@ -231,6 +239,13 @@ def _span_evidence(span: ChordSpan) -> str:
         f"Bars {span.start_bar}-{span.end_bar}: {chosen.label}, "
         f"confidence {_percent(chosen.confidence)}."
     )
+
+
+def _is_low_usefulness(profile: ReferenceProfile) -> bool:
+    audio = profile.audio
+    if audio is None:
+        return False
+    return any(note.code == "low_usefulness" for note in audio.analysis_notes)
 
 
 def _percent(value: float) -> str:
