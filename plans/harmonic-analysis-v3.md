@@ -94,13 +94,17 @@ found the work is architecturally sound, honest in its copy, and fully tested
   `bar_phase.py` helper)
 - Create/modify the matching test
 
-- [ ] Evaluate a small set of bar-start offsets (0..beats_per_bar-1) and pick the
+- [x] Evaluate a small set of bar-start offsets (0..beats_per_bar-1) and pick the
   one whose bar windows produce the most stable chord/energy boundaries.
-- [ ] Apply the chosen offset to `bar_times` before chord/structure extraction.
-- [ ] Lower bar-grid confidence when no offset is clearly better.
-- [ ] Test: a synthetic grid offset by one beat is recovered to the musically
+  (`bar_phase.py`: `choose_bar_phase_offset` scores per-bar `best_triad_fit`.)
+- [x] Apply the chosen offset to `bar_times` before chord/structure extraction.
+  (Orchestrator `_apply_bar_phase`; corrected `bar_times` feed chords, bass roots,
+  and section energy/stem signals.)
+- [x] Lower bar-grid confidence when no offset is clearly better. (Below
+  `BAR_PHASE_MIN_CONFIDENCE`, keep offset 0 and apply a 0.85 grid penalty.)
+- [x] Test: a synthetic grid offset by one beat is recovered to the musically
   correct downbeat.
-- [ ] Run focused tests.
+- [x] Run focused tests. → full suite 162 passed, 1 skipped.
 
 ## Phase 4: Usefulness Gate
 
