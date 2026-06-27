@@ -92,12 +92,14 @@ body {
     linear-gradient(
       180deg,
       var(--sky-deep) 0%,
-      var(--sky-mid) 35%,
-      var(--sky-glow) 65%,
-      #2c1530 80%,            /* purple-mauve transition */
-      #6a1206 88%,            /* deep red */
-      #c83612 93%,            /* burning red-orange */
-      #ff7a1f 97%,            /* bright orange */
+      var(--sky-mid) 30%,
+      var(--sky-glow) 55%,
+      #2a2b4a 68%,            /* sky → dusk indigo */
+      #3a1d44 76%,            /* dusk → mauve */
+      #5a1838 83%,            /* mauve → wine */
+      #7e1a16 89%,            /* wine → deep red */
+      #b53112 93%,            /* deep red → red-orange */
+      #ee6b1c 97%,            /* orange */
       #ffe17a 100%            /* yellow embers */
     ) no-repeat;
   background-attachment: fixed;
