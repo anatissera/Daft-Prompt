@@ -206,7 +206,7 @@ export default function Home() {
       <aside className="app-sidebar" aria-label="Sessions">
         <div className="sidebar-brand-block">
           <span className="sidebar-brand">DAFT PROMPT</span>
-          <span className="sidebar-tagline">MULTI-AGENT STUDIO</span>
+          <span className="sidebar-tagline">MULTI-AGENT<br />STUDIO</span>
         </div>
 
         <button type="button" className="sidebar-new" onClick={resetConversation}>
