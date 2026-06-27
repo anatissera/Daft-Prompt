@@ -10,7 +10,7 @@ raising.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 
 from llm_band.domain.audio_profile import (
@@ -91,18 +91,10 @@ class DeepHarmonicAnalyzer:
         *,
         progress: ProgressCallback | None = None,
     ) -> ReferenceProfile:
+        # Real-time streaming is an interface concern: the API runs analyze() on a
+        # worker thread and turns this progress callback into SSE events (see
+        # api._reference_analysis_stream_events). The analyzer stays HTTP-agnostic.
         return self._analyze(source, progress=progress)
-
-    def analyze_with_progress(self, source: ReferenceSource) -> Iterator[tuple[str, str, ReferenceProfile | None]]:
-        events: list[tuple[str, str]] = []
-
-        def progress(stage: str, message: str) -> None:
-            events.append((stage, message))
-
-        profile = self._analyze(source, progress=progress)
-        for stage, message in events:
-            yield stage, message, None
-        yield "done", "Analysis ready.", profile
 
     def _analyze(
         self,
@@ -196,6 +188,13 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
+        # Structure is resolved in three ordered tiers, weakest evidence last:
+        #   1. structure_detector: exact repeated chord-phrase signatures (A/B/C),
+        #      with its own internal _fallback_sections_if_degenerate collapse for
+        #      the degenerate "one giant section + tiny tail" case.
+        #   2. section_detector: if (1) is weak (<0.4), approximate boundaries from
+        #      bar-aligned energy/stem-activity novelty (arrangement, not harmony).
+        #   3. notes: whichever wins, flag it as approximate/unclear when still weak.
         _emit(progress, "detecting_structure", "Detecting repeated progressions and A/B/C structure.")
         structure, progressions = self.structure_detector(chord_spans)
         if structure.confidence < 0.4 and self.section_detector is not None:

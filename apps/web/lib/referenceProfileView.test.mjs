@@ -219,6 +219,11 @@ test("answerReferenceQuestion answers structure and harmonic progression questio
     answerReferenceQuestion("What is the A/B/C structure?", harmonicProfile),
     "The structure appears to repeat as A bars 1-4 (high · 78%) / B bars 5-8 (medium · 74%).",
   );
+  // "chorus" is structural: it must route to structure, not chord estimates.
+  assert.equal(
+    answerReferenceQuestion("Where is the chorus?", harmonicProfile),
+    "The structure appears to repeat as A bars 1-4 (high · 78%) / B bars 5-8 (medium · 74%).",
+  );
 });
 
 test("answerReferenceQuestion answers tempo and key questions with confidence", () => {
