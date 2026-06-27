@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from llm_band.application.answer_music_question import AnswerMusicQuestion
 from llm_band.domain.audio_profile import (
+    AnalysisNote,
     AudioProfile,
     ChordCandidate,
     ChordSpan,
@@ -110,6 +111,41 @@ def _profile() -> ReferenceProfile:
             ),
         ),
     )
+
+
+def _low_usefulness_profile() -> ReferenceProfile:
+    return ReferenceProfile(
+        reference_id="ref_weak",
+        source=ReferenceSource(
+            reference_id="ref_weak",
+            kind="upload",
+            label="weak.wav",
+            uri="/tmp/weak.wav",
+            authorized=True,
+        ),
+        audio=AudioProfile(
+            duration_seconds=10.0,
+            analysis_notes=[
+                AnalysisNote(
+                    code="low_usefulness",
+                    message="Key, chord, and structure evidence are all weak.",
+                    severity="warning",
+                )
+            ],
+        ),
+    )
+
+
+def test_chorus_question_routes_to_structure_not_chords():
+    answer = AnswerMusicQuestion().execute("Where is the chorus?", _profile())
+
+    assert answer.answer.startswith("The structure appears to repeat as")
+
+
+def test_general_answer_leads_with_limitation_when_usefulness_is_low():
+    answer = AnswerMusicQuestion().execute("Give me an overview.", _low_usefulness_profile())
+
+    assert answer.answer.startswith("The chord and structure evidence is weak here")
 
 
 def test_answers_key_questions_from_key_profile():

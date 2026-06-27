@@ -36,8 +36,8 @@ def _source(tmp_path: Path) -> ReferenceSource:
     )
 
 
-def _chord_span(bar: int, label: str) -> ChordSpan:
-    chosen = ChordCandidate(root=label[0], quality="minor" if label.endswith("m") else "major", label=label, confidence=0.8)
+def _chord_span(bar: int, label: str, confidence: float = 0.8) -> ChordSpan:
+    chosen = ChordCandidate(root=label[0], quality="minor" if label.endswith("m") else "major", label=label, confidence=confidence)
     return ChordSpan(
         start_bar=bar,
         end_bar=bar,
@@ -45,7 +45,7 @@ def _chord_span(bar: int, label: str) -> ChordSpan:
         end_seconds=float(bar * 2),
         candidates=[chosen],
         chosen=chosen,
-        confidence=0.8,
+        confidence=confidence,
     )
 
 
@@ -68,13 +68,14 @@ def _analyzer(
     relative_key_ambiguity=True,
     tuning_deviation=None,
     section_structure=None,
+    chord_confidence=0.8,
 ) -> DeepHarmonicAnalyzer:
     stems = stems if stems is not None else _full_stems()
     chord_spans = [
-        _chord_span(1, "Am"),
-        _chord_span(2, "F"),
-        _chord_span(3, "C"),
-        _chord_span(4, "G"),
+        _chord_span(1, "Am", chord_confidence),
+        _chord_span(2, "F", chord_confidence),
+        _chord_span(3, "C", chord_confidence),
+        _chord_span(4, "G", chord_confidence),
     ]
     key_profile = KeyProfile(
         primary=KeyCandidate(key="A minor", mode="minor", confidence=key_confidence),
@@ -111,11 +112,17 @@ def _analyzer(
         separator=_FakeSeparator(stems),
         harmonic_source_builder=lambda s, path: HarmonicSource(path=str(path), source_kind="stems_bass_other", confidence_adjustment=0.0),
         tempo_estimator=lambda mix_path, drum_path=None: grid,
+        bar_phase_provider=lambda harmonic_path, beat_times: (0, 1.0),
         key_estimator=lambda path, confidence_adjustment=0.0: key_profile,
-        chord_estimator=lambda path, bar_times, duration: chord_spans,
+        chord_estimator=lambda path, bar_times, duration, **kwargs: chord_spans,
+        bass_root_provider=lambda bass_path, bar_times, duration: [None for _ in bar_times],
         structure_detector=lambda spans: (structure, progressions),
         tuning_deviation_provider=(lambda path: tuning_deviation) if tuning_deviation is not None else None,
-        section_detector=(lambda spans: section_structure) if section_structure is not None else None,
+        section_detector=(lambda spans, **kwargs: section_structure) if section_structure is not None else None,
+        energy_provider=lambda path, bar_times, duration: [0.5 for _ in bar_times],
+        stem_activity_provider=lambda stem_paths, bar_times, duration: [
+            {name: 0.5 for name in stem_paths} for _ in bar_times
+        ],
         duration_provider=lambda path: 8.0,
     )
 
@@ -247,6 +254,87 @@ def test_orchestrator_uses_approximate_section_boundaries_when_harmonic_structur
 
     assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
     assert any(note.code == "approximate_sections" for note in profile.audio.analysis_notes)
+
+
+def test_orchestrator_flags_low_usefulness_when_all_evidence_is_weak(tmp_path):
+    profile = _analyzer(
+        tmp_path,
+        key_confidence=0.3,
+        structure_confidence=0.25,
+        bar_grid_confidence=0.3,
+        chord_confidence=0.3,
+    ).analyze(_source(tmp_path))
+
+    assert any(note.code == "low_usefulness" for note in profile.audio.analysis_notes)
+    assert "rough sketch" in profile.summary
+
+
+def test_orchestrator_does_not_flag_low_usefulness_for_mixed_evidence(tmp_path):
+    profile = _analyzer(tmp_path).analyze(_source(tmp_path))
+
+    assert not any(note.code == "low_usefulness" for note in profile.audio.analysis_notes)
+    assert "rough sketch" not in profile.summary
+
+
+def test_orchestrator_applies_confident_bar_phase_offset(tmp_path):
+    captured: dict = {}
+
+    analyzer = _analyzer(tmp_path)
+    analyzer.bar_phase_provider = lambda harmonic_path, beat_times: (1, 0.8)
+
+    def capturing_chords(path, bar_times, duration, **kwargs):
+        captured["bar_times"] = bar_times
+        return [_chord_span(1, "Am")]
+
+    analyzer.chord_estimator = capturing_chords
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    # grid.beat_times = [0.0, 0.5, 1.0, 1.5]; offset 1 -> beat_times[1::4] == [0.5].
+    assert captured["bar_times"] == [0.5]
+    assert any(note.code == "bar_phase_corrected" for note in profile.audio.analysis_notes)
+
+
+def test_orchestrator_lowers_bar_grid_confidence_when_phase_is_ambiguous(tmp_path):
+    analyzer = _analyzer(tmp_path, bar_grid_confidence=0.8)
+    analyzer.bar_phase_provider = lambda harmonic_path, beat_times: (0, 0.05)
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    # 0.8 * 0.85 penalty = 0.68; the original confident grid was reduced.
+    assert profile.audio.tempo.bar_grid_confidence == 0.68
+
+
+def test_orchestrator_feeds_energy_and_stem_signals_into_section_detector(tmp_path):
+    captured: dict = {}
+
+    def capturing_section_detector(spans, *, energy_by_bar=None, stem_activity_by_bar=None):
+        captured["energy_by_bar"] = energy_by_bar
+        captured["stem_activity_by_bar"] = stem_activity_by_bar
+        return StructureProfile(
+            sections=[
+                StructuralSection(
+                    label="A", start_bar=1, end_bar=2, start_seconds=0.0, end_seconds=4.0, confidence=0.58
+                ),
+                StructuralSection(
+                    label="B", start_bar=3, end_bar=4, start_seconds=4.0, end_seconds=8.0, confidence=0.58
+                ),
+            ],
+            confidence=0.58,
+        )
+
+    analyzer = _analyzer(tmp_path, structure_confidence=0.25)
+    analyzer.section_detector = capturing_section_detector
+    analyzer.energy_provider = lambda path, bar_times, duration: [0.2, 0.2, 0.9, 0.9]
+    analyzer.stem_activity_provider = lambda stem_paths, bar_times, duration: [
+        {"drums": 0.2, "bass": 0.3} for _ in bar_times
+    ]
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    assert captured["energy_by_bar"] == [0.2, 0.2, 0.9, 0.9]
+    assert captured["stem_activity_by_bar"] and "drums" in captured["stem_activity_by_bar"][0]
+    assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
 
 
 def test_non_local_source_is_rejected(tmp_path):

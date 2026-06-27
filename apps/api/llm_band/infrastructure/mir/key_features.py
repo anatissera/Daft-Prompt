@@ -153,7 +153,11 @@ def _default_chroma_provider(path: str, sample_rate: int) -> np.ndarray:
     import librosa
 
     samples, sr = librosa.load(path, sr=sample_rate, mono=True)
-    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, tuning=0.0)
+    # Tune the CQT bins for SCORING so a detuned recording lands on the correct
+    # pitch classes. Labels stay A=440: note names come from the pitch-class
+    # index, which the tuning correction does not change.
+    tuning = librosa.estimate_tuning(y=samples, sr=sr)
+    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, tuning=tuning)
     if not chroma.size:
         return np.zeros(12)
     return np.mean(chroma, axis=1)

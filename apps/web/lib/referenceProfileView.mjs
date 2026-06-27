@@ -14,11 +14,19 @@ export function formatConfidence(label, value) {
   return `${label} · ${formatPercent(value)}`;
 }
 
+export function isLowUsefulness(profile) {
+  const notes = profile.audio?.analysis_notes ?? [];
+  return notes.some((note) => note.code === "low_usefulness");
+}
+
 export function describeReferenceSummary(profile) {
   const audio = profile.audio;
   if (!audio) return ["No audio profile available yet."];
 
   const rows = [`Duration ${formatDuration(audio.duration_seconds)}`];
+  if (isLowUsefulness(profile)) {
+    rows.push("Chord and structure evidence is weak here; treat the read below as a rough sketch.");
+  }
   const tempo = audio.tempo?.primary_bpm ?? audio.tempo_bpm;
   const tempoConfidence = audio.tempo?.confidence ?? audio.tempo_confidence;
   if (tempo !== null && tempo !== undefined) {
@@ -173,7 +181,8 @@ export function answerReferenceQuestion(prompt, profile) {
   const audio = profile.audio;
   if (!audio) return "I do not have an audio profile for this reference yet.";
 
-  if (/\b(chord|chords|chorus|harmony|harmonic)\b/.test(normalized)) {
+  // "chorus"/"verse" are structural terms, handled by the structure branch below.
+  if (/\b(chord|chords|harmony|harmonic)\b/.test(normalized)) {
     const main = getMainProgression(profile);
     const estimates = getTopChordEstimates(profile, 4);
     if (!main && estimates.length === 0) {
