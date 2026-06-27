@@ -542,17 +542,17 @@ code, pre, .mono { font-family: var(--font-mono); }
   background:
     linear-gradient(
       180deg,
-      #8e98ac 0%,            /* sky reflection */
-      #c9cedb 8%,
-      #e7eaf2 20%,
-      #f4f5fa 34%,           /* bright chrome midline */
-      #fafbff 44%,
-      #eef0f6 56%,
-      #c8ccd6 70%,           /* gentle shadow */
-      #aab0bc 82%,
-      #d68f4b 90%,           /* fire reflection */
-      #ffb347 96%,
-      #ffd28a 100%
+      #3a4458 0%,            /* dark sky reflection on the very top */
+      #8c95a8 8%,
+      #e1e5f0 18%,
+      #ffffff 30%,           /* hot specular midline */
+      #f6f8fd 38%,
+      #aab0bd 52%,           /* sharp falloff into shadow ridge */
+      #4d525e 64%,           /* deep steel shadow */
+      #80869a 78%,
+      #c98341 86%,           /* fire reflection ramp */
+      #ffa336 94%,
+      #ffd56e 100%
     );
 }
 
@@ -564,16 +564,16 @@ code, pre, .mono { font-family: var(--font-mono); }
   background:
     linear-gradient(
       180deg,
-      #a4822c 0%,
-      #d8b04a 8%,
-      #f3cf6a 20%,
-      #ffe39a 32%,           /* bright gold midline */
-      #fff3c8 44%,
-      #ffe39a 56%,
-      #f0c25a 70%,
-      #c99830 82%,
-      #c66e1a 90%,
-      #ff8a3a 96%,
+      #5a3f10 0%,            /* deep gold shadow on the very top */
+      #b3892a 8%,
+      #f3cf6a 18%,
+      #fff3c8 30%,           /* hot specular midline */
+      #ffe39a 38%,
+      #c99830 52%,           /* sharp falloff into shadow ridge */
+      #6b4d10 64%,           /* deep bronze shadow */
+      #b3892a 78%,
+      #c66e1a 86%,           /* fire reflection ramp */
+      #ff8a3a 94%,
       #ffd28a 100%
     );
 }
