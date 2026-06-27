@@ -10,7 +10,7 @@ import {
   getSongDurationSeconds,
   type TrackEvent,
 } from "@/lib/trackMixerLogic.mjs";
-import { FLUIDR3_BASE, folderForProgram, midiToName } from "@/lib/gmInstruments";
+import { FLUIDR3_BASE, folderForProgram, inferProgramFromName, isDrumByName, midiToName } from "@/lib/gmInstruments";
 
 interface TrackRow {
   id: string;
@@ -265,19 +265,33 @@ export default function TrackMixer({
   );
 }
 
+// Pick a GM program for an instrument, trusting the director's midi_program
+// only when it's non-zero (0 = piano default, which the LLM hands back even
+// for "flute" / "viola"). Otherwise infer from the human name.
+function resolveProgram(r: RosterItem): number {
+  if (r.midi_program && r.midi_program > 0) return r.midi_program;
+  const inferred = inferProgramFromName(r.instrument || r.role || r.id);
+  return inferred ?? 0;
+}
+
+function resolveIsDrum(r: RosterItem): boolean {
+  if (r.is_drum) return true;
+  return isDrumByName(r.instrument || r.role || r.id);
+}
+
 function samplerKey(r: RosterItem): string {
-  if (r.is_drum) return "drums";
-  return `prog_${r.midi_program}`;
+  if (resolveIsDrum(r)) return "drums";
+  return `prog_${resolveProgram(r)}`;
 }
 
 function makeSampler(Tone: typeof ToneType, r: RosterItem): ToneType.Sampler {
-  if (r.is_drum) {
+  if (resolveIsDrum(r)) {
     return new Tone.Sampler({
       urls: drumUrls(),
       baseUrl: `${FLUIDR3_BASE}percussion-mp3/`,
     });
   }
-  const folder = folderForProgram(r.midi_program);
+  const folder = folderForProgram(resolveProgram(r));
   return new Tone.Sampler({
     urls: melodicUrls(),
     baseUrl: `${FLUIDR3_BASE}${folder}-mp3/`,
