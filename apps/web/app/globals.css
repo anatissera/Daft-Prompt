@@ -491,16 +491,16 @@ code, pre, .mono { font-family: var(--font-mono); }
   background:
     linear-gradient(
       180deg,
-      #5a3f10 0%,            /* deep gold shadow on the very top */
-      #b3892a 8%,
-      #f3cf6a 18%,
-      #fff3c8 30%,           /* hot specular midline */
-      #ffe39a 38%,
-      #c99830 52%,           /* sharp falloff into shadow ridge */
-      #6b4d10 64%,           /* deep bronze shadow */
-      #b3892a 78%,
-      #c66e1a 86%,           /* fire reflection ramp */
-      #ff8a3a 94%,
+      #b3892a 0%,
+      #d8b04a 8%,
+      #f1cd6a 18%,
+      #ffe9a3 30%,           /* hot specular midline */
+      #fff3c8 40%,
+      #ffe39a 50%,
+      #f0c660 62%,           /* shallow shadow ridge — still bright */
+      #d8a338 74%,
+      #e88a30 86%,           /* fire reflection ramp */
+      #ff9a40 94%,
       #ffd28a 100%
     );
 }
