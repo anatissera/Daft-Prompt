@@ -1031,11 +1031,9 @@ code, pre, .mono { font-family: var(--font-mono); }
 }
 .song-deck .mixer-transport .transport-range { flex: 1; }
 
-.song-deck .mixer-track-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+/* The mixer's per-channel rows duplicate the Roster cards above; hide them
+   and keep only the transport (Play / scrub / time) for the song-deck. */
+.song-deck .mixer-track-list { display: none; }
 .song-deck .mixer-track {
   position: relative;
   display: grid;

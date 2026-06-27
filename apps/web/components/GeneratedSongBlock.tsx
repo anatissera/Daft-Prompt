@@ -56,7 +56,7 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
       )}
 
       {hasPlayableParts ? (
-        <details className="score-frame" open>
+        <details className="score-frame">
           <summary className="details-summary">◐ Score</summary>
           <ScoreViewer musicXmlUrl={result.artifacts.musicxml} />
         </details>
