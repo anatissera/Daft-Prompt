@@ -24,6 +24,7 @@ from llm_band.domain.audio_profile import (
     StemProfile,
 )
 from llm_band.infrastructure.mir.bar_energy import per_bar_energy, per_stem_activity_by_bar
+from llm_band.infrastructure.mir.bar_phase import select_bar_phase_offset
 from llm_band.infrastructure.mir.chord_features import (
     apply_key_context,
     estimate_bass_roots,
@@ -40,6 +41,10 @@ from llm_band.infrastructure.mir.tempo_grid import estimate_tempo_grid
 
 WEAK_BAR_GRID_CONFIDENCE = 0.4
 SIGNIFICANT_TUNING_DEVIATION = 0.2
+# A bar-phase offset must clear this confidence before we trust it enough to
+# shift the bar grid; below it, the downbeat is ambiguous and we keep offset 0.
+BAR_PHASE_MIN_CONFIDENCE = 0.15
+AMBIGUOUS_PHASE_GRID_PENALTY = 0.85
 ProgressCallback = Callable[[str, str], None]
 
 
@@ -51,6 +56,7 @@ class DeepHarmonicAnalyzer:
         separator=None,
         harmonic_source_builder: Callable = build_harmonic_source,
         tempo_estimator: Callable = estimate_tempo_grid,
+        bar_phase_provider: Callable | None = select_bar_phase_offset,
         key_estimator: Callable = estimate_key,
         chord_estimator: Callable = estimate_chords,
         bass_root_provider: Callable | None = estimate_bass_roots,
@@ -65,6 +71,7 @@ class DeepHarmonicAnalyzer:
         self.separator = separator or DemucsSeparator(output_root=self.output_root)
         self.harmonic_source_builder = harmonic_source_builder
         self.tempo_estimator = tempo_estimator
+        self.bar_phase_provider = bar_phase_provider
         self.key_estimator = key_estimator
         self.chord_estimator = chord_estimator
         self.bass_root_provider = bass_root_provider
@@ -124,6 +131,7 @@ class DeepHarmonicAnalyzer:
         _emit(progress, "estimating_tempo_grid", "Estimating tempo, beats, and bars.")
         drum_path = next((stem.path for stem in stems if stem.name == "drums"), None)
         grid = self.tempo_estimator(str(audio_path), drum_path=drum_path)
+        bar_times = _apply_bar_phase(self.bar_phase_provider, harmonic.path, grid, notes)
 
         _emit(progress, "estimating_key", "Estimating likely key candidates.")
         tuning_deviation = _safe_tuning_deviation(self.tuning_deviation_provider, harmonic.path)
@@ -163,10 +171,10 @@ class DeepHarmonicAnalyzer:
         _emit(progress, "estimating_chords", "Estimating probable triads by bar.")
         bass_path = next((stem.path for stem in stems if stem.name == "bass"), None)
         bass_roots = _safe_bass_roots(
-            self.bass_root_provider, bass_path, grid.bar_times, duration
+            self.bass_root_provider, bass_path, bar_times, duration
         )
         chord_spans = self.chord_estimator(
-            harmonic.path, grid.bar_times, duration, bass_roots=bass_roots or None
+            harmonic.path, bar_times, duration, bass_roots=bass_roots or None
         )
         chord_spans = apply_key_context(
             chord_spans, key_profile.primary.key if key_profile.primary else None
@@ -189,10 +197,10 @@ class DeepHarmonicAnalyzer:
         structure, progressions = self.structure_detector(chord_spans)
         if structure.confidence < 0.4 and self.section_detector is not None:
             energy_by_bar = _safe_bar_energy(
-                self.energy_provider, str(audio_path), grid.bar_times, duration
+                self.energy_provider, str(audio_path), bar_times, duration
             )
             stem_activity_by_bar = _safe_stem_activity(
-                self.stem_activity_provider, stems, grid.bar_times, duration
+                self.stem_activity_provider, stems, bar_times, duration
             )
             approximate_structure = self.section_detector(
                 chord_spans,
@@ -273,6 +281,45 @@ def _safe_tuning_deviation(
         return provider(path)
     except Exception:
         return None
+
+
+def _apply_bar_phase(provider: Callable | None, harmonic_path: str, grid, notes) -> list[float]:
+    """Realign bar starts to the estimated downbeat phase; returns corrected bar times.
+
+    When the chosen offset is confident and nonzero, bars are shifted and a note is
+    added. When no offset is clearly better, the downbeat is ambiguous, so the bar
+    grid is left at offset 0 but its confidence is reduced.
+    """
+    bar_times = list(grid.bar_times)
+    if provider is None or len(grid.beat_times) < grid.beats_per_bar:
+        return bar_times
+    try:
+        offset, phase_confidence = provider(harmonic_path, grid.beat_times)
+    except Exception:
+        return bar_times
+
+    if phase_confidence < BAR_PHASE_MIN_CONFIDENCE:
+        grid.tempo = grid.tempo.model_copy(
+            update={
+                "bar_grid_confidence": round(
+                    grid.tempo.bar_grid_confidence * AMBIGUOUS_PHASE_GRID_PENALTY, 3
+                )
+            }
+        )
+        return bar_times
+
+    if offset > 0:
+        shifted = grid.beat_times[offset :: grid.beats_per_bar]
+        if shifted:
+            notes.append(
+                AnalysisNote(
+                    code="bar_phase_corrected",
+                    message="Adjusted the downbeat phase so bars align to chord changes.",
+                    severity="info",
+                )
+            )
+            return shifted
+    return bar_times
 
 
 def _safe_bass_roots(

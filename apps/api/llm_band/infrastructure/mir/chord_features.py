@@ -272,6 +272,23 @@ def _chord_root(label: str) -> str:
     return label
 
 
+def best_triad_fit(chroma_vector: np.ndarray) -> float:
+    """Best cosine fit of any major/minor/diminished triad to a chroma vector.
+
+    A single-chord bar fits one triad tightly (near 1.0); a bar that straddles
+    two chords smears the chroma and fits every triad worse. Used to score
+    bar-phase alignment without committing to a specific chord.
+    """
+    vector = np.asarray(chroma_vector, dtype=float).reshape(-1)
+    if vector.shape != (12,) or not np.any(vector):
+        return 0.0
+    best = 0.0
+    for root in range(12):
+        for intervals in TRIAD_INTERVALS.values():
+            best = max(best, _cosine_similarity(vector, _triad_template(root, intervals)))
+    return float(best)
+
+
 def _score_bar(
     chroma_vector: np.ndarray, *, bass_root: int | None = None
 ) -> tuple[list[ChordCandidate], float]:

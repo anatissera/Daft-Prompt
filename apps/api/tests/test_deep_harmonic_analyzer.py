@@ -111,6 +111,7 @@ def _analyzer(
         separator=_FakeSeparator(stems),
         harmonic_source_builder=lambda s, path: HarmonicSource(path=str(path), source_kind="stems_bass_other", confidence_adjustment=0.0),
         tempo_estimator=lambda mix_path, drum_path=None: grid,
+        bar_phase_provider=lambda harmonic_path, beat_times: (0, 1.0),
         key_estimator=lambda path, confidence_adjustment=0.0: key_profile,
         chord_estimator=lambda path, bar_times, duration, **kwargs: chord_spans,
         bass_root_provider=lambda bass_path, bar_times, duration: [None for _ in bar_times],
@@ -252,6 +253,35 @@ def test_orchestrator_uses_approximate_section_boundaries_when_harmonic_structur
 
     assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
     assert any(note.code == "approximate_sections" for note in profile.audio.analysis_notes)
+
+
+def test_orchestrator_applies_confident_bar_phase_offset(tmp_path):
+    captured: dict = {}
+
+    analyzer = _analyzer(tmp_path)
+    analyzer.bar_phase_provider = lambda harmonic_path, beat_times: (1, 0.8)
+
+    def capturing_chords(path, bar_times, duration, **kwargs):
+        captured["bar_times"] = bar_times
+        return [_chord_span(1, "Am")]
+
+    analyzer.chord_estimator = capturing_chords
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    # grid.beat_times = [0.0, 0.5, 1.0, 1.5]; offset 1 -> beat_times[1::4] == [0.5].
+    assert captured["bar_times"] == [0.5]
+    assert any(note.code == "bar_phase_corrected" for note in profile.audio.analysis_notes)
+
+
+def test_orchestrator_lowers_bar_grid_confidence_when_phase_is_ambiguous(tmp_path):
+    analyzer = _analyzer(tmp_path, bar_grid_confidence=0.8)
+    analyzer.bar_phase_provider = lambda harmonic_path, beat_times: (0, 0.05)
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    # 0.8 * 0.85 penalty = 0.68; the original confident grid was reduced.
+    assert profile.audio.tempo.bar_grid_confidence == 0.68
 
 
 def test_orchestrator_feeds_energy_and_stem_signals_into_section_detector(tmp_path):
