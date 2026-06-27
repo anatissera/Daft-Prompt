@@ -13,7 +13,8 @@
     "next": "^15.1.0",
     "opensheetmusicdisplay": "^1.8.8",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tone": "14.7.58"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

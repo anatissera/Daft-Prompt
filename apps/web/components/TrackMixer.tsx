@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type * as ToneType from "tone";
 import type { RosterItem, SongState } from "@/lib/types";
 import { instrumentColor } from "@/lib/colors";
 import {
@@ -9,10 +10,7 @@ import {
   getSongDurationSeconds,
   type TrackEvent,
 } from "@/lib/trackMixerLogic.mjs";
-
-interface ScheduledSource {
-  stop: () => void;
-}
+import { FLUIDR3_BASE, folderForProgram, midiToName } from "@/lib/gmInstruments";
 
 interface TrackRow {
   id: string;
@@ -28,6 +26,29 @@ interface TrackMixerProps {
   onSoloChange?: (next: Set<string>) => void;
 }
 
+// Lazy import keeps Tone.js out of the initial bundle.
+async function loadTone(): Promise<typeof ToneType> {
+  return (await import("tone")) as unknown as typeof ToneType;
+}
+
+// 5 sparse base notes give Tone.Sampler enough anchors to pitch-shift smoothly.
+const MELODIC_ANCHORS = ["C2", "C3", "C4", "C5", "C6"];
+// FluidR3 percussion folder uses letter-note names mapped to drum keys 35-81.
+const DRUM_KEYS: number[] = [];
+for (let n = 35; n <= 81; n++) DRUM_KEYS.push(n);
+
+function melodicUrls(): Record<string, string> {
+  const urls: Record<string, string> = {};
+  for (const n of MELODIC_ANCHORS) urls[n] = `${n}.mp3`;
+  return urls;
+}
+
+function drumUrls(): Record<string, string> {
+  const urls: Record<string, string> = {};
+  for (const k of DRUM_KEYS) urls[midiToName(k)] = `${midiToName(k)}.mp3`;
+  return urls;
+}
+
 export default function TrackMixer({
   song,
   mutedTrackIds: mutedProp,
@@ -39,101 +60,168 @@ export default function TrackMixer({
   const trackIds = useMemo(() => rows.map((row) => row.id), [rows]);
   const eventsByTrack = useMemo(() => buildTrackEvents(song), [song]);
   const duration = useMemo(() => getSongDurationSeconds(song), [song]);
-  // Controlled when props provided; falls back to internal state otherwise.
+
   const [internalMuted, setInternalMuted] = useState<Set<string>>(() => new Set());
   const [internalSolo, setInternalSolo] = useState<Set<string>>(() => new Set());
   const mutedTrackIds = mutedProp ?? internalMuted;
   const soloTrackIds = soloProp ?? internalSolo;
-  const setMutedTrackIds = (updater: (prev: Set<string>) => Set<string>) => {
-    const next = updater(mutedTrackIds);
-    if (onMutedChange) onMutedChange(next);
-    else setInternalMuted(next);
-  };
-  const setSoloTrackIds = (updater: (prev: Set<string>) => Set<string>) => {
-    const next = updater(soloTrackIds);
-    if (onSoloChange) onSoloChange(next);
-    else setInternalSolo(next);
-  };
+
+  const [loadingSamples, setLoadingSamples] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
-  const audioRef = useRef<AudioContext | null>(null);
   const startedAtRef = useRef(0);
   const offsetRef = useRef(0);
-  const gainByTrackRef = useRef<Map<string, GainNode>>(new Map());
-  const sourcesRef = useRef<ScheduledSource[]>([]);
+  const samplersRef = useRef<Map<string, ToneType.Sampler>>(new Map());
+  const gainsRef = useRef<Map<string, ToneType.Gain>>(new Map());
   const timerRef = useRef<number | null>(null);
+  const stopTimeoutRef = useRef<number | null>(null);
 
   const audibleTrackIds = useMemo(
     () => getAudibleTrackIds(trackIds, mutedTrackIds, soloTrackIds),
-    [mutedTrackIds, soloTrackIds, trackIds],
+    [trackIds, mutedTrackIds, soloTrackIds],
   );
 
+  // Push gain changes live whenever mute/solo state shifts.
   useEffect(() => {
-    updateTrackGains(gainByTrackRef.current, audibleTrackIds);
+    for (const [id, gain] of gainsRef.current) {
+      gain.gain.rampTo(audibleTrackIds.has(id) ? 0.9 : 0, 0.05);
+    }
   }, [audibleTrackIds]);
 
-  useEffect(() => {
-    return () => {
-      stopPlayback(false);
-      void audioRef.current?.close();
-      audioRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => () => stopAndCleanup(), []);
 
-  function toggleMuted(trackId: string) {
-    setMutedTrackIds((prev) => toggleSetItem(prev, trackId));
-  }
+  const toggleMuted = useCallback(
+    (id: string) => {
+      const next = toggleSetItem(mutedTrackIds, id);
+      if (onMutedChange) onMutedChange(next);
+      else setInternalMuted(next);
+    },
+    [mutedTrackIds, onMutedChange],
+  );
+  const toggleSolo = useCallback(
+    (id: string) => {
+      const next = toggleSetItem(soloTrackIds, id);
+      if (onSoloChange) onSoloChange(next);
+      else setInternalSolo(next);
+    },
+    [soloTrackIds, onSoloChange],
+  );
 
-  function toggleSolo(trackId: string) {
-    setSoloTrackIds((prev) => toggleSetItem(prev, trackId));
-  }
-
-  async function togglePlayback() {
-    if (playing) {
-      stopPlayback(false);
-      return;
-    }
-
-    const context = getAudioContext(audioRef);
-    if (context.state === "suspended") {
-      await context.resume();
-    }
-
-    const startOffset = position >= duration ? 0 : position;
-    offsetRef.current = startOffset;
-    startedAtRef.current = context.currentTime - startOffset;
-    gainByTrackRef.current = createTrackGains(context, trackIds, audibleTrackIds);
-    sourcesRef.current = scheduleSong(context, eventsByTrack, rows, gainByTrackRef.current, startOffset);
-    setPlaying(true);
-    startTimer(context, duration, stopPlayback, setPosition, timerRef, startedAtRef);
-  }
-
-  function stopPlayback(resetPosition: boolean) {
-    stopSources(sourcesRef.current);
-    sourcesRef.current = [];
-    gainByTrackRef.current = new Map();
+  function stopAndCleanup() {
     if (timerRef.current !== null) {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (stopTimeoutRef.current !== null) {
+      window.clearTimeout(stopTimeoutRef.current);
+      stopTimeoutRef.current = null;
+    }
+    for (const s of samplersRef.current.values()) {
+      try { s.releaseAll(); } catch { /* noop */ }
+    }
     setPlaying(false);
-    if (resetPosition) setPosition(0);
   }
 
-  function seek(nextValue: number) {
-    const nextPosition = Math.min(duration, Math.max(0, nextValue));
+  async function ensureSamplers(Tone: typeof ToneType) {
+    setLoadingSamples(true);
+    try {
+      const wanted = new Set<string>();
+      for (const row of rows) wanted.add(samplerKey(row.roster));
+
+      const created: Array<Promise<unknown>> = [];
+      for (const row of rows) {
+        const key = samplerKey(row.roster);
+        if (samplersRef.current.has(key)) continue;
+        const gain = new Tone.Gain(audibleTrackIds.has(row.id) ? 0.9 : 0).toDestination();
+        const sampler = makeSampler(Tone, row.roster).connect(gain);
+        samplersRef.current.set(key, sampler);
+        gainsRef.current.set(row.id, gain);
+        created.push((sampler.loaded as unknown as Promise<unknown>) ?? Tone.loaded());
+      }
+      // Drop samplers no longer in use (kept simple — usually song is stable).
+      for (const [key, s] of samplersRef.current) {
+        if (!wanted.has(key)) {
+          s.disconnect();
+          samplersRef.current.delete(key);
+        }
+      }
+      await Promise.all(created);
+      await Tone.loaded();
+    } finally {
+      setLoadingSamples(false);
+    }
+  }
+
+  async function togglePlayback() {
+    if (playing) {
+      stopAndCleanup();
+      return;
+    }
+    const Tone = await loadTone();
+    await Tone.start();
+    await ensureSamplers(Tone);
+
+    const start = position >= duration ? 0 : position;
+    offsetRef.current = start;
+    startedAtRef.current = Tone.now() - start;
+
+    const baseTime = Tone.now() + 0.05;
+    for (const row of rows) {
+      const key = samplerKey(row.roster);
+      const sampler = samplersRef.current.get(key);
+      if (!sampler) continue;
+      const gain = gainsRef.current.get(row.id);
+      if (gain) gain.gain.value = audibleTrackIds.has(row.id) ? 0.9 : 0;
+
+      for (const event of eventsByTrack[row.id] ?? []) {
+        const startOffset = event.startSeconds - start;
+        if (event.startSeconds + event.durationSeconds <= start) continue;
+        if (startOffset < 0) continue;
+        const noteName = midiToName(event.pitch);
+        try {
+          sampler.triggerAttackRelease(
+            noteName,
+            Math.max(0.05, event.durationSeconds),
+            baseTime + startOffset,
+            Math.max(0.1, Math.min(1, event.velocity)),
+          );
+        } catch {
+          // Sampler may reject out-of-range notes; skip silently.
+        }
+      }
+    }
+
+    setPlaying(true);
+    timerRef.current = window.setInterval(() => {
+      const elapsed = Tone.now() - startedAtRef.current;
+      if (elapsed >= duration) {
+        setPosition(duration);
+        stopAndCleanup();
+        setPosition(0);
+        return;
+      }
+      setPosition(elapsed);
+    }, 60);
+  }
+
+  function seek(value: number) {
+    const next = Math.min(duration, Math.max(0, value));
     const wasPlaying = playing;
-    if (wasPlaying) stopPlayback(false);
-    setPosition(nextPosition);
-    offsetRef.current = nextPosition;
+    if (wasPlaying) stopAndCleanup();
+    setPosition(next);
+    offsetRef.current = next;
   }
 
   return (
     <div className="track-mixer">
       <div className="mixer-transport">
-        <button type="button" className="transport-button" onClick={togglePlayback} disabled={duration === 0}>
-          {playing ? "Stop" : "Play"}
+        <button
+          type="button"
+          className="transport-button"
+          onClick={togglePlayback}
+          disabled={duration === 0 || loadingSamples}
+        >
+          {loadingSamples ? "Loading…" : playing ? "Stop" : "Play"}
         </button>
         <span className="transport-time">{formatTime(position)}</span>
         <input
@@ -162,26 +250,12 @@ export default function TrackMixer({
               <span className="mixer-track-body">
                 <span className="roster-item-name">{row.roster.instrument}</span>
                 <span className="roster-item-role">
-                  {row.roster.role || row.id} · {row.events.length} notes
+                  {row.roster.role || row.id} · {(eventsByTrack[row.id] ?? []).length} notes
                 </span>
               </span>
               <span className="mixer-track-actions">
-                <button
-                  type="button"
-                  className={`mixer-toggle ${muted ? "mixer-toggle-on" : ""}`}
-                  onClick={() => toggleMuted(row.id)}
-                  aria-pressed={muted}
-                >
-                  Mute
-                </button>
-                <button
-                  type="button"
-                  className={`mixer-toggle ${solo ? "mixer-toggle-on" : ""}`}
-                  onClick={() => toggleSolo(row.id)}
-                  aria-pressed={solo}
-                >
-                  Solo
-                </button>
+                <button type="button" className={`mixer-toggle ${muted ? "mixer-toggle-on" : ""}`} onClick={() => toggleMuted(row.id)} aria-pressed={muted}>Mute</button>
+                <button type="button" className={`mixer-toggle ${solo ? "mixer-toggle-on" : ""}`} onClick={() => toggleSolo(row.id)} aria-pressed={solo}>Solo</button>
               </span>
             </li>
           );
@@ -191,153 +265,47 @@ export default function TrackMixer({
   );
 }
 
-function buildRows(song: SongState): TrackRow[] {
-  const rosterById = new Map(song.roster.map((item) => [item.id, item]));
-  const eventsByTrack = buildTrackEvents(song);
+function samplerKey(r: RosterItem): string {
+  if (r.is_drum) return "drums";
+  return `prog_${r.midi_program}`;
+}
 
-  return Object.entries(song.parts).map(([partId]) => {
-    const roster = rosterById.get(partId) ?? {
-      id: partId,
-      instrument: partId,
-      is_drum: false,
-      midi_program: 0,
-      midi_range: [0, 127],
-      role: "",
-    };
-    return { id: partId, roster, events: eventsByTrack[partId] ?? [] };
+function makeSampler(Tone: typeof ToneType, r: RosterItem): ToneType.Sampler {
+  if (r.is_drum) {
+    return new Tone.Sampler({
+      urls: drumUrls(),
+      baseUrl: `${FLUIDR3_BASE}percussion-mp3/`,
+    });
+  }
+  const folder = folderForProgram(r.midi_program);
+  return new Tone.Sampler({
+    urls: melodicUrls(),
+    baseUrl: `${FLUIDR3_BASE}${folder}-mp3/`,
   });
 }
 
-function getAudioContext(ref: React.MutableRefObject<AudioContext | null>) {
-  if (!ref.current) {
-    ref.current = new AudioContext();
-  }
-  return ref.current;
+function buildRows(song: SongState): TrackRow[] {
+  const rosterById = new Map(song.roster.map((item) => [item.id, item]));
+  const events = buildTrackEvents(song);
+  return Object.entries(song.parts).map(([partId]) => {
+    const roster = rosterById.get(partId) ?? {
+      id: partId, instrument: partId, is_drum: false,
+      midi_program: 0, midi_range: [0, 127] as [number, number], role: "",
+    };
+    return { id: partId, roster, events: events[partId] ?? [] };
+  });
 }
 
-function createTrackGains(context: AudioContext, trackIds: string[], audibleTrackIds: Set<string>) {
-  const gains = new Map<string, GainNode>();
-  for (const trackId of trackIds) {
-    const gain = context.createGain();
-    gain.gain.value = audibleTrackIds.has(trackId) ? 0.85 : 0;
-    gain.connect(context.destination);
-    gains.set(trackId, gain);
-  }
-  return gains;
-}
-
-function updateTrackGains(gains: Map<string, GainNode>, audibleTrackIds: Set<string>) {
-  for (const [trackId, gain] of gains) {
-    gain.gain.setTargetAtTime(audibleTrackIds.has(trackId) ? 0.85 : 0, gain.context.currentTime, 0.01);
-  }
-}
-
-function scheduleSong(
-  context: AudioContext,
-  eventsByTrack: Record<string, TrackEvent[]>,
-  rows: TrackRow[],
-  gains: Map<string, GainNode>,
-  offsetSeconds: number,
-) {
-  const sources: ScheduledSource[] = [];
-  const now = context.currentTime;
-
-  for (const row of rows) {
-    const trackGain = gains.get(row.id);
-    if (!trackGain) continue;
-    for (const event of eventsByTrack[row.id] ?? []) {
-      if (event.startSeconds + event.durationSeconds <= offsetSeconds) continue;
-      const startAt = now + Math.max(0, event.startSeconds - offsetSeconds);
-      if (row.roster.is_drum) {
-        sources.push(scheduleDrum(context, trackGain, event, startAt));
-      } else {
-        sources.push(scheduleTone(context, trackGain, event, startAt));
-      }
-    }
-  }
-
-  return sources;
-}
-
-function scheduleTone(context: AudioContext, destination: GainNode, event: TrackEvent, startAt: number): ScheduledSource {
-  const osc = context.createOscillator();
-  const gain = context.createGain();
-  osc.type = "sine";
-  osc.frequency.value = event.frequency;
-  gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(Math.max(0.02, event.velocity * 0.22), startAt + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + event.durationSeconds);
-  osc.connect(gain);
-  gain.connect(destination);
-  osc.start(startAt);
-  osc.stop(startAt + event.durationSeconds + 0.02);
-  return osc;
-}
-
-function scheduleDrum(context: AudioContext, destination: GainNode, event: TrackEvent, startAt: number): ScheduledSource {
-  const osc = context.createOscillator();
-  const gain = context.createGain();
-  osc.type = event.pitch === 42 ? "square" : "triangle";
-  osc.frequency.value = drumFrequency(event.pitch);
-  const duration = Math.min(0.18, event.durationSeconds);
-  gain.gain.setValueAtTime(Math.max(0.03, event.velocity * 0.28), startAt);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
-  osc.connect(gain);
-  gain.connect(destination);
-  osc.start(startAt);
-  osc.stop(startAt + duration + 0.02);
-  return osc;
-}
-
-function drumFrequency(pitch: number) {
-  if (pitch === 36) return 80;
-  if (pitch === 38) return 190;
-  if (pitch === 42) return 1800;
-  return 220;
-}
-
-function stopSources(sources: ScheduledSource[]) {
-  for (const source of sources) {
-    try {
-      source.stop();
-    } catch {
-      // Already stopped by the Web Audio scheduler.
-    }
-  }
-}
-
-function startTimer(
-  context: AudioContext,
-  duration: number,
-  stopPlayback: (resetPosition: boolean) => void,
-  setPosition: (value: number) => void,
-  timerRef: React.MutableRefObject<number | null>,
-  startedAtRef: React.MutableRefObject<number>,
-) {
-  timerRef.current = window.setInterval(() => {
-    const current = context.currentTime - startedAtRef.current;
-    if (current >= duration) {
-      setPosition(duration);
-      stopPlayback(true);
-      return;
-    }
-    setPosition(current);
-  }, 50);
-}
-
-function toggleSetItem(prev: Set<string>, item: string) {
+function toggleSetItem(prev: Set<string>, item: string): Set<string> {
   const next = new Set(prev);
-  if (next.has(item)) {
-    next.delete(item);
-  } else {
-    next.add(item);
-  }
+  if (next.has(item)) next.delete(item);
+  else next.add(item);
   return next;
 }
 
 function formatTime(value: number) {
-  const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
-  const minutes = Math.floor(safeValue / 60);
-  const seconds = Math.floor(safeValue % 60);
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const safe = Number.isFinite(value) ? Math.max(0, value) : 0;
+  const m = Math.floor(safe / 60);
+  const s = Math.floor(safe % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
