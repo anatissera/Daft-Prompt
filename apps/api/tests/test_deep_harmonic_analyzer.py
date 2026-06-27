@@ -115,7 +115,11 @@ def _analyzer(
         chord_estimator=lambda path, bar_times, duration: chord_spans,
         structure_detector=lambda spans: (structure, progressions),
         tuning_deviation_provider=(lambda path: tuning_deviation) if tuning_deviation is not None else None,
-        section_detector=(lambda spans: section_structure) if section_structure is not None else None,
+        section_detector=(lambda spans, **kwargs: section_structure) if section_structure is not None else None,
+        energy_provider=lambda path, bar_times, duration: [0.5 for _ in bar_times],
+        stem_activity_provider=lambda stem_paths, bar_times, duration: [
+            {name: 0.5 for name in stem_paths} for _ in bar_times
+        ],
         duration_provider=lambda path: 8.0,
     )
 
@@ -247,6 +251,38 @@ def test_orchestrator_uses_approximate_section_boundaries_when_harmonic_structur
 
     assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
     assert any(note.code == "approximate_sections" for note in profile.audio.analysis_notes)
+
+
+def test_orchestrator_feeds_energy_and_stem_signals_into_section_detector(tmp_path):
+    captured: dict = {}
+
+    def capturing_section_detector(spans, *, energy_by_bar=None, stem_activity_by_bar=None):
+        captured["energy_by_bar"] = energy_by_bar
+        captured["stem_activity_by_bar"] = stem_activity_by_bar
+        return StructureProfile(
+            sections=[
+                StructuralSection(
+                    label="A", start_bar=1, end_bar=2, start_seconds=0.0, end_seconds=4.0, confidence=0.58
+                ),
+                StructuralSection(
+                    label="B", start_bar=3, end_bar=4, start_seconds=4.0, end_seconds=8.0, confidence=0.58
+                ),
+            ],
+            confidence=0.58,
+        )
+
+    analyzer = _analyzer(tmp_path, structure_confidence=0.25)
+    analyzer.section_detector = capturing_section_detector
+    analyzer.energy_provider = lambda path, bar_times, duration: [0.2, 0.2, 0.9, 0.9]
+    analyzer.stem_activity_provider = lambda stem_paths, bar_times, duration: [
+        {"drums": 0.2, "bass": 0.3} for _ in bar_times
+    ]
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    assert captured["energy_by_bar"] == [0.2, 0.2, 0.9, 0.9]
+    assert captured["stem_activity_by_bar"] and "drums" in captured["stem_activity_by_bar"][0]
+    assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
 
 
 def test_non_local_source_is_rejected(tmp_path):
