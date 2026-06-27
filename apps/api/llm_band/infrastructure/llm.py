@@ -5,7 +5,9 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from typing import Optional, TypeVar
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from typing import Any, Optional, TypeVar
 
 from llm_band.config import DEFAULT_MODELS, Settings, get_settings
 
@@ -219,6 +221,36 @@ def with_fallbacks(role: str, settings: Settings, operation: Callable[[str, str]
     raise LLMAllProvidersFailed(failures)
 
 
+@dataclass
+class UsageTracker:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    calls: int = 0
+
+    def add(self, usage: dict[str, Any] | None) -> None:
+        if not usage:
+            return
+        self.input_tokens += int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
+        self.output_tokens += int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
+        self.total_tokens += int(usage.get("total_tokens", 0) or 0)
+        self.calls += 1
+
+
+USAGE_TRACKER: ContextVar[Optional[UsageTracker]] = ContextVar("usage_tracker", default=None)
+
+
+def _record_usage(raw_message: Any) -> None:
+    tracker = USAGE_TRACKER.get()
+    if tracker is None:
+        return
+    usage = getattr(raw_message, "usage_metadata", None)
+    if not usage:
+        response_meta = getattr(raw_message, "response_metadata", {}) or {}
+        usage = response_meta.get("token_usage") or response_meta.get("usage")
+    tracker.add(usage)
+
+
 class _FallbackStructuredInvoker:
     def __init__(self, role: str, schema: type, settings: Settings):
         self.role = role
@@ -229,7 +261,18 @@ class _FallbackStructuredInvoker:
         def operation(provider: str, model: str):
             _RATE_LIMITER.wait(self.settings.llm_rpm_limit)
             chat = _build_chat_model(provider, model, self.settings)
-            return chat.with_structured_output(self.schema).invoke(messages)
+            structured = chat.with_structured_output(self.schema, include_raw=True)
+            result = structured.invoke(messages)
+            if isinstance(result, dict):
+                _record_usage(result.get("raw"))
+                parsed = result.get("parsed")
+                if parsed is None:
+                    err = result.get("parsing_error")
+                    raise LLMStructuredOutputError(
+                        provider=provider, model=model, detail=str(err) if err else "no parsed output",
+                    )
+                return parsed
+            return result
 
         return with_fallbacks(self.role, self.settings, operation)
 
