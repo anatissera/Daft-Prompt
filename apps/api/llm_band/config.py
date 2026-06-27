@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     openrouter_model_instrument: Optional[str] = None
     openrouter_model_arbiter: Optional[str] = None
     openrouter_model_fallbacks: Optional[str] = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     llm_fallback_providers: str = "gemini,openrouter"
 
     llm_max_retries: int = 1

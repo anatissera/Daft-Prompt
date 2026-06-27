@@ -196,7 +196,7 @@ def _build_chat_model(provider: str, model: str, settings: Settings):
         return ChatOpenAI(
             model=model,
             api_key=key,
-            base_url="https://openrouter.ai/api/v1",
+            base_url=settings.openrouter_base_url,
             temperature=0.7,
             max_retries=max(0, settings.llm_max_retries),
         )
