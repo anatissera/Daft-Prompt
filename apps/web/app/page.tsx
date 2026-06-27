@@ -3,15 +3,24 @@
 import { useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
-import type { ChatMessage, FeedEvent } from "@/lib/chatTypes";
-import type { ComposeEvent, ComposeResponse, Header, ReferenceProfile } from "@/lib/types";
-import { answerReferenceQuestion } from "@/lib/referenceProfileView.mjs";
+import type { ChatMessage } from "@/lib/chatTypes";
+import type { ReferenceProfile, SongState } from "@/lib/types";
 import {
   chooseChatAction,
   createAnalysisMessage,
-  createCompositionMessage,
   createTextMessage,
 } from "@/lib/chatActionAdapter.mjs";
+
+type Intent = "answer_reference" | "compose" | "compose_from_reference" | "clarify";
+
+interface ChatResponse {
+  intent: Intent;
+  reply: string;
+  reference_id?: string | null;
+  answer?: { answer: string; confidence?: string } | null;
+  compose?: { song: SongState; source: string } | null;
+  clarification?: string | null;
+}
 
 export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -21,7 +30,7 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     createTextMessage(
       "assistant",
-      "Tell me what you want to make or understand. You can attach a local song for analysis, ask about a current reference, or compose from a plain-language prompt.",
+      "Hi — say \"compose a slow blues\", upload an audio file to analyze, or ask about a reference once you've shared one.",
       0,
     ),
   ]);
@@ -38,7 +47,6 @@ export default function Home() {
     const action = chooseChatAction({
       prompt,
       hasSelectedFile: selectedFile !== null,
-      hasReferenceProfile: referenceProfile !== null,
     });
     const attachedText = selectedFile ? `${action.messageText} Attached: ${selectedFile.name}` : action.messageText;
 
@@ -51,26 +59,39 @@ export default function Home() {
       await analyzeReference(selectedFile);
       return;
     }
+    await chat(action.messageText);
+  }
 
-    if (action.type === "answer_reference") {
-      if (!referenceProfile) return;
-      appendMessage(createTextMessage("assistant", answerReferenceQuestion(action.messageText, referenceProfile), nextMessageIndex()));
-      return;
+  async function chat(message: string) {
+    setActiveWork("Thinking…");
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message,
+          reference_id: referenceProfile?.reference_id ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error(await readApiError(res));
+      const data = (await res.json()) as ChatResponse;
+      appendMessage(createTextMessage("assistant", data.reply, nextMessageIndex()));
+    } catch (err) {
+      const m = err instanceof Error ? err.message : "unknown chat error";
+      setError(m);
+      appendMessage(createTextMessage("assistant", `Chat failed: ${m}`, nextMessageIndex()));
+    } finally {
+      setActiveWork(null);
     }
-
-    await compose(action.messageText);
   }
 
   async function analyzeReference(file: File) {
-    setActiveWork("File accepted. Extracting tempo, key, energy, sections, and probable chords...");
+    setActiveWork("Analyzing audio (tempo, key, energy, sections, chords)…");
     setReferenceProfile(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/references/analyze", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch("/api/references/analyze", { method: "POST", body: formData });
       if (!res.ok) throw new Error(await readApiError(res));
 
       const profile = (await res.json()) as ReferenceProfile;
@@ -79,78 +100,15 @@ export default function Home() {
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
-      const message = err instanceof Error ? err.message : "unknown analysis error";
-      setError(message);
-      appendMessage(createTextMessage("assistant", `I could not analyze that file: ${message}`, nextMessageIndex()));
+      const m = err instanceof Error ? err.message : "unknown analysis error";
+      setError(m);
+      appendMessage(createTextMessage("assistant", `I could not analyze that file: ${m}`, nextMessageIndex()));
     } finally {
       setActiveWork(null);
     }
   }
 
-  async function compose(style: string) {
-    setActiveWork("Director is choosing the arrangement...");
-    const feed: FeedEvent[] = [];
-    let header: Header | null = null;
-    let source: ComposeResponse["source"] | null = null;
-
-    try {
-      const res = await fetch("/api/compose", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ style }),
-      });
-      if (!res.ok || !res.body) throw new Error(`backend error ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const chunks = buffer.split("\n\n");
-        buffer = chunks.pop() ?? "";
-        for (const chunk of chunks) {
-          const line = chunk.split("\n").find((entry) => entry.startsWith("data:"));
-          if (!line) continue;
-          const event = JSON.parse(line.slice(5).trim()) as ComposeEvent;
-          if (event.type === "director") {
-            source = event.source;
-            header = event.header;
-            setActiveWork(`Director picked ${event.header.genre} at ${event.header.tempo_bpm} BPM. Agents are composing...`);
-          } else if (event.type === "agent_pass" || event.type === "convergence" || event.type === "error") {
-            feed.push(event);
-            setActiveWork(event.type === "agent_pass" ? `${event.instrument_id} wrote a part...` : "Agents are resolving the arrangement...");
-            if (event.type === "error") {
-              setError(event.message);
-            }
-          } else if (event.type === "done") {
-            appendMessage(
-              createCompositionMessage(
-                "assistant",
-                `Generated a ${event.song.header.genre} sketch at ${event.song.header.tempo_bpm} BPM.`,
-                event,
-                feed.slice(),
-                header,
-                source,
-                nextMessageIndex(),
-              ),
-            );
-          }
-        }
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "unknown composition error";
-      setError(message);
-      appendMessage(createTextMessage("assistant", `Composition failed: ${message}`, nextMessageIndex()));
-    } finally {
-      setActiveWork(null);
-    }
-  }
-
-  function appendMessage(message: ChatMessage) {
-    setMessages((prev) => [...prev, message]);
-  }
+  function appendMessage(m: ChatMessage) { setMessages((prev) => [...prev, m]); }
 
   function nextMessageIndex() {
     const next = messageIndexRef.current;
@@ -158,23 +116,42 @@ export default function Home() {
     return next;
   }
 
-  return (
-    <main className="chat-workspace">
-      <section className="chat-hero" aria-label="LLMinem chat workspace">
-        <p className="hero-eyebrow">
-          <span className="hero-eyebrow-dot" aria-hidden="true" />
-          Conversational studio
-        </p>
-        <h1 className="hero-title">LLMinem</h1>
-        <p className="hero-subtitle">Analyze a local song, ask musical questions, or compose a new sketch from the same chat.</p>
-      </section>
+  function resetConversation() {
+    setMessages(messages.slice(0, 1));
+    setError(null);
+  }
 
-      <section className="chat-panel" aria-label="Conversation">
+  return (
+    <main className="app-shell">
+      <aside className="app-sidebar" aria-label="Sessions">
+        <div className="sidebar-header">
+          <span className="sidebar-brand">Daft Prompt</span>
+          <button type="button" className="sidebar-new" onClick={resetConversation}>+ New chat</button>
+        </div>
+        <nav className="sidebar-section" aria-label="Current session">
+          <span className="sidebar-section-title">Current</span>
+          <span className="sidebar-item sidebar-item-active">Untitled conversation</span>
+        </nav>
+        {referenceProfile ? (
+          <div className="sidebar-section">
+            <span className="sidebar-section-title">Reference</span>
+            <span className="sidebar-item">{referenceProfile.source.label}</span>
+          </div>
+        ) : null}
+        <div className="sidebar-footer">
+          <span className="sidebar-model-dot" aria-hidden="true" />
+          <span>backend · /chat</span>
+        </div>
+      </aside>
+
+      <section className="app-main" aria-label="Conversation">
+        <header className="app-topbar">
+          <span className="app-topbar-title">Untitled conversation</span>
+          <span className="app-topbar-meta">multi-agent · {referenceProfile ? "reference loaded" : "no reference"}</span>
+        </header>
         <ChatThread messages={messages} busyLabel={activeWork} />
         {error ? (
-          <p className="error-banner" role="alert">
-            {error}
-          </p>
+          <p className="error-banner" role="alert">{error}</p>
         ) : null}
         <ChatComposer
           busy={busy}
@@ -192,8 +169,10 @@ export default function Home() {
 
 async function readApiError(response: Response) {
   try {
-    const body = (await response.json()) as { detail?: unknown };
-    return typeof body.detail === "string" ? body.detail : `backend error ${response.status}`;
+    const body = (await response.json()) as { detail?: unknown; error?: { message?: unknown } };
+    if (typeof body.detail === "string") return body.detail;
+    if (body.error && typeof body.error.message === "string") return body.error.message;
+    return `backend error ${response.status}`;
   } catch {
     return `backend error ${response.status}`;
   }
@@ -202,8 +181,7 @@ async function readApiError(response: Response) {
 function analysisReadyMessage(profile: ReferenceProfile) {
   const audio = profile.audio;
   if (!audio) return "Analysis finished, but no audio profile was returned.";
-
-  const tempo = audio.tempo_bpm === null || audio.tempo_bpm === undefined ? "unknown tempo" : `likely ${Math.round(audio.tempo_bpm)} BPM`;
+  const tempo = audio.tempo_bpm == null ? "unknown tempo" : `likely ${Math.round(audio.tempo_bpm)} BPM`;
   const key = audio.key ? `likely key ${audio.key}` : "unknown key";
-  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}, with probable chords and energy details below.`;
+  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}.`;
 }
