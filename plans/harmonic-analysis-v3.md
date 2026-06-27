@@ -76,14 +76,16 @@ found the work is architecturally sound, honest in its copy, and fully tested
 - Modify `apps/api/llm_band/infrastructure/mir/chord_features.py`
 - Modify `apps/api/tests/test_chord_features.py`
 
-- [ ] Add an optional per-bar bass-root prior (from a bass chroma/root vote) that
-  biases triad-root selection before template scoring.
-- [ ] Keep it optional: when no bass signal is available, behavior is unchanged.
-- [ ] Only let the bass break near-ties; it must not override a confident
-  non-bass-root triad.
-- [ ] Test: a bar whose upper harmony is ambiguous but whose bass clearly implies
+- [x] Add an optional per-bar bass-root prior (from a bass chroma/root vote) that
+  biases triad-root selection before template scoring. (`bass_root_from_chroma`,
+  `estimate_bass_roots`; capped `BASS_ROOT_BONUS` in `_score_bar`.)
+- [x] Keep it optional: when no bass signal is available, behavior is unchanged.
+  (Orchestrator passes `bass_roots=None` when no bass stem; safe wrapper.)
+- [x] Only let the bass break near-ties; it must not override a confident
+  non-bass-root triad. (Bonus is capped at 0.06; a clear winner keeps its lead.)
+- [x] Test: a bar whose upper harmony is ambiguous but whose bass clearly implies
   a root picks the bass-consistent triad; a confident triad is not overridden.
-- [ ] Run: `python -m pytest tests/test_chord_features.py`
+- [x] Run: `python -m pytest tests/test_chord_features.py` → full suite 154 passed.
 
 ## Phase 3: Downbeat / Bar-Phase Offset Check
 
