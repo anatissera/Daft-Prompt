@@ -23,16 +23,32 @@ from llm_band.domain.audio_profile import (
     SectionProfile,
     StemProfile,
 )
-from llm_band.infrastructure.mir.chord_features import estimate_chords
+from llm_band.infrastructure.mir.bar_energy import per_bar_energy, per_stem_activity_by_bar
+from llm_band.infrastructure.mir.bar_phase import select_bar_phase_offset
+from llm_band.infrastructure.mir.chord_features import (
+    apply_key_context,
+    estimate_bass_roots,
+    estimate_chords,
+)
 from llm_band.infrastructure.mir.demucs_separator import DemucsSeparator
 from llm_band.infrastructure.mir.harmonic_source import build_harmonic_source
-from llm_band.infrastructure.mir.key_features import estimate_key
+from llm_band.infrastructure.mir.key_features import estimate_key, estimate_tuning_deviation
 from llm_band.infrastructure.mir.librosa_analyzer import _clamp, _prepare_librosa_import
+from llm_band.infrastructure.mir.section_features import detect_sections_from_bar_signals
 from llm_band.infrastructure.mir.structure_features import detect_structure
 from llm_band.infrastructure.mir.tempo_grid import estimate_tempo_grid
 
 
 WEAK_BAR_GRID_CONFIDENCE = 0.4
+SIGNIFICANT_TUNING_DEVIATION = 0.2
+# When key, chord, grid, and structure confidence are all below this, the
+# analysis is too weak to lead with candidate claims; the summary says so first.
+LOW_USEFULNESS_THRESHOLD = 0.5
+# A bar-phase offset must clear this confidence before we trust it enough to
+# shift the bar grid; below it, the downbeat is ambiguous and we keep offset 0.
+BAR_PHASE_MIN_CONFIDENCE = 0.15
+AMBIGUOUS_PHASE_GRID_PENALTY = 0.85
+ProgressCallback = Callable[[str, str], None]
 
 
 class DeepHarmonicAnalyzer:
@@ -43,27 +59,56 @@ class DeepHarmonicAnalyzer:
         separator=None,
         harmonic_source_builder: Callable = build_harmonic_source,
         tempo_estimator: Callable = estimate_tempo_grid,
+        bar_phase_provider: Callable | None = select_bar_phase_offset,
         key_estimator: Callable = estimate_key,
         chord_estimator: Callable = estimate_chords,
+        bass_root_provider: Callable | None = estimate_bass_roots,
         structure_detector: Callable = detect_structure,
+        section_detector: Callable | None = detect_sections_from_bar_signals,
+        energy_provider: Callable | None = per_bar_energy,
+        stem_activity_provider: Callable | None = per_stem_activity_by_bar,
+        tuning_deviation_provider: Callable[[str], float | None] | None = estimate_tuning_deviation,
         duration_provider: Callable[[Path], float] | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.separator = separator or DemucsSeparator(output_root=self.output_root)
         self.harmonic_source_builder = harmonic_source_builder
         self.tempo_estimator = tempo_estimator
+        self.bar_phase_provider = bar_phase_provider
         self.key_estimator = key_estimator
         self.chord_estimator = chord_estimator
+        self.bass_root_provider = bass_root_provider
         self.structure_detector = structure_detector
+        self.section_detector = section_detector
+        self.energy_provider = energy_provider
+        self.stem_activity_provider = stem_activity_provider
+        self.tuning_deviation_provider = tuning_deviation_provider
         self.duration_provider = duration_provider or _audio_duration
 
-    def analyze(self, source: ReferenceSource) -> ReferenceProfile:
+    def analyze(
+        self,
+        source: ReferenceSource,
+        *,
+        progress: ProgressCallback | None = None,
+    ) -> ReferenceProfile:
+        # Real-time streaming is an interface concern: the API runs analyze() on a
+        # worker thread and turns this progress callback into SSE events (see
+        # api._reference_analysis_stream_events). The analyzer stays HTTP-agnostic.
+        return self._analyze(source, progress=progress)
+
+    def _analyze(
+        self,
+        source: ReferenceSource,
+        *,
+        progress: ProgressCallback | None = None,
+    ) -> ReferenceProfile:
         audio_path = DemucsSeparator._resolve_local_path(source)
         duration = self.duration_provider(audio_path)
         analysis_dir = self.output_root / source.reference_id
         analysis_dir.mkdir(parents=True, exist_ok=True)
 
         notes: list[AnalysisNote] = []
+        _emit(progress, "separating_stems", "Separating stems for harmonic analysis.")
         stems = self.separator.separate(source)
         if {stem.name for stem in stems} == {"mix"}:
             notes.append(
@@ -74,17 +119,61 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
+        _emit(progress, "building_harmonic_source", "Building the harmonic source.")
         harmonic = self.harmonic_source_builder(stems, analysis_dir / "harmonic.wav")
         notes.extend(harmonic.notes)
 
+        _emit(progress, "estimating_tempo_grid", "Estimating tempo, beats, and bars.")
         drum_path = next((stem.path for stem in stems if stem.name == "drums"), None)
         grid = self.tempo_estimator(str(audio_path), drum_path=drum_path)
+        bar_times = _apply_bar_phase(self.bar_phase_provider, harmonic.path, grid, notes)
 
+        _emit(progress, "estimating_key", "Estimating likely key candidates.")
+        tuning_deviation = _safe_tuning_deviation(self.tuning_deviation_provider, harmonic.path)
+        if tuning_deviation is not None and abs(tuning_deviation) >= SIGNIFICANT_TUNING_DEVIATION:
+            notes.append(
+                AnalysisNote(
+                    code="possible_detuning",
+                    message=(
+                        "Labels assume A=440; recording may be slightly detuned."
+                    ),
+                    severity="info",
+                )
+            )
         key_profile = self.key_estimator(
             harmonic.path, confidence_adjustment=harmonic.confidence_adjustment
         )
+        if key_profile.primary and key_profile.relative_key_ambiguity:
+            alternatives = [
+                candidate.key for candidate in key_profile.candidates[1:4]
+            ]
+            suffix = (
+                f" Close alternatives include {', '.join(alternatives)}."
+                if alternatives
+                else ""
+            )
+            notes.append(
+                AnalysisNote(
+                    code="ambiguous_key",
+                    message=(
+                        f"Key is ambiguous around {key_profile.primary.key}."
+                        f"{suffix}"
+                    ),
+                    severity="info",
+                )
+            )
 
-        chord_spans = self.chord_estimator(harmonic.path, grid.bar_times, duration)
+        _emit(progress, "estimating_chords", "Estimating probable triads by bar.")
+        bass_path = next((stem.path for stem in stems if stem.name == "bass"), None)
+        bass_roots = _safe_bass_roots(
+            self.bass_root_provider, bass_path, bar_times, duration
+        )
+        chord_spans = self.chord_estimator(
+            harmonic.path, bar_times, duration, bass_roots=bass_roots or None
+        )
+        chord_spans = apply_key_context(
+            chord_spans, key_profile.primary.key if key_profile.primary else None
+        )
 
         grid_confidence = grid.tempo.bar_grid_confidence
         if grid_confidence < WEAK_BAR_GRID_CONFIDENCE and chord_spans:
@@ -99,7 +188,70 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
+        # Structure is resolved in three ordered tiers, weakest evidence last:
+        #   1. structure_detector: exact repeated chord-phrase signatures (A/B/C),
+        #      with its own internal _fallback_sections_if_degenerate collapse for
+        #      the degenerate "one giant section + tiny tail" case.
+        #   2. section_detector: if (1) is weak (<0.4), approximate boundaries from
+        #      bar-aligned energy/stem-activity novelty (arrangement, not harmony).
+        #   3. notes: whichever wins, flag it as approximate/unclear when still weak.
+        _emit(progress, "detecting_structure", "Detecting repeated progressions and A/B/C structure.")
         structure, progressions = self.structure_detector(chord_spans)
+        if structure.confidence < 0.4 and self.section_detector is not None:
+            energy_by_bar = _safe_bar_energy(
+                self.energy_provider, str(audio_path), bar_times, duration
+            )
+            stem_activity_by_bar = _safe_stem_activity(
+                self.stem_activity_provider, stems, bar_times, duration
+            )
+            approximate_structure = self.section_detector(
+                chord_spans,
+                energy_by_bar=energy_by_bar or None,
+                stem_activity_by_bar=stem_activity_by_bar or None,
+            )
+            if (
+                approximate_structure.sections
+                and approximate_structure.confidence > structure.confidence
+            ):
+                structure = approximate_structure
+                notes.append(
+                    AnalysisNote(
+                        code="approximate_sections",
+                        message=(
+                            "Sections are approximate; boundaries use bar-aligned "
+                            "novelty signals rather than exact harmonic repetition."
+                        ),
+                        severity="info",
+                    )
+                )
+        if structure.sections and structure.confidence < 0.4:
+            notes.append(
+                AnalysisNote(
+                    code="unclear_structure",
+                    message=(
+                        "Structure is unclear from harmonic repetition; "
+                        "sections are approximate."
+                    ),
+                    severity="info",
+                )
+            )
+
+        if _is_low_usefulness(
+            key_profile.confidence,
+            _chord_mean_confidence(chord_spans),
+            grid_confidence,
+            structure.confidence,
+        ):
+            notes.append(
+                AnalysisNote(
+                    code="low_usefulness",
+                    message=(
+                        "Key, chord, and structure evidence are all weak in this "
+                        "recording; treat the harmonic read as a rough sketch."
+                    ),
+                    severity="warning",
+                )
+            )
 
         harmony = HarmonicProfile(
             key=key_profile,
@@ -132,6 +284,101 @@ class DeepHarmonicAnalyzer:
             audio=audio,
             summary=_summarize(audio),
         )
+
+
+def _emit(progress: ProgressCallback | None, stage: str, message: str) -> None:
+    if progress is not None:
+        progress(stage, message)
+
+
+def _safe_tuning_deviation(
+    provider: Callable[[str], float | None] | None, path: str
+) -> float | None:
+    if provider is None:
+        return None
+    try:
+        return provider(path)
+    except Exception:
+        return None
+
+
+def _apply_bar_phase(provider: Callable | None, harmonic_path: str, grid, notes) -> list[float]:
+    """Realign bar starts to the estimated downbeat phase; returns corrected bar times.
+
+    When the chosen offset is confident and nonzero, bars are shifted and a note is
+    added. When no offset is clearly better, the downbeat is ambiguous, so the bar
+    grid is left at offset 0 but its confidence is reduced.
+    """
+    bar_times = list(grid.bar_times)
+    if provider is None or len(grid.beat_times) < grid.beats_per_bar:
+        return bar_times
+    try:
+        offset, phase_confidence = provider(harmonic_path, grid.beat_times)
+    except Exception:
+        return bar_times
+
+    if phase_confidence < BAR_PHASE_MIN_CONFIDENCE:
+        grid.tempo = grid.tempo.model_copy(
+            update={
+                "bar_grid_confidence": round(
+                    grid.tempo.bar_grid_confidence * AMBIGUOUS_PHASE_GRID_PENALTY, 3
+                )
+            }
+        )
+        return bar_times
+
+    if offset > 0:
+        shifted = grid.beat_times[offset :: grid.beats_per_bar]
+        if shifted:
+            notes.append(
+                AnalysisNote(
+                    code="bar_phase_corrected",
+                    message="Adjusted the downbeat phase so bars align to chord changes.",
+                    severity="info",
+                )
+            )
+            return shifted
+    return bar_times
+
+
+def _safe_bass_roots(
+    provider: Callable | None, bass_path: str | None, bar_times, duration: float
+) -> list[int | None]:
+    if provider is None or bass_path is None or not bar_times:
+        return []
+    try:
+        return provider(bass_path, bar_times, duration)
+    except Exception:
+        return []
+
+
+def _safe_bar_energy(
+    provider: Callable | None, audio_path: str, bar_times, duration: float
+) -> list[float]:
+    if provider is None or not bar_times:
+        return []
+    try:
+        return provider(audio_path, bar_times, duration)
+    except Exception:
+        return []
+
+
+def _safe_stem_activity(
+    provider: Callable | None, stems, bar_times, duration: float
+) -> list[dict[str, float]]:
+    if provider is None or not bar_times:
+        return []
+    stem_paths = {
+        stem.name: stem.path
+        for stem in stems
+        if stem.name in {"drums", "bass", "vocals", "other"}
+    }
+    if not stem_paths:
+        return []
+    try:
+        return provider(stem_paths, bar_times, duration)
+    except Exception:
+        return []
 
 
 def _legacy_chord_estimates(chord_spans) -> list[ChordEstimate]:
@@ -186,25 +433,65 @@ def _harmonic_rhythm_label(chord_spans) -> str:
     return "slow — chords held across bars"
 
 
-def _harmony_confidence(key_profile, chord_spans, grid_confidence: float) -> float:
+def _chord_mean_confidence(chord_spans) -> float:
     chord_confidences = [span.chosen.confidence for span in chord_spans if span.chosen]
-    chord_mean = sum(chord_confidences) / len(chord_confidences) if chord_confidences else 0.0
+    return sum(chord_confidences) / len(chord_confidences) if chord_confidences else 0.0
+
+
+def _harmony_confidence(key_profile, chord_spans, grid_confidence: float) -> float:
+    chord_mean = _chord_mean_confidence(chord_spans)
     combined = 0.5 * chord_mean + 0.3 * key_profile.confidence + 0.2 * grid_confidence
     return round(_clamp(combined), 3)
+
+
+def _is_low_usefulness(
+    key_confidence: float,
+    chord_confidence: float,
+    grid_confidence: float,
+    structure_confidence: float,
+) -> bool:
+    return (
+        key_confidence < LOW_USEFULNESS_THRESHOLD
+        and chord_confidence < LOW_USEFULNESS_THRESHOLD
+        and grid_confidence < LOW_USEFULNESS_THRESHOLD
+        and structure_confidence < LOW_USEFULNESS_THRESHOLD
+    )
 
 
 def _summarize(audio: AudioProfile) -> str:
     parts = [f"Analyzed about {audio.duration_seconds:.1f}s of audio."]
     if audio.tempo_bpm:
         parts.append(f"Tempo is around {audio.tempo_bpm:.0f} BPM.")
-    if audio.key:
+    if any(note.code == "low_usefulness" for note in audio.analysis_notes):
+        parts.append(
+            "The chord and structure evidence is weak in this recording, so treat "
+            "the harmonic read below as a rough sketch."
+        )
+    key_profile = audio.harmony.key if audio.harmony else None
+    key_is_uncertain = bool(
+        key_profile
+        and (key_profile.confidence < 0.5 or key_profile.relative_key_ambiguity)
+    )
+    if key_profile and key_profile.primary and key_is_uncertain:
+        candidates = [candidate.key for candidate in key_profile.candidates[:3]]
+        parts.append(
+            f"Tonal center is ambiguous; close candidates include {', '.join(candidates)}."
+        )
+    elif audio.key:
         parts.append(f"The key is likely {audio.key}.")
     if audio.harmony and audio.harmony.progressions and audio.harmony.progressions[0].chords:
         progression = " - ".join(audio.harmony.progressions[0].chords[:4])
-        parts.append(f"The main progression is probably {progression}.")
+        progression_confidence = audio.harmony.progressions[0].confidence
+        if progression_confidence < 0.5:
+            parts.append(f"Weak chord loop candidate: {progression}.")
+        else:
+            parts.append(f"The main progression is probably {progression}.")
     if audio.structure and audio.structure.sections:
-        form = " / ".join(section.label for section in audio.structure.sections)
-        parts.append(f"The structure looks like {form}.")
+        if audio.structure.confidence < 0.4:
+            parts.append("Structure is approximate/unclear.")
+        else:
+            form = " / ".join(section.label for section in audio.structure.sections)
+            parts.append(f"The structure looks like {form}.")
     return " ".join(parts)
 
 
