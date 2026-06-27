@@ -60,7 +60,26 @@ export default function Home() {
   const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
   const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
+  const sessionTitledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  async function maybeTitleSession(firstUserMessage: string) {
+    if (sessionTitledRef.current) return;
+    sessionTitledRef.current = true;
+    try {
+      const res = await fetch("/api/title", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: firstUserMessage }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { title?: string | null };
+      if (data?.title) setSessionTitle(data.title);
+    } catch {
+      // Title is best-effort; leave "Untitled session" on failure.
+    }
+  }
 
   const busy = activeWork !== null;
 
@@ -131,6 +150,8 @@ export default function Home() {
       const data = (await res.json()) as ChatResponse;
       const meta = formatMeta(data, performance.now() - startedAt);
       const idx = nextMessageIndex();
+      // Fire-and-forget: title the session from the first user message.
+      void maybeTitleSession(message);
       if (data.compose && data.compose.artifacts) {
         const composeResponse = {
           job_id: "chat",
@@ -199,6 +220,8 @@ export default function Home() {
   function resetConversation() {
     setMessages(messages.slice(0, 1));
     setError(null);
+    setSessionTitle("Untitled session");
+    sessionTitledRef.current = false;
   }
 
   return (
@@ -218,7 +241,7 @@ export default function Home() {
           <span className="sidebar-section-title">Recent sessions</span>
           <div className="sidebar-recent-list">
             <button type="button" className="sidebar-recent">
-              <span className="sidebar-recent-title">Untitled conversation</span>
+              <span className="sidebar-recent-title">{sessionTitle}</span>
               <span className="sidebar-recent-meta">NOW · LIVE</span>
             </button>
           </div>
@@ -241,7 +264,7 @@ export default function Home() {
         <header className="app-topbar">
           <div className="app-topbar-left">
             <span className="app-topbar-dot" aria-hidden="true" />
-            <span className="app-topbar-title">Untitled session</span>
+            <span className="app-topbar-title">{sessionTitle}</span>
           </div>
           <span className="app-topbar-meta">TWILIGHT · OUTPUT MIDI</span>
         </header>
