@@ -368,7 +368,10 @@ def _default_chroma_time_provider(path: str, sample_rate: int) -> tuple[np.ndarr
     import librosa
 
     samples, sr = librosa.load(path, sr=sample_rate, mono=True)
-    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, hop_length=HOP_LENGTH, tuning=0.0)
+    # Tune the CQT bins for SCORING (detuned recordings land on the right pitch
+    # classes); labels stay A=440 since note names come from the pitch-class index.
+    tuning = librosa.estimate_tuning(y=samples, sr=sr)
+    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, hop_length=HOP_LENGTH, tuning=tuning)
     frame_times = librosa.frames_to_time(
         np.arange(chroma.shape[1]), sr=sr, hop_length=HOP_LENGTH
     )
