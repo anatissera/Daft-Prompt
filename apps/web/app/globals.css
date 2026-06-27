@@ -357,10 +357,11 @@ code, pre, .mono { font-family: var(--font-mono); }
   white-space: pre-wrap;
   overflow: visible;
   isolation: isolate;
-  /* Letterpress: bright bottom highlight + soft dark top — text reads carved */
+  /* Letterpress + halo so black text reads on any band of the metal */
   text-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.55),
-    0 -1px 0 rgba(0, 0, 0, 0.18);
+    0 1px 0 rgba(255, 255, 255, 0.7),
+    0 -1px 0 rgba(0, 0, 0, 0.18),
+    0 0 6px rgba(255, 255, 255, 0.55);
   box-shadow:
     /* hairline bright rim along the top edge */
     0 1px 0 rgba(255, 255, 255, 1) inset,
@@ -469,17 +470,20 @@ code, pre, .mono { font-family: var(--font-mono); }
   background:
     linear-gradient(
       180deg,
-      #3a4458 0%,            /* dark sky reflection on the very top */
-      #8c95a8 8%,
-      #e1e5f0 18%,
-      #ffffff 30%,           /* hot specular midline */
-      #f6f8fd 38%,
-      #aab0bd 52%,           /* sharp falloff into shadow ridge */
-      #4d525e 64%,           /* deep steel shadow */
-      #80869a 78%,
-      #c98341 86%,           /* fire reflection ramp */
-      #ffa336 94%,
-      #ffd56e 100%
+      #1a2030 0%,            /* deep dark cap (thin sliver at top edge) */
+      #5d6678 5%,            /* fast climb */
+      #b4bbcb 10%,
+      #e6eaf3 15%,
+      #ffffff 22%,           /* hot specular line */
+      #f5f7fc 30%,
+      #e0e4ee 42%,
+      #c8cdda 54%,           /* gentle wide shadow band */
+      #aab1c1 62%,
+      #c0c6d2 70%,
+      #d8dde8 78%,           /* light recovery */
+      #b87a3a 85%,           /* fire reflection ramp */
+      #ff8a28 92%,
+      #ffc356 100%
     );
 }
 
@@ -491,17 +495,20 @@ code, pre, .mono { font-family: var(--font-mono); }
   background:
     linear-gradient(
       180deg,
-      #b3892a 0%,
-      #d8b04a 8%,
-      #f1cd6a 18%,
-      #ffe9a3 30%,           /* hot specular midline */
-      #fff3c8 40%,
-      #ffe39a 50%,
-      #f0c660 62%,           /* shallow shadow ridge — still bright */
-      #d8a338 74%,
-      #e88a30 86%,           /* fire reflection ramp */
-      #ff9a40 94%,
-      #ffd28a 100%
+      #2a1d05 0%,            /* deep cap (thin sliver at top edge) */
+      #7d5a18 5%,            /* fast climb to bright */
+      #c69830 10%,
+      #f0c560 15%,
+      #fff3c8 22%,           /* hot specular line */
+      #ffe9a3 30%,
+      #fbd784 42%,
+      #f0c660 54%,           /* shallow gold ridge */
+      #e6b450 62%,
+      #f0c660 70%,
+      #fbd784 78%,           /* light recovery */
+      #db8a38 85%,           /* fire reflection ramp */
+      #ff8a30 92%,
+      #ffc870 100%
     );
 }
 
