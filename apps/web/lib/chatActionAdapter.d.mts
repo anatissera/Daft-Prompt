@@ -3,13 +3,12 @@ import type { ComposeResponse, Header, ReferenceProfile } from "./types";
 
 export type ChatAction =
   | { type: "analyze"; messageText: string }
-  | { type: "answer_reference"; messageText: string }
-  | { type: "compose"; messageText: string };
+  | { type: "chat"; messageText: string };
 
 export function chooseChatAction(input: {
   prompt: string;
   hasSelectedFile: boolean;
-  hasReferenceProfile: boolean;
+  hasReferenceProfile?: boolean;
 }): ChatAction;
 
 export function normalizeMessageText(prompt: string, hasSelectedFile?: boolean): string;
