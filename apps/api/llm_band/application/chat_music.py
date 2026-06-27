@@ -18,7 +18,7 @@ from llm_band.application.answer_music_question import AnswerMusicQuestion, Musi
 from llm_band.application.compose_song import ComposeSong
 from llm_band.domain.audio_profile import ExplanationAnswer, ReferenceProfile
 from llm_band.domain.song_state import SongState
-from llm_band.infrastructure.llm import USAGE_TRACKER, UsageTracker
+from llm_band.domain.usage import USAGE_TRACKER, UsageTracker
 from llm_band.ports.reference_store import ReferenceStore
 
 

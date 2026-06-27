@@ -11,11 +11,26 @@ from typing import Iterator, Optional, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+import logging
+
 from .agents.arbiter import run_arbiter
 from .agents.instrument import NewRequest, RequestResolution, compose_part, run_instrument_turn
 from .config import get_settings
 from .domain.song_state import Header, NegotiationRequest, Part, RosterItem, SongState
+from .infrastructure.llm import LLMError
 from .state import BandState, merge_parts, merge_requests, take_latest
+
+log = logging.getLogger(__name__)
+
+
+def _empty_part(roster_item: RosterItem, reason: str) -> Part:
+    return Part(
+        instrument_id=roster_item.id,
+        version=0,
+        notes=[],
+        notes_summary=f"(failed to compose: {reason})",
+        self_notes="",
+    )
 
 
 class _InstrumentPayload(TypedDict):
@@ -43,10 +58,14 @@ def _dispatch(state: BandState) -> list[Send]:
 
 def build_graph(llm=None):
     def _instrument_node(payload: _InstrumentPayload) -> dict:
-        part = compose_part(
-            payload["header"], payload["roster_item"], payload["roster"],
-            payload["peer_summaries"], llm=llm,
-        )
+        try:
+            part = compose_part(
+                payload["header"], payload["roster_item"], payload["roster"],
+                payload["peer_summaries"], llm=llm,
+            )
+        except (LLMError, Exception) as exc:  # noqa: BLE001 — keep compose alive on per-part failure
+            log.warning("instrument %s failed: %s", payload["roster_item"].id, exc)
+            part = _empty_part(payload["roster_item"], type(exc).__name__)
         return {"parts": {payload["roster_item"].id: part}}
 
     graph = StateGraph(BandState)
@@ -139,12 +158,24 @@ def _dispatch_round0(state: BandState) -> list[Send]:
 
 def _build_negotiation_graph(llm=None, max_rounds: int = 3):
     def _instrument_turn_node(payload: _TurnPayload) -> dict:
-        part, resolutions, new_requests = run_instrument_turn(
-            payload["header"], payload["roster_item"], payload["roster"],
-            payload["peer_summaries"], payload["pending"], payload["existing_part"], llm=llm,
-        )
-        updates = _resolutions_to_updates(payload["pending"], resolutions)
-        updates += _new_requests_to_pending(payload["roster_item"].id, payload["round"], new_requests)
+        try:
+            part, resolutions, new_requests = run_instrument_turn(
+                payload["header"], payload["roster_item"], payload["roster"],
+                payload["peer_summaries"], payload["pending"], payload["existing_part"], llm=llm,
+            )
+            updates = _resolutions_to_updates(payload["pending"], resolutions)
+            updates += _new_requests_to_pending(payload["roster_item"].id, payload["round"], new_requests)
+        except (LLMError, Exception) as exc:  # noqa: BLE001 — keep negotiation alive on per-turn failure
+            log.warning(
+                "instrument %s turn failed (round %d): %s",
+                payload["roster_item"].id, payload["round"], exc,
+            )
+            # Auto-decline pending requests for this instrument; salvage whatever part we had.
+            part = payload["existing_part"] or _empty_part(payload["roster_item"], type(exc).__name__)
+            updates = [
+                r.model_copy(update={"status": "declined", "resolution": f"auto-declined: {type(exc).__name__}"})
+                for r in payload["pending"]
+            ]
         return {
             "parts": {payload["roster_item"].id: part},
             "negotiation_requests": updates,
@@ -184,7 +215,16 @@ def _build_negotiation_graph(llm=None, max_rounds: int = 3):
 
     def _arbiter_node(state: BandState) -> dict:
         pending = [r for r in state["negotiation_requests"] if r.status == "pending"]
-        resolved = run_arbiter(pending, llm=llm) if pending else []
+        if not pending:
+            return {"negotiation_requests": [], "converged": True}
+        try:
+            resolved = run_arbiter(pending, llm=llm)
+        except (LLMError, Exception) as exc:  # noqa: BLE001 — finalize compose even if arbiter LLM fails
+            log.warning("arbiter failed, auto-declining %d pending request(s): %s", len(pending), exc)
+            resolved = [
+                r.model_copy(update={"status": "declined", "resolution": f"auto-declined: {type(exc).__name__}"})
+                for r in pending
+            ]
         return {"negotiation_requests": resolved, "converged": True}
 
     graph = StateGraph(BandState)
