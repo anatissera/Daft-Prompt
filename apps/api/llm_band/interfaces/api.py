@@ -122,13 +122,35 @@ async def analyze_reference_upload(file: UploadFile | None = File(None)) -> Refe
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest) -> ChatResponse:
+def chat(req: ChatRequest, request: Request) -> ChatResponse:
     if req.reference_id and REFERENCE_STORE.get(req.reference_id) is None:
         raise HTTPException(status_code=404, detail=f"reference_id not found: {req.reference_id}")
     try:
-        return _chat_music().handle(req)
+        response = _chat_music().handle(req)
     except LLMError as exc:
         raise HTTPException(status_code=503, detail=_llm_error_event(exc, partial=False)) from exc
+
+    # If the orchestrator composed a song, render audio/score artifacts and
+    # attach URLs so the chat UI can play / score / download — same contract
+    # the dedicated /compose endpoint uses.
+    if response.compose is not None:
+        from llm_band.application.chat_music import ChatArtifacts
+        job = ARTIFACTS.create_job()
+        try:
+            render_artifacts(response.compose.song, job.path)
+            base = str(request.base_url).rstrip("/")
+            response = response.model_copy(update={
+                "compose": response.compose.model_copy(update={
+                    "artifacts": ChatArtifacts(
+                        midi=ARTIFACTS.url_for(base, job.job_id, "song.mid"),
+                        musicxml=ARTIFACTS.url_for(base, job.job_id, "song.musicxml"),
+                    ),
+                }),
+            })
+        except Exception:
+            # Artifact rendering is best-effort; the song state is still usable.
+            pass
+    return response
 
 
 def _chat_music() -> ChatMusic:
