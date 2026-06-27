@@ -20,13 +20,40 @@ interface TrackRow {
   events: TrackEvent[];
 }
 
-export default function TrackMixer({ song }: { song: SongState }) {
+interface TrackMixerProps {
+  song: SongState;
+  mutedTrackIds?: Set<string>;
+  soloTrackIds?: Set<string>;
+  onMutedChange?: (next: Set<string>) => void;
+  onSoloChange?: (next: Set<string>) => void;
+}
+
+export default function TrackMixer({
+  song,
+  mutedTrackIds: mutedProp,
+  soloTrackIds: soloProp,
+  onMutedChange,
+  onSoloChange,
+}: TrackMixerProps) {
   const rows = useMemo(() => buildRows(song), [song]);
   const trackIds = useMemo(() => rows.map((row) => row.id), [rows]);
   const eventsByTrack = useMemo(() => buildTrackEvents(song), [song]);
   const duration = useMemo(() => getSongDurationSeconds(song), [song]);
-  const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(() => new Set());
-  const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
+  // Controlled when props provided; falls back to internal state otherwise.
+  const [internalMuted, setInternalMuted] = useState<Set<string>>(() => new Set());
+  const [internalSolo, setInternalSolo] = useState<Set<string>>(() => new Set());
+  const mutedTrackIds = mutedProp ?? internalMuted;
+  const soloTrackIds = soloProp ?? internalSolo;
+  const setMutedTrackIds = (updater: (prev: Set<string>) => Set<string>) => {
+    const next = updater(mutedTrackIds);
+    if (onMutedChange) onMutedChange(next);
+    else setInternalMuted(next);
+  };
+  const setSoloTrackIds = (updater: (prev: Set<string>) => Set<string>) => {
+    const next = updater(soloTrackIds);
+    if (onSoloChange) onSoloChange(next);
+    else setInternalSolo(next);
+  };
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const audioRef = useRef<AudioContext | null>(null);

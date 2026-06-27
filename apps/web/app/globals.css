@@ -1144,7 +1144,7 @@ code, pre, .mono { font-family: var(--font-mono); }
 .song-deck > .embedded-panel .roster-item {
   position: relative;
   display: grid;
-  grid-template-columns: 38px 1fr;
+  grid-template-columns: 38px 1fr auto;
   align-items: center;
   gap: 12px;
   padding: 10px 12px 10px 16px;
@@ -1152,6 +1152,43 @@ code, pre, .mono { font-family: var(--font-mono); }
   background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0));
   border: 1px solid rgba(255, 255, 255, 0.06);
   overflow: hidden;
+}
+
+.roster-item-controls {
+  display: inline-flex;
+  gap: 5px;
+}
+.roster-toggle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 120ms ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.roster-toggle:hover {
+  border-color: rgba(255, 180, 90, 0.55);
+  color: var(--gold-bright);
+}
+.roster-toggle-mute {
+  background: linear-gradient(180deg, #5a1b15, #2a0a07);
+  color: #ff6c6c;
+  border-color: rgba(255, 92, 92, 0.55);
+  box-shadow: 0 0 10px rgba(255, 92, 92, 0.4);
+}
+.roster-toggle-solo {
+  background: linear-gradient(180deg, #b3892a, #f3cf6a);
+  color: #1a1004;
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 12px rgba(243, 196, 90, 0.6);
 }
 /* Color stripe on the left of each agent card */
 .song-deck > .embedded-panel .roster-item::before {
