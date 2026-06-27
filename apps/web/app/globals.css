@@ -80,15 +80,17 @@ html, body {
 
 body {
   overflow: hidden;
-  /* Twilight sky → very dark floor; the real fire lives in .fire-stage */
+  /* Twilight sky → ember floor (the real flames sit on top via .fire-stage) */
   background:
+    radial-gradient(140% 60% at 50% 110%, var(--fire-bright) 0%, var(--fire-mid) 18%, var(--fire-deep) 34%, transparent 50%) no-repeat,
+    radial-gradient(120% 38% at 50% 96%, var(--fire-ember) 0%, transparent 38%) no-repeat,
     linear-gradient(
       180deg,
       var(--sky-deep) 0%,
-      var(--sky-mid) 40%,
-      var(--sky-glow) 60%,
-      #08030a 92%,
-      #000 100%
+      var(--sky-mid) 35%,
+      var(--sky-glow) 55%,
+      var(--fire-deep) 88%,
+      #050203 100%
     ) no-repeat;
   background-attachment: fixed;
   position: relative;
@@ -643,9 +645,9 @@ code, pre, .mono { font-family: var(--font-mono); }
 
 .chat-input {
   width: 100%;
-  background: linear-gradient(180deg, #0c111d 0%, #1a2436 100%);
+  background: var(--night);
   color: var(--text);
-  border: 1px solid rgba(215, 218, 230, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-lg);
   padding: 16px 18px;
   font: inherit;
@@ -655,15 +657,14 @@ code, pre, .mono { font-family: var(--font-mono); }
   outline: none;
   transition: border-color 160ms ease, box-shadow 160ms ease;
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.5) inset,
-    0 0 0 1px rgba(0, 0, 0, 0.3);
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.6);
 }
 .chat-input::placeholder { color: var(--text-faint); font-style: italic; }
 .chat-input:focus {
   border-color: var(--gold-bright);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 0 0 3px rgba(243, 196, 90, 0.25),
     0 0 22px rgba(243, 196, 90, 0.35);
 }
@@ -680,8 +681,8 @@ code, pre, .mono { font-family: var(--font-mono); }
   gap: 6px;
   padding: 9px 14px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(215, 218, 230, 0.22);
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--night);
   color: var(--silver-bright);
   font-family: var(--font-tech);
   font-size: 11px;
@@ -689,11 +690,12 @@ code, pre, .mono { font-family: var(--font-mono); }
   text-transform: uppercase;
   cursor: pointer;
   transition: all 160ms ease;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
 }
 .attach-button:hover {
-  background: rgba(215, 218, 230, 0.08);
-  border-color: var(--silver-spec);
-  color: var(--silver-spec);
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 0 12px rgba(243, 196, 90, 0.25);
 }
 
 .selected-file {
@@ -708,8 +710,8 @@ code, pre, .mono { font-family: var(--font-mono); }
 
 .send-button {
   margin-left: auto;
-  color: var(--text-on-metal);
-  border: 0;
+  color: var(--gold-bright);
+  border: 1px solid rgba(243, 196, 90, 0.35);
   border-radius: var(--radius-md);
   padding: 11px 24px;
   font-family: var(--font-tech);
@@ -720,31 +722,26 @@ code, pre, .mono { font-family: var(--font-mono); }
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  transition: filter 160ms ease;
-  background:
-    linear-gradient(
-      168deg,
-      var(--gold-shadow) 0%,
-      var(--gold-mid) 25%,
-      var(--gold-bright) 50%,
-      var(--gold-spec) 60%,
-      var(--gold-bright) 75%,
-      var(--gold-mid) 90%,
-      var(--gold-darkest) 100%
-    );
+  transition: all 160ms ease;
+  background: var(--night);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.4) inset,
-    0 -10px 20px -10px rgba(255, 122, 31, 0.6) inset,
-    0 6px 14px -4px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(0, 0, 0, 0.5);
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 4px 12px -4px rgba(0, 0, 0, 0.6);
 }
-.send-button:hover:not(:disabled) { filter: brightness(1.1); }
-.send-button:disabled { opacity: 0.55; cursor: not-allowed; }
+.send-button:hover:not(:disabled) {
+  border-color: var(--gold-bright);
+  color: var(--gold-spec);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 18px rgba(243, 196, 90, 0.45),
+    0 4px 12px -4px rgba(0, 0, 0, 0.6);
+}
+.send-button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .spinner {
   width: 14px; height: 14px;
-  border: 2px solid rgba(0, 0, 0, 0.3);
-  border-top-color: rgba(0, 0, 0, 0.85);
+  border: 2px solid rgba(243, 196, 90, 0.25);
+  border-top-color: var(--gold-bright);
   border-radius: 50%;
   display: inline-block;
   animation: spin 0.7s linear infinite;
