@@ -41,6 +41,7 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
         <article key={message.id} className={`chat-message chat-message-${message.role}`}>
           <span className="chat-role">{message.role}</span>
           <p>
+            <span className="bubble-sparkle" aria-hidden="true">✦</span>
             {message.role === "assistant"
               ? <Typewriter text={message.text} />
               : message.text}

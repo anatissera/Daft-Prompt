@@ -23,35 +23,38 @@ export default function ChatComposer({
 }: ChatComposerProps) {
   return (
     <form onSubmit={onSubmit} className="chat-composer">
-      <label htmlFor="prompt-input" className="sr-only">
-        Message
-      </label>
-      <textarea
-        id="prompt-input"
-        value={prompt}
-        onChange={(event) => onPromptChange(event.target.value)}
-        placeholder="Ask about a song, attach audio, or compose a slow blues..."
-        className="chat-input"
-        rows={2}
-      />
-      <div className="composer-actions">
-        <input
-          ref={fileInputRef}
-          id="audio-file"
-          type="file"
-          accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif"
-          className="sr-only"
-          onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+      <div className="chat-composer-pill">
+        <label htmlFor="prompt-input" className="sr-only">Message</label>
+        <textarea
+          id="prompt-input"
+          value={prompt}
+          onChange={(event) => onPromptChange(event.target.value)}
+          placeholder="Describe the track you want the studio to compose…"
+          className="chat-input"
+          rows={1}
         />
-        <label htmlFor="audio-file" className="attach-button">
-          Attach audio
-        </label>
-        {selectedFileName ? <span className="selected-file">{selectedFileName}</span> : null}
-        <button type="submit" disabled={busy} className="send-button">
-          {busy ? <span className="spinner" aria-hidden="true" /> : null}
-          {busy ? "Working..." : "Send"}
-        </button>
+        <div className="composer-actions">
+          <input
+            ref={fileInputRef}
+            id="audio-file"
+            type="file"
+            accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif"
+            className="sr-only"
+            onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+          />
+          <label htmlFor="audio-file" className="attach-button">
+            <span className="attach-icon" aria-hidden="true">♪</span> Attach audio
+          </label>
+          {selectedFileName ? <span className="selected-file">{selectedFileName}</span> : null}
+          <button type="submit" disabled={busy} className="send-button">
+            {busy ? <span className="spinner" aria-hidden="true" /> : null}
+            {busy ? "WORKING…" : <>SEND <span aria-hidden="true">▸</span></>}
+          </button>
+        </div>
       </div>
+      <p className="chat-composer-caption">
+        DIRECTOR-AGENT ORCHESTRATES · OUTPUT IS A SHORT MIDI SKETCH
+      </p>
     </form>
   );
 }
