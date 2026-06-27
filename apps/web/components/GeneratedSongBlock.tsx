@@ -29,6 +29,12 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
         <span className="reference-kind">{result.source}</span>
       </div>
 
+      {message.header ? (
+        <div className="embedded-panel">
+          <RosterView header={message.header} roster={result.song.roster} source={message.source ?? "canned"} embedded />
+        </div>
+      ) : null}
+
       {hasPlayableParts ? (
         <>
           <TrackMixer song={result.song} />
@@ -44,24 +50,17 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
         </p>
       )}
 
-      {message.header ? (
-        <details className="details-panel">
-          <summary className="details-summary">Agents and arrangement</summary>
-          <RosterView header={message.header} roster={result.song.roster} source={message.source ?? "canned"} embedded />
+      {hasPlayableParts ? (
+        <details className="details-panel" open>
+          <summary className="details-summary">Score</summary>
+          <ScoreViewer musicXmlUrl={result.artifacts.musicxml} />
         </details>
       ) : null}
 
       {message.feed.length > 0 ? (
         <details className="details-panel">
-          <summary className="details-summary">Negotiation details</summary>
+          <summary className="details-summary">Negotiation details ({message.feed.length})</summary>
           <NegotiationFeed events={message.feed} embedded />
-        </details>
-      ) : null}
-
-      {hasPlayableParts ? (
-        <details className="details-panel">
-          <summary className="details-summary">Score</summary>
-          <ScoreViewer musicXmlUrl={result.artifacts.musicxml} />
         </details>
       ) : null}
     </section>
