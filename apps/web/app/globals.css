@@ -275,6 +275,25 @@ code, pre, .mono { font-family: var(--font-mono); }
   overflow: hidden;       /* clip overflow so composer stays pinned at bottom */
 }
 
+/* Veil over the body fire bg so the chat zone reads as its own surface
+   (fire still glows from below, but it doesn't bleed into bubble whitespace). */
+.app-main::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(8, 10, 18, 0.45) 0%,
+      rgba(8, 10, 18, 0.7) 50%,
+      rgba(8, 10, 18, 0.92) 88%,
+      rgba(8, 10, 18, 1) 100%
+    );
+}
+.app-main > * { position: relative; z-index: 1; }
+
 .app-topbar {
   display: flex;
   align-items: baseline;
@@ -569,12 +588,29 @@ code, pre, .mono { font-family: var(--font-mono); }
   width: 100%;
   max-width: var(--thread-max);
   margin: 0 auto;
-  padding: 16px var(--space-6) var(--space-6);
+  padding: 24px var(--space-6) var(--space-6);
   display: flex;
   flex-direction: column;
   gap: 10px;
   position: relative;
   z-index: 2;
+}
+
+/* Solid black slab behind the composer that fades in upward, so fire from
+   the body bg never shows through the composer's padding gaps. */
+.chat-composer::before {
+  content: "";
+  position: absolute;
+  inset: 0 -100vw 0 -100vw;   /* extend full viewport width so it spans */
+  pointer-events: none;
+  z-index: -1;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(5, 6, 8, 0.65) 30%,
+    rgba(5, 6, 8, 0.95) 65%,
+    var(--night) 100%
+  );
 }
 
 .chat-input {
