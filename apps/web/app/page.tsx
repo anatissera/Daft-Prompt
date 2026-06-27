@@ -201,13 +201,6 @@ export default function Home() {
     setError(null);
   }
 
-  const studioRoster = [
-    { tag: "KCK", color: "#ff5a3c" }, { tag: "BAS", color: "#c84dff" },
-    { tag: "RHD", color: "#4d9fff" }, { tag: "LED", color: "#ffd24d" },
-    { tag: "PAD", color: "#46e0c0" }, { tag: "VOX", color: "#ff6ec7" },
-    { tag: "HAT", color: "#9bff5a" }, { tag: "ARP", color: "#ff944d" },
-  ];
-
   return (
     <main className="app-shell">
       <aside className="app-sidebar" aria-label="Sessions">
@@ -228,18 +221,6 @@ export default function Home() {
               <span className="sidebar-recent-title">Untitled conversation</span>
               <span className="sidebar-recent-meta">NOW · LIVE</span>
             </button>
-          </div>
-        </div>
-
-        <div className="sidebar-section">
-          <span className="sidebar-section-title">Studio roster</span>
-          <div className="sidebar-chip-row">
-            {studioRoster.map((r) => (
-              <span key={r.tag} className="sidebar-chip" title={r.tag}>
-                <span className="sidebar-chip-dot" style={{ background: r.color, boxShadow: `0 0 8px ${r.color}88` }} />
-                <span className="sidebar-chip-tag">{r.tag}</span>
-              </span>
-            ))}
           </div>
         </div>
 
