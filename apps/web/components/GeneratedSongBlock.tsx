@@ -12,34 +12,39 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
   const result = message.result;
   const hasPlayableParts = Object.keys(result.song.parts).length > 0;
 
+  const h = result.song.header;
+  const partsCount = Object.keys(result.song.parts).length;
+
   return (
-    <section className="result-block" aria-label="Generated song">
-      <div className="result-block-header">
-        <div>
-          <p className="section-title">Generated song</p>
-          <h2 className="result-title">
-            {result.song.header.genre} · {result.song.header.tempo_bpm} BPM
-          </h2>
-          <p className="context-muted">
-            {hasPlayableParts
-              ? "Playable sketch ready. Mixer and export controls are available below."
-              : "The composition finished without playable parts."}
-          </p>
+    <section className="song-deck" aria-label="Generated song">
+      {/* Track-card header — like a vinyl sleeve label */}
+      <header className="song-deck-header">
+        <div className="song-deck-stencil">
+          <span className="song-deck-stencil-label">TRK</span>
+          <span className="song-deck-stencil-number">001</span>
         </div>
-        <span className="reference-kind">{result.source}</span>
-      </div>
+        <div className="song-deck-title-block">
+          <p className="song-deck-eyebrow">— Generated · {result.source} —</p>
+          <h2 className="song-deck-title">{h.genre}</h2>
+          <ul className="song-deck-specs">
+            <li><span>KEY</span><strong>{h.key}</strong></li>
+            <li><span>BPM</span><strong>{Math.round(h.tempo_bpm)}</strong></li>
+            <li><span>METER</span><strong>{h.time_signature[0]}/{h.time_signature[1]}</strong></li>
+            <li><span>BARS</span><strong>{h.num_bars}</strong></li>
+            <li><span>AGENTS</span><strong>{partsCount}</strong></li>
+          </ul>
+        </div>
+      </header>
 
       {message.header ? (
-        <div className="embedded-panel">
-          <RosterView header={message.header} roster={result.song.roster} source={message.source ?? "canned"} embedded />
-        </div>
+        <RosterView header={message.header} roster={result.song.roster} source={message.source ?? "canned"} embedded />
       ) : null}
 
       {hasPlayableParts ? (
         <>
           <TrackMixer song={result.song} />
           <a className="artifact-link" href={result.artifacts.midi}>
-            Download full MIDI
+            ↓ Download full MIDI
           </a>
         </>
       ) : (
@@ -51,15 +56,15 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
       )}
 
       {hasPlayableParts ? (
-        <details className="details-panel" open>
-          <summary className="details-summary">Score</summary>
+        <details className="score-frame" open>
+          <summary className="details-summary">◐ Score</summary>
           <ScoreViewer musicXmlUrl={result.artifacts.musicxml} />
         </details>
       ) : null}
 
       {message.feed.length > 0 ? (
         <details className="details-panel">
-          <summary className="details-summary">Negotiation details ({message.feed.length})</summary>
+          <summary className="details-summary">Negotiation log · {message.feed.length}</summary>
           <NegotiationFeed events={message.feed} embedded />
         </details>
       ) : null}
