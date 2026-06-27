@@ -23,6 +23,7 @@ from llm_band.domain.audio_profile import (
     SectionProfile,
     StemProfile,
 )
+from llm_band.infrastructure.mir.bar_energy import per_bar_energy, per_stem_activity_by_bar
 from llm_band.infrastructure.mir.chord_features import apply_key_context, estimate_chords
 from llm_band.infrastructure.mir.demucs_separator import DemucsSeparator
 from llm_band.infrastructure.mir.harmonic_source import build_harmonic_source
@@ -50,6 +51,8 @@ class DeepHarmonicAnalyzer:
         chord_estimator: Callable = estimate_chords,
         structure_detector: Callable = detect_structure,
         section_detector: Callable | None = detect_sections_from_bar_signals,
+        energy_provider: Callable | None = per_bar_energy,
+        stem_activity_provider: Callable | None = per_stem_activity_by_bar,
         tuning_deviation_provider: Callable[[str], float | None] | None = estimate_tuning_deviation,
         duration_provider: Callable[[Path], float] | None = None,
     ) -> None:
@@ -61,6 +64,8 @@ class DeepHarmonicAnalyzer:
         self.chord_estimator = chord_estimator
         self.structure_detector = structure_detector
         self.section_detector = section_detector
+        self.energy_provider = energy_provider
+        self.stem_activity_provider = stem_activity_provider
         self.tuning_deviation_provider = tuning_deviation_provider
         self.duration_provider = duration_provider or _audio_duration
 
@@ -171,7 +176,17 @@ class DeepHarmonicAnalyzer:
         _emit(progress, "detecting_structure", "Detecting repeated progressions and A/B/C structure.")
         structure, progressions = self.structure_detector(chord_spans)
         if structure.confidence < 0.4 and self.section_detector is not None:
-            approximate_structure = self.section_detector(chord_spans)
+            energy_by_bar = _safe_bar_energy(
+                self.energy_provider, str(audio_path), grid.bar_times, duration
+            )
+            stem_activity_by_bar = _safe_stem_activity(
+                self.stem_activity_provider, stems, grid.bar_times, duration
+            )
+            approximate_structure = self.section_detector(
+                chord_spans,
+                energy_by_bar=energy_by_bar or None,
+                stem_activity_by_bar=stem_activity_by_bar or None,
+            )
             if (
                 approximate_structure.sections
                 and approximate_structure.confidence > structure.confidence
@@ -246,6 +261,35 @@ def _safe_tuning_deviation(
         return provider(path)
     except Exception:
         return None
+
+
+def _safe_bar_energy(
+    provider: Callable | None, audio_path: str, bar_times, duration: float
+) -> list[float]:
+    if provider is None or not bar_times:
+        return []
+    try:
+        return provider(audio_path, bar_times, duration)
+    except Exception:
+        return []
+
+
+def _safe_stem_activity(
+    provider: Callable | None, stems, bar_times, duration: float
+) -> list[dict[str, float]]:
+    if provider is None or not bar_times:
+        return []
+    stem_paths = {
+        stem.name: stem.path
+        for stem in stems
+        if stem.name in {"drums", "bass", "vocals", "other"}
+    }
+    if not stem_paths:
+        return []
+    try:
+        return provider(stem_paths, bar_times, duration)
+    except Exception:
+        return []
 
 
 def _legacy_chord_estimates(chord_spans) -> list[ChordEstimate]:
