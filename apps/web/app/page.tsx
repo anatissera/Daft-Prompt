@@ -4,7 +4,7 @@ import { useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
 import type { ChatMessage, FeedEvent } from "@/lib/chatTypes";
-import type { ComposeEvent, ComposeResponse, Header, ReferenceProfile } from "@/lib/types";
+import type { AnalysisEvent, ComposeEvent, ComposeResponse, Header, ReferenceProfile } from "@/lib/types";
 import { answerReferenceQuestion } from "@/lib/referenceProfileView.mjs";
 import {
   chooseChatAction,
@@ -72,14 +72,38 @@ export default function Home() {
         body: formData,
       });
       if (!res.ok) throw new Error(await readApiError(res));
+      if (!res.body) throw new Error("backend did not return an analysis stream");
 
-      const profile = (await res.json()) as ReferenceProfile;
+      let profile: ReferenceProfile | null = null;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() ?? "";
+        for (const chunk of chunks) {
+          const line = chunk.split("\n").find((entry) => entry.startsWith("data:"));
+          if (!line) continue;
+          const event = JSON.parse(line.slice(5).trim()) as AnalysisEvent;
+          if (event.type === "done") {
+            profile = event.profile;
+          } else if (event.type === "error") {
+            throw new Error(event.message);
+          } else {
+            setActiveWork(event.message);
+          }
+        }
+      }
+      if (!profile) throw new Error("analysis stream ended without a profile");
       setReferenceProfile(profile);
       appendMessage(createAnalysisMessage("assistant", analysisReadyMessage(profile), profile, nextMessageIndex()));
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
-      const message = err instanceof Error ? err.message : "unknown analysis error";
+      const message = normalizeAnalysisError(err);
       setError(message);
       appendMessage(createTextMessage("assistant", `I could not analyze that file: ${message}`, nextMessageIndex()));
     } finally {
@@ -199,11 +223,30 @@ async function readApiError(response: Response) {
   }
 }
 
+function normalizeAnalysisError(err: unknown) {
+  const message = err instanceof Error ? err.message : "unknown analysis error";
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("load failed") ||
+    normalized.includes("body timeout") ||
+    normalized.includes("terminated") ||
+    normalized.includes("networkerror")
+  ) {
+    return (
+      "analysis timed out while the backend was still working. "
+      + "Long songs can take several minutes during stem separation; try again after this update or use a shorter excerpt."
+    );
+  }
+  return message;
+}
+
 function analysisReadyMessage(profile: ReferenceProfile) {
   const audio = profile.audio;
   if (!audio) return "Analysis finished, but no audio profile was returned.";
 
-  const tempo = audio.tempo_bpm === null || audio.tempo_bpm === undefined ? "unknown tempo" : `likely ${Math.round(audio.tempo_bpm)} BPM`;
-  const key = audio.key ? `likely key ${audio.key}` : "unknown key";
-  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}, with probable chords and energy details below.`;
+  const tempoValue = audio.tempo?.primary_bpm ?? audio.tempo_bpm;
+  const tempo = tempoValue === null || tempoValue === undefined ? "unknown tempo" : `likely ${Math.round(tempoValue)} BPM`;
+  const keyValue = audio.harmony?.key?.primary?.key ?? audio.key;
+  const key = keyValue ? `likely key ${keyValue}` : "unknown key";
+  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}, with probable chords and A/B/C structure below.`;
 }

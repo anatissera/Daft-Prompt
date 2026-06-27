@@ -28,6 +28,7 @@ from llm_band.infrastructure.mir.librosa_analyzer import (
 SAMPLE_RATE = 22_050
 RELATIVE_MINOR_OFFSET = 9  # relative minor tonic sits 9 semitones above the major
 RELATIVE_AMBIGUITY_MARGIN = 0.04
+TONAL_AMBIGUITY_MARGIN = 0.08
 
 # (path, sample_rate) -> 12-element pitch-class summary
 ChromaProvider = Callable[[str, int], np.ndarray]
@@ -74,12 +75,14 @@ def key_profile_from_pitch_classes(
     )
 
     candidates = [
-        KeyCandidate(key=_label(tonic, mode), mode=mode, confidence=round(_clamp(score), 3))
+        KeyCandidate(
+            key=_label(tonic, mode),
+            mode=mode,
+            confidence=round(_candidate_confidence(score, best_score, confidence), 3),
+        )
         for score, tonic, mode in scored[: max(1, max_candidates)]
     ]
-    relative_ambiguity = _is_relative_pair(scored[0], scored[1]) and (
-        separation < RELATIVE_AMBIGUITY_MARGIN
-    )
+    relative_ambiguity = _has_tonal_ambiguity(scored)
     return KeyProfile(
         primary=candidates[0],
         candidates=candidates,
@@ -90,6 +93,12 @@ def key_profile_from_pitch_classes(
 
 def _label(tonic_index: int, mode: str) -> str:
     return f"{NOTE_NAMES[tonic_index]} {mode}"
+
+
+def _candidate_confidence(score: float, best_score: float, profile_confidence: float) -> float:
+    distance = max(0.0, best_score - score)
+    closeness = _clamp(1.0 - distance * 8.0)
+    return _clamp(profile_confidence * (0.65 + 0.35 * closeness))
 
 
 def _is_relative_pair(
@@ -104,6 +113,39 @@ def _is_relative_pair(
     return (minor[1] - major[1]) % 12 == RELATIVE_MINOR_OFFSET
 
 
+def _has_tonal_ambiguity(scored: list[tuple[float, int, str]]) -> bool:
+    if len(scored) < 2:
+        return False
+    best = scored[0]
+    close = [
+        candidate
+        for candidate in scored[1:6]
+        if best[0] - candidate[0] <= TONAL_AMBIGUITY_MARGIN
+    ]
+    if not close:
+        return False
+    return any(
+        _is_relative_pair(best, candidate)
+        or _is_parallel_pair(best, candidate)
+        or _is_same_tonic_competing_mode(best, candidate)
+        for candidate in close
+    ) or len(close) >= 2
+
+
+def _is_parallel_pair(
+    first: tuple[float, int, str], second: tuple[float, int, str]
+) -> bool:
+    _, tonic_a, mode_a = first
+    _, tonic_b, mode_b = second
+    return tonic_a == tonic_b and mode_a != mode_b
+
+
+def _is_same_tonic_competing_mode(
+    first: tuple[float, int, str], second: tuple[float, int, str]
+) -> bool:
+    return _is_parallel_pair(first, second)
+
+
 def _default_chroma_provider(path: str, sample_rate: int) -> np.ndarray:
     from llm_band.infrastructure.mir.librosa_analyzer import _prepare_librosa_import
 
@@ -111,8 +153,18 @@ def _default_chroma_provider(path: str, sample_rate: int) -> np.ndarray:
     import librosa
 
     samples, sr = librosa.load(path, sr=sample_rate, mono=True)
-    tuning = librosa.estimate_tuning(y=samples, sr=sr)
-    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, tuning=tuning)
+    chroma = librosa.feature.chroma_cqt(y=samples, sr=sr, tuning=0.0)
     if not chroma.size:
         return np.zeros(12)
     return np.mean(chroma, axis=1)
+
+
+def estimate_tuning_deviation(path: str, *, sample_rate: int = SAMPLE_RATE) -> float | None:
+    """Estimate detuning for notes only; labels still assume A=440."""
+    from llm_band.infrastructure.mir.librosa_analyzer import _prepare_librosa_import
+
+    _prepare_librosa_import()
+    import librosa
+
+    samples, sr = librosa.load(path, sr=sample_rate, mono=True)
+    return float(librosa.estimate_tuning(y=samples, sr=sr))
