@@ -80,17 +80,26 @@ html, body {
 
 body {
   overflow: hidden;
-  /* Twilight sky → ember floor (the real flames sit on top via .fire-stage) */
+  /* Twilight sky → blazing fire floor */
   background:
-    radial-gradient(140% 60% at 50% 110%, var(--fire-bright) 0%, var(--fire-mid) 18%, var(--fire-deep) 34%, transparent 50%) no-repeat,
-    radial-gradient(120% 38% at 50% 96%, var(--fire-ember) 0%, transparent 38%) no-repeat,
+    /* hot core glow at the very bottom */
+    radial-gradient(60% 28% at 50% 100%, #fff1a8 0%, #ffd24a 18%, transparent 60%) no-repeat,
+    /* main blazing radial that lifts up off the floor */
+    radial-gradient(160% 70% at 50% 108%, #ffae3a 0%, #ff7a1f 22%, #d83608 42%, #6a1206 60%, transparent 75%) no-repeat,
+    /* widening orange haze that meets the sky */
+    radial-gradient(180% 60% at 50% 105%, rgba(255, 100, 20, 0.55) 0%, transparent 75%) no-repeat,
+    /* vertical: blue twilight → red ember → orange → yellow */
     linear-gradient(
       180deg,
       var(--sky-deep) 0%,
-      var(--sky-mid) 35%,
-      var(--sky-glow) 55%,
-      var(--fire-deep) 88%,
-      #050203 100%
+      var(--sky-mid) 28%,
+      var(--sky-glow) 48%,
+      #4a1a3a 62%,           /* purple-mauve transition */
+      #7a1808 72%,           /* deep red */
+      #c83612 82%,           /* burning red-orange */
+      #ff7a1f 90%,           /* bright orange */
+      #ffb347 96%,           /* fire amber */
+      #ffe17a 100%           /* yellow embers */
     ) no-repeat;
   background-attachment: fixed;
   position: relative;
