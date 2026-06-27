@@ -66,17 +66,28 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const upstream = await fetch(`${API_BASE_URL}/chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    signal: req.signal,
-    body: JSON.stringify({ message, reference_id: referenceId }),
-  });
-  const text = await upstream.text();
-  return new Response(text, {
-    status: upstream.status,
-    headers: { "content-type": upstream.headers.get("content-type") ?? "application/json" },
-  });
+  try {
+    const upstream = await fetch(`${API_BASE_URL}/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: req.signal,
+      body: JSON.stringify({ message, reference_id: referenceId }),
+    });
+    const text = await upstream.text();
+    return new Response(text, {
+      status: upstream.status,
+      headers: { "content-type": upstream.headers.get("content-type") ?? "application/json" },
+    });
+  } catch (err) {
+    if (req.signal.aborted) {
+      return Response.json({ intent: "off_topic", reply: "(cancelled)" }, { status: 499 });
+    }
+    const detail = err instanceof Error ? err.message : "unknown upstream error";
+    return Response.json(
+      { detail: `Backend unreachable: ${detail}` },
+      { status: 502 },
+    );
+  }
 }
 
 interface Verdict { music: boolean; reply?: string }
