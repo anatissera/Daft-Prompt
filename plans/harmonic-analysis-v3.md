@@ -131,11 +131,13 @@ found the work is architecturally sound, honest in its copy, and fully tested
 - Modify `apps/api/llm_band/infrastructure/mir/chord_features.py`
 - Update matching tests
 
-- [ ] Use estimated tuning for the chroma that is *scored* (key + chords); keep
-  A=440 for the printed labels.
-- [ ] Keep the existing `possible_detuning` note when deviation is significant.
-- [ ] Test: a deliberately detuned synthetic source still scores the correct key
-  while the label stays A=440.
+- [x] Use estimated tuning for the chroma that is *scored* (key + chords); keep
+  A=440 for the printed labels. (Both default chroma providers now pass
+  `librosa.estimate_tuning(...)` to `chroma_cqt`; labels still come from the
+  pitch-class index, which tuning does not change.)
+- [x] Keep the existing `possible_detuning` note when deviation is significant.
+- [x] Test: a deliberately detuned synthetic source still scores the correct key
+  while the label stays A=440. (Plus chord provider applies estimated tuning.)
 
 ## Phase 6: Cleanups
 

@@ -176,16 +176,17 @@ def test_estimate_bass_roots_aligns_to_bar_spans():
     assert roots == [A, G]
 
 
-def test_default_chroma_time_provider_labels_against_a440_without_relabeling_for_tuning(monkeypatch):
+def test_default_chroma_time_provider_tunes_chroma_for_scoring(monkeypatch):
     calls = {}
+
+    def fake_chroma_cqt(y, sr, hop_length, tuning):
+        calls["tuning"] = tuning
+        return np.ones((12, 3))
 
     fake_librosa = SimpleNamespace(
         load=lambda path, sr, mono: (np.ones(1024), sr),
         estimate_tuning=lambda y, sr: -0.28,
-        feature=SimpleNamespace(
-            chroma_cqt=lambda y, sr, hop_length, tuning: calls.setdefault("tuning", tuning)
-            or np.ones((12, 3))
-        ),
+        feature=SimpleNamespace(chroma_cqt=fake_chroma_cqt),
         frames_to_time=lambda frames, sr, hop_length: np.asarray(frames, dtype=float),
     )
     monkeypatch.setitem(sys.modules, "librosa", fake_librosa)
@@ -196,6 +197,7 @@ def test_default_chroma_time_provider_labels_against_a440_without_relabeling_for
 
     chroma, frame_times = _default_chroma_time_provider("/fake/harmonic.wav", 22_050)
 
-    assert calls["tuning"] == 0.0
+    # The estimated tuning is applied to the CQT bins for scoring (not forced to 0).
+    assert calls["tuning"] == -0.28
     assert chroma.shape == (12, 3)
     assert frame_times.tolist() == [0.0, 1.0, 2.0]
