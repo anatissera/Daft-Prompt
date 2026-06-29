@@ -4,11 +4,17 @@ import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import type { CompositionChatMessage } from "@/lib/chatTypes";
 import type { Part, RosterItem, SongState } from "@/lib/types";
+import { getAudibleTrackIds } from "@/lib/trackMixerLogic.mjs";
+import { triggerMidiDownload } from "@/lib/midiExport";
 import NegotiationFeed from "@/components/NegotiationFeed";
 import RosterView from "@/components/RosterView";
 
 const ScoreViewer = dynamic(() => import("@/components/ScoreViewer"), { ssr: false });
 const TrackMixer = dynamic(() => import("@/components/TrackMixer"), { ssr: false });
+
+function hasMixState(muted: Set<string>, solo: Set<string>): boolean {
+  return muted.size > 0 || solo.size > 0;
+}
 
 function toggleSetItem(prev: Set<string>, id: string): Set<string> {
   const next = new Set(prev);
@@ -101,9 +107,17 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             onMutedChange={setMutedTrackIds}
             onSoloChange={setSoloTrackIds}
           />
-          <a className="artifact-link" href={result.artifacts.midi}>
-            ↓ Download full MIDI
-          </a>
+          <button
+            type="button"
+            className="artifact-link"
+            onClick={() => {
+              const partIds = Object.keys(song.parts);
+              const audible = getAudibleTrackIds(partIds, mutedTrackIds, soloTrackIds);
+              triggerMidiDownload(song, audible);
+            }}
+          >
+            ↓ Download MIDI ({hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full"})
+          </button>
         </>
       ) : (
         <p className="empty-note">

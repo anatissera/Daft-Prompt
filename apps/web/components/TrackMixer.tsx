@@ -15,9 +15,9 @@ import {
   PERCUSSION_MAX,
   PERCUSSION_MIN,
   folderForProgram,
-  inferProgramFromName,
-  isDrumByName,
   midiToName,
+  resolveIsDrum,
+  resolveProgram,
 } from "@/lib/gmInstruments";
 
 interface TrackRow {
@@ -267,20 +267,6 @@ export default function TrackMixer({
       </ul>
     </div>
   );
-}
-
-// Pick a GM program for an instrument, trusting the director's midi_program
-// only when it's non-zero (0 = piano default, which the LLM hands back even
-// for "flute" / "viola"). Otherwise infer from the human name.
-function resolveProgram(r: RosterItem): number {
-  if (r.midi_program && r.midi_program > 0) return r.midi_program;
-  const inferred = inferProgramFromName(r.instrument || r.role || r.id);
-  return inferred ?? 0;
-}
-
-function resolveIsDrum(r: RosterItem): boolean {
-  if (r.is_drum) return true;
-  return isDrumByName(r.instrument || r.role || r.id);
 }
 
 function samplerKey(r: RosterItem): string {

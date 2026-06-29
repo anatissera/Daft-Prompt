@@ -133,6 +133,27 @@ export function inferProgramFromName(name: string): number | null {
   return null;
 }
 
+interface RosterLike {
+  id?: string;
+  instrument?: string;
+  role?: string;
+  is_drum?: boolean;
+  midi_program?: number;
+}
+
+/** Trust midi_program when non-zero; otherwise infer from instrument/role name.
+ *  Same logic shared by playback (TrackMixer) and MIDI export. */
+export function resolveProgram(r: RosterLike): number {
+  if (r.midi_program && r.midi_program > 0) return r.midi_program;
+  const inferred = inferProgramFromName(r.instrument || r.role || r.id || "");
+  return inferred ?? 0;
+}
+
+export function resolveIsDrum(r: RosterLike): boolean {
+  if (r.is_drum) return true;
+  return isDrumByName(r.instrument || r.role || r.id || "");
+}
+
 const PERCUSSION_RE = /\b(drum|drums|kit|percussion|perc|shaker|tambourine|woodblock|cowbell|congas?|bongo|cajon|claves|maracas|timbales|hi-?hat|hat|snare|kick|cymbal|tom)\b/i;
 
 export function isDrumByName(name: string): boolean {
