@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from llm_band.domain.audio_profile import (
+from music_assistant.domain.reference_profile import (
     ChordCandidate,
     ChordSpan,
     KeyCandidate,
@@ -19,11 +19,11 @@ from llm_band.domain.audio_profile import (
     StructureProfile,
     TempoProfile,
 )
-from llm_band.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
-from llm_band.infrastructure.mir.harmonic_source import HarmonicSource
-from llm_band.infrastructure.mir.multimodal_features import MultimodalBarFeatures
-from llm_band.infrastructure.mir.tempo_grid import TempoGrid
-from llm_band.ports.stem_separator import SeparatedStem
+from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
+from music_assistant.infrastructure.mir.harmonic_source import HarmonicSource
+from music_assistant.infrastructure.mir.multimodal_features import MultimodalBarFeatures
+from music_assistant.infrastructure.mir.tempo_grid import TempoGrid
+from music_assistant.ports.stem_separator import SeparatedStem
 
 
 def _source(tmp_path: Path) -> ReferenceSource:
@@ -141,7 +141,7 @@ class _FakeSeparator:
 def test_orchestrator_assembles_harmony_structure_and_compatibility_fields(tmp_path):
     profile = _analyzer(tmp_path).analyze(_source(tmp_path))
 
-    audio = profile.audio
+    audio = profile.music
     assert audio is not None
     # New harmonic fields.
     assert audio.harmony is not None
@@ -172,21 +172,21 @@ def test_mix_fallback_adds_separation_note(tmp_path):
 
     profile = _analyzer(tmp_path, stems=mix_only).analyze(_source(tmp_path))
 
-    codes = {note.code for note in profile.audio.analysis_notes}
+    codes = {note.code for note in profile.music.analysis_notes}
     assert "separation_unavailable" in codes
 
 
 def test_weak_bar_grid_adds_note(tmp_path):
     profile = _analyzer(tmp_path, bar_grid_confidence=0.1).analyze(_source(tmp_path))
 
-    codes = {note.code for note in profile.audio.analysis_notes}
+    codes = {note.code for note in profile.music.analysis_notes}
     assert "weak_bar_grid" in codes
 
 
 def test_ambiguous_key_adds_note(tmp_path):
     profile = _analyzer(tmp_path).analyze(_source(tmp_path))
 
-    notes = profile.audio.analysis_notes
+    notes = profile.music.analysis_notes
     assert any(note.code == "ambiguous_key" for note in notes)
     assert any("ambiguous" in note.message.lower() for note in notes)
 
@@ -194,7 +194,7 @@ def test_ambiguous_key_adds_note(tmp_path):
 def test_unclear_structure_adds_note(tmp_path):
     profile = _analyzer(tmp_path, structure_confidence=0.25).analyze(_source(tmp_path))
 
-    notes = profile.audio.analysis_notes
+    notes = profile.music.analysis_notes
     assert any(note.code == "unclear_structure" for note in notes)
     assert any("structure is unclear" in note.message.lower() for note in notes)
 
@@ -202,7 +202,7 @@ def test_unclear_structure_adds_note(tmp_path):
 def test_possible_detuning_adds_a440_note_without_changing_labels(tmp_path):
     profile = _analyzer(tmp_path, tuning_deviation=0.27).analyze(_source(tmp_path))
 
-    audio = profile.audio
+    audio = profile.music
     assert audio.key == "A minor"
     assert any(note.code == "possible_detuning" for note in audio.analysis_notes)
     assert any("Labels assume A=440" in note.message for note in audio.analysis_notes)
@@ -255,8 +255,8 @@ def test_orchestrator_uses_approximate_section_boundaries_when_harmonic_structur
         section_structure=approximate_structure,
     ).analyze(_source(tmp_path))
 
-    assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
-    assert any(note.code == "approximate_sections" for note in profile.audio.analysis_notes)
+    assert [section.label for section in profile.music.structure.sections] == ["A", "B"]
+    assert any(note.code == "approximate_sections" for note in profile.music.analysis_notes)
 
 
 def test_orchestrator_flags_low_usefulness_when_all_evidence_is_weak(tmp_path):
@@ -268,14 +268,14 @@ def test_orchestrator_flags_low_usefulness_when_all_evidence_is_weak(tmp_path):
         chord_confidence=0.3,
     ).analyze(_source(tmp_path))
 
-    assert any(note.code == "low_usefulness" for note in profile.audio.analysis_notes)
+    assert any(note.code == "low_usefulness" for note in profile.music.analysis_notes)
     assert "rough sketch" in profile.summary
 
 
 def test_orchestrator_does_not_flag_low_usefulness_for_mixed_evidence(tmp_path):
     profile = _analyzer(tmp_path).analyze(_source(tmp_path))
 
-    assert not any(note.code == "low_usefulness" for note in profile.audio.analysis_notes)
+    assert not any(note.code == "low_usefulness" for note in profile.music.analysis_notes)
     assert "rough sketch" not in profile.summary
 
 
@@ -295,7 +295,7 @@ def test_orchestrator_applies_confident_bar_phase_offset(tmp_path):
 
     # grid.beat_times = [0.0, 0.5, 1.0, 1.5]; offset 1 -> beat_times[1::4] == [0.5].
     assert captured["bar_times"] == [0.5]
-    assert any(note.code == "bar_phase_corrected" for note in profile.audio.analysis_notes)
+    assert any(note.code == "bar_phase_corrected" for note in profile.music.analysis_notes)
 
 
 def test_orchestrator_lowers_bar_grid_confidence_when_phase_is_ambiguous(tmp_path):
@@ -305,7 +305,7 @@ def test_orchestrator_lowers_bar_grid_confidence_when_phase_is_ambiguous(tmp_pat
     profile = analyzer.analyze(_source(tmp_path))
 
     # 0.8 * 0.85 penalty = 0.68; the original confident grid was reduced.
-    assert profile.audio.tempo.bar_grid_confidence == 0.68
+    assert profile.music.tempo.bar_grid_confidence == 0.68
 
 
 def test_orchestrator_feeds_energy_and_stem_signals_into_section_detector(tmp_path):
@@ -337,7 +337,7 @@ def test_orchestrator_feeds_energy_and_stem_signals_into_section_detector(tmp_pa
 
     assert captured["energy_by_bar"] == [0.2, 0.2, 0.9, 0.9]
     assert captured["stem_activity_by_bar"] and "drums" in captured["stem_activity_by_bar"][0]
-    assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
+    assert [section.label for section in profile.music.structure.sections] == ["A", "B"]
 
 
 def test_orchestrator_prefers_multimodal_sections_when_harmonic_structure_is_weak(tmp_path):
@@ -373,7 +373,7 @@ def test_orchestrator_prefers_multimodal_sections_when_harmonic_structure_is_wea
 
     assert set(captured["stem_paths"]) == {"drums", "bass", "vocals", "other"}
     assert captured["bar_times"] == [0.0, 2.0, 4.0, 6.0]
-    assert profile.audio.structure == expected
+    assert profile.music.structure == expected
 
 
 def test_orchestrator_writes_section_audit_json(tmp_path):
@@ -406,7 +406,7 @@ def test_orchestrator_writes_section_audit_json(tmp_path):
     assert any(candidate["decision"] == "rejected" for candidate in audit["boundary_candidates"])
     assert all("reason" in candidate for candidate in audit["boundary_candidates"])
     assert audit["final_sections"][0]["source"] == "multimodal"
-    assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
+    assert [section.label for section in profile.music.structure.sections] == ["A", "B"]
 
 
 def test_orchestrator_succeeds_when_section_audit_write_fails(tmp_path):
@@ -415,8 +415,8 @@ def test_orchestrator_succeeds_when_section_audit_write_fails(tmp_path):
 
     profile = analyzer.analyze(_source(tmp_path))
 
-    assert profile.audio is not None
-    assert any(note.code == "section_audit_unavailable" for note in profile.audio.analysis_notes)
+    assert profile.music is not None
+    assert any(note.code == "section_audit_unavailable" for note in profile.music.analysis_notes)
 
 
 def test_orchestrator_emits_started_and_completed_stage_timings(tmp_path):

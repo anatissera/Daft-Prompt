@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-import llm_band.interfaces.api as api
-from llm_band.agents.director import (
+import music_assistant.interfaces.api as api
+from music_assistant.agents.director import (
     ArrangementInstrument,
     ArrangementSection,
     DirectorOutput,

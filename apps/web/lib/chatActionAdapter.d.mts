@@ -2,17 +2,16 @@ import type { ChatMessage, FeedEvent } from "./chatTypes";
 import type { ComposeResponse, Header, ReferenceProfile } from "./types";
 
 export type ChatAction =
-  | { type: "analyze"; messageText: string }
+  | { type: "research"; messageText: string }
   | { type: "answer_reference"; messageText: string }
   | { type: "compose"; messageText: string };
 
 export function chooseChatAction(input: {
   prompt: string;
-  hasSelectedFile: boolean;
   hasReferenceProfile: boolean;
 }): ChatAction;
 
-export function normalizeMessageText(prompt: string, hasSelectedFile?: boolean): string;
+export function normalizeMessageText(prompt: string): string;
 
 export function createTextMessage(role: ChatMessage["role"], text: string, index: number): ChatMessage;
 

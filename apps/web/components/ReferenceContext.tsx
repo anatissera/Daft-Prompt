@@ -9,20 +9,20 @@ import {
 interface ReferenceContextProps {
   profile: ReferenceProfile | null;
   analyzing: boolean;
-  selectedFileName: string | null;
+  selectedQuery: string | null;
 }
 
-export default function ReferenceContext({ profile, analyzing, selectedFileName }: ReferenceContextProps) {
+export default function ReferenceContext({ profile, analyzing, selectedQuery }: ReferenceContextProps) {
   if (analyzing) {
     return (
       <aside className="context-panel" aria-live="polite">
-        <p className="section-title">Reference analysis</p>
+        <p className="section-title">Reference research</p>
         <div className="analysis-status">
           <span className="spinner" aria-hidden="true" />
           <div>
-            <p className="context-heading">Analyzing local audio...</p>
+            <p className="context-heading">Researching song sources...</p>
             <p className="context-muted">
-              {selectedFileName ? `${selectedFileName} accepted. Extracting tempo, key, energy, and probable chords.` : "Extracting audio profile."}
+              {selectedQuery ? `Searching sources for ${selectedQuery}.` : "Extracting public musical evidence."}
             </p>
           </div>
         </div>
@@ -33,24 +33,24 @@ export default function ReferenceContext({ profile, analyzing, selectedFileName 
   if (!profile) {
     return (
       <aside className="context-panel context-panel-empty">
-        <p className="section-title">Reference analysis</p>
+        <p className="section-title">Reference research</p>
         <p className="context-heading">No reference yet</p>
-        <p className="context-muted">Attach a local audio file and ask for analysis to see the musical profile here.</p>
+        <p className="context-muted">Ask about a song by name to see its musical profile here.</p>
       </aside>
     );
   }
 
-  const audio = profile.audio;
+  const music = profile.music;
   const summaryRows = describeReferenceSummary(profile);
   const chordEstimates = getTopChordEstimates(profile, 5);
 
   return (
     <aside className="context-panel">
-      <p className="section-title">Reference analysis</p>
+      <p className="section-title">Reference research</p>
       <div className="reference-header">
         <div>
           <h2 className="context-heading">{profile.source.label}</h2>
-          <p className="context-muted">{profile.summary || "Local audio profile ready."}</p>
+          <p className="context-muted">{profile.summary || "Research profile ready."}</p>
         </div>
         <span className="reference-kind">{profile.source.kind}</span>
       </div>
@@ -67,11 +67,11 @@ export default function ReferenceContext({ profile, analyzing, selectedFileName 
         })}
       </dl>
 
-      {audio && audio.sections.length > 0 ? (
+      {music && music.sections.length > 0 ? (
         <section className="context-section">
           <h3 className="context-subtitle">Energy and sections</h3>
           <ul className="section-list">
-            {audio.sections.slice(0, 6).map((section) => (
+            {music.sections.slice(0, 6).map((section) => (
               <li key={`${section.name}-${section.start_seconds}`} className="section-row">
                 <div className="section-row-main">
                   <span className="section-row-name">{section.name}</span>

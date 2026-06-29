@@ -1,4 +1,4 @@
-// TypeScript mirror of the backend `SongState` (apps/api/llm_band/domain/song_state.py).
+// TypeScript mirror of the backend `SongState` (apps/api/music_assistant/domain/song_state.py).
 // Keep in sync; later phases may generate this from the JSON schema in CI.
 
 export interface Section {
@@ -221,7 +221,7 @@ export interface StemProfile {
   confidence: number;
 }
 
-export interface AudioProfile {
+export interface MusicProfile {
   duration_seconds: number;
   tempo_bpm: number | null;
   tempo_confidence: number;
@@ -240,11 +240,21 @@ export interface AudioProfile {
   analysis_notes: AnalysisNote[];
 }
 
+export interface ResearchEvidence {
+  url: string;
+  site: string;
+  claim_type: string;
+  value: string;
+  confidence: number;
+  snippet: string;
+}
+
 export interface ReferenceProfile {
   reference_id: string;
   source: ReferenceSource;
-  audio: AudioProfile | null;
+  music: MusicProfile | null;
   summary: string;
+  research_evidence: ResearchEvidence[];
 }
 
 export interface ExplanationAnswer {
@@ -255,14 +265,11 @@ export interface ExplanationAnswer {
 
 export type AnalysisProgressType =
   | "accepted"
-  | "separating_stems"
-  | "building_harmonic_source"
-  | "estimating_tempo_grid"
-  | "estimating_key"
-  | "estimating_chords"
-  | "extracting_stem_features"
-  | "detecting_structure"
-  | "analysis_keepalive";
+  | "searching_sources"
+  | "fetching_pages"
+  | "extracting_claims"
+  | "fusing_evidence"
+  | "research_keepalive";
 
 export interface AnalysisProgressEvent {
   type: AnalysisProgressType;

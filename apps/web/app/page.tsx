@@ -19,14 +19,12 @@ import {
 } from "@/lib/chatActionAdapter.mjs";
 
 export default function Home() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messageIndexRef = useRef(1);
   const [prompt, setPrompt] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     createTextMessage(
       "assistant",
-      "Tell me what you want to make or understand. You can attach a local song for analysis, ask about a current reference, or compose from a plain-language prompt.",
+      "Tell me what song you want to understand, or ask me to compose with traits from songs you name.",
       0,
     ),
   ]);
@@ -43,18 +41,15 @@ export default function Home() {
 
     const action = chooseChatAction({
       prompt,
-      hasSelectedFile: selectedFile !== null,
       hasReferenceProfile: referenceProfile !== null,
     });
-    const attachedText = selectedFile ? `${action.messageText} Attached: ${selectedFile.name}` : action.messageText;
 
-    appendMessage(createTextMessage("user", attachedText, nextMessageIndex()));
+    appendMessage(createTextMessage("user", action.messageText, nextMessageIndex()));
     setPrompt("");
     setError(null);
 
-    if (action.type === "analyze") {
-      if (!selectedFile) return;
-      await analyzeReference(selectedFile);
+    if (action.type === "research") {
+      await researchReference(action.messageText);
       return;
     }
 
@@ -67,19 +62,18 @@ export default function Home() {
     await compose(action.messageText);
   }
 
-  async function analyzeReference(file: File) {
-    setActiveWork("File accepted. Extracting tempo, key, energy, sections, and probable chords...");
+  async function researchReference(query: string) {
+    setActiveWork("Searching public music sources...");
     setAnalysisProgress(createAnalysisProgress());
     setReferenceProfile(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/references/analyze", {
+      const res = await fetch("/api/references/research", {
         method: "POST",
-        body: formData,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query }),
       });
       if (!res.ok) throw new Error(await readApiError(res));
-      if (!res.body) throw new Error("backend did not return an analysis stream");
+      if (!res.body) throw new Error("backend did not return a research stream");
 
       let profile: ReferenceProfile | null = null;
       const reader = res.body.getReader();
@@ -107,15 +101,13 @@ export default function Home() {
           }
         }
       }
-      if (!profile) throw new Error("analysis stream ended without a profile");
+      if (!profile) throw new Error("research stream ended without a profile");
       setReferenceProfile(profile);
       appendMessage(createAnalysisMessage("assistant", getAnalysisReadyMessage(profile), profile, nextMessageIndex()));
-      setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       const message = normalizeAnalysisError(err);
       setError(message);
-      appendMessage(createTextMessage("assistant", `I could not analyze that file: ${message}`, nextMessageIndex()));
+      appendMessage(createTextMessage("assistant", `I could not research that song: ${message}`, nextMessageIndex()));
     } finally {
       setActiveWork(null);
       setAnalysisProgress(null);
@@ -213,7 +205,7 @@ export default function Home() {
             <span className="logo-shimmer" aria-hidden="true" />
           </span>
         </h1>
-        <p className="hero-subtitle">Upload a track for harmonic analysis, ask musical questions, or compose a new sketch — all from the same chat.</p>
+        <p className="hero-subtitle">Research songs, ask musical questions, or compose a new sketch from reference traits — all from the same chat.</p>
       </section>
 
       <section className="chat-panel" aria-label="Conversation">
@@ -230,10 +222,7 @@ export default function Home() {
         <ChatComposer
           busy={busy}
           prompt={prompt}
-          selectedFileName={selectedFile?.name ?? null}
-          fileInputRef={fileInputRef}
           onPromptChange={setPrompt}
-          onFileChange={setSelectedFile}
           onSubmit={submit}
         />
       </section>
@@ -261,7 +250,7 @@ function normalizeAnalysisError(err: unknown) {
   ) {
     return (
       "analysis timed out while the backend was still working. "
-      + "Long songs can take several minutes during stem separation; try again after this update or use a shorter excerpt."
+      + "Some sources can block or stall research; try again with a more specific artist and title."
     );
   }
   return message;

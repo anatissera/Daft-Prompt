@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from llm_band.agents.instrument import (
+from music_assistant.agents.instrument import (
     MAX_REPAIRS,
     InstrumentOutput,
     InstrumentTurnOutput,
@@ -13,8 +13,8 @@ from llm_band.agents.instrument import (
     compose_part,
     run_instrument_turn,
 )
-from llm_band.domain.song_state import Header, Note, RosterItem
-from llm_band.infrastructure.llm import LLMQuotaExceeded
+from music_assistant.domain.song_state import Header, Note, RosterItem
+from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
 
 class _FakeStructured:

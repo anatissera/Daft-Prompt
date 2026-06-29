@@ -7,11 +7,11 @@ from __future__ import annotations
 import pytest
 from langgraph.errors import GraphRecursionError
 
-from llm_band.agents.arbiter import ArbiterOutput, ArbiterResolution
-from llm_band.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
-from llm_band.graph import _build_negotiation_graph, iter_negotiation_events, run_negotiation
-from llm_band.domain.song_state import Header, Note, RosterItem, SongState
-from llm_band.infrastructure.llm import LLMQuotaExceeded
+from music_assistant.agents.arbiter import ArbiterOutput, ArbiterResolution
+from music_assistant.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
+from music_assistant.graph import _build_negotiation_graph, iter_negotiation_events, run_negotiation
+from music_assistant.domain.song_state import Header, Note, RosterItem, SongState
+from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
 HEADER = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
 BASS = RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove")

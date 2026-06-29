@@ -28,7 +28,7 @@ const profile = {
     permission_error: null,
   },
   summary: "Analyzed about 241.2s of local audio.",
-  audio: {
+  music: {
     duration_seconds: 241.2,
     tempo_bpm: 113.6,
     tempo_confidence: 0.82,
@@ -64,8 +64,8 @@ const profile = {
 
 const harmonicProfile = {
   ...profile,
-  audio: {
-    ...profile.audio,
+  music: {
+    ...profile.music,
     tempo: {
       primary_bpm: 113.6,
       confidence: 0.82,
@@ -242,8 +242,8 @@ test("answerReferenceQuestion answers tempo and key questions with confidence", 
 test("answerReferenceQuestion answers section energy questions with evidence", () => {
   const sectionProfile = {
     ...profile,
-    audio: {
-      ...profile.audio,
+    music: {
+      ...profile.music,
       sections: [
         {
           name: "verse",
@@ -296,8 +296,8 @@ test("describeReferenceSummary keeps tempo and key probabilistic", () => {
 test("describeReferenceSummary includes double-time tempo alternative", () => {
   const tempoProfile = {
     ...profile,
-    audio: {
-      ...profile.audio,
+    music: {
+      ...profile.music,
       tempo: {
         primary_bpm: 86,
         confidence: 0.88,
@@ -319,10 +319,10 @@ test("describeReferenceSummary includes double-time tempo alternative", () => {
 test("describeReferenceSummary includes close key alternatives for ambiguous key", () => {
   const ambiguousProfile = {
     ...harmonicProfile,
-    audio: {
-      ...harmonicProfile.audio,
+    music: {
+      ...harmonicProfile.music,
       harmony: {
-        ...harmonicProfile.audio.harmony,
+        ...harmonicProfile.music.harmony,
         key: {
           primary: { key: "Ab major", mode: "major", confidence: 0.44 },
           candidates: [
@@ -366,10 +366,10 @@ test("harmony helpers label tonal candidates separately from chord progression",
 test("analysis ready message avoids likely key copy for ambiguous key", () => {
   const ambiguousProfile = {
     ...harmonicProfile,
-    audio: {
-      ...harmonicProfile.audio,
+    music: {
+      ...harmonicProfile.music,
       harmony: {
-        ...harmonicProfile.audio.harmony,
+        ...harmonicProfile.music.harmony,
         key: {
           primary: { key: "Ab major", mode: "major", confidence: 0.44 },
           candidates: [
@@ -393,10 +393,10 @@ test("analysis ready message avoids likely key copy for ambiguous key", () => {
 test("weak progression and low-confidence structure use candidate copy", () => {
   const weakProfile = {
     ...harmonicProfile,
-    audio: {
-      ...harmonicProfile.audio,
+    music: {
+      ...harmonicProfile.music,
       harmony: {
-        ...harmonicProfile.audio.harmony,
+        ...harmonicProfile.music.harmony,
         progressions: [
           {
             start_bar: 1,
@@ -408,9 +408,9 @@ test("weak progression and low-confidence structure use candidate copy", () => {
         ],
       },
       structure: {
-        ...harmonicProfile.audio.structure,
+        ...harmonicProfile.music.structure,
         confidence: 0.25,
-        sections: harmonicProfile.audio.structure.sections.map((section) => ({
+        sections: harmonicProfile.music.structure.sections.map((section) => ({
           ...section,
           confidence: 0.25,
         })),
@@ -438,8 +438,8 @@ test("weak progression and low-confidence structure use candidate copy", () => {
 test("legacy energy is hidden when all sections have unknown zero energy", () => {
   const energyProfile = {
     ...profile,
-    audio: {
-      ...profile.audio,
+    music: {
+      ...profile.music,
       sections: [
         {
           name: "A",
@@ -478,8 +478,8 @@ test("analysis notes stay compact for display", () => {
 test("low usefulness summary leads with the limitation", () => {
   const weakProfile = {
     ...harmonicProfile,
-    audio: {
-      ...harmonicProfile.audio,
+    music: {
+      ...harmonicProfile.music,
       analysis_notes: [
         { code: "low_usefulness", message: "Key, chord, and structure evidence are all weak.", severity: "warning" },
       ],

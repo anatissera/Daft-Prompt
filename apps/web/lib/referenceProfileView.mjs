@@ -14,16 +14,23 @@ export function formatConfidence(label, value) {
   return `${label} · ${formatPercent(value)}`;
 }
 
+function getMusic(profile) {
+  return profile.music ?? profile.audio ?? null;
+}
+
 export function isLowUsefulness(profile) {
-  const notes = profile.audio?.analysis_notes ?? [];
+  const notes = getMusic(profile)?.analysis_notes ?? [];
   return notes.some((note) => note.code === "low_usefulness");
 }
 
 export function describeReferenceSummary(profile) {
-  const audio = profile.audio;
-  if (!audio) return ["No audio profile available yet."];
+  const audio = getMusic(profile);
+  if (!audio) return ["No research profile available yet."];
 
-  const rows = [`Duration ${formatDuration(audio.duration_seconds)}`];
+  const rows = [];
+  if (audio.duration_seconds > 0) {
+    rows.push(`Duration ${formatDuration(audio.duration_seconds)}`);
+  }
   if (isLowUsefulness(profile)) {
     rows.push("Chord and structure evidence is weak here; treat the read below as a rough sketch.");
   }
@@ -76,7 +83,7 @@ function formatTempoRelation(relation) {
 }
 
 export function getTopChordEstimates(profile, limit = 4) {
-  const audio = profile.audio;
+  const audio = getMusic(profile);
   if (!audio) return [];
   const harmonicSpans = audio.harmony?.chord_spans ?? [];
   if (harmonicSpans.length > 0) {
@@ -97,7 +104,7 @@ export function getTopChordEstimates(profile, limit = 4) {
 }
 
 export function getKeyCandidateSummary(profile, limit = 4) {
-  const keyProfile = profile.audio?.harmony?.key;
+  const keyProfile = getMusic(profile)?.harmony?.key;
   const candidates = keyProfile?.candidates ?? [];
   const globalConfidence = keyProfile?.confidence;
   return candidates.slice(0, limit).map((candidate) => ({
@@ -112,7 +119,7 @@ export function getKeyCandidateSummary(profile, limit = 4) {
 }
 
 export function getMainProgression(profile) {
-  const progressions = profile.audio?.harmony?.progressions ?? [];
+  const progressions = getMusic(profile)?.harmony?.progressions ?? [];
   const main = progressions.find((progression) => progression.chords.length > 0);
   if (!main) return null;
   const progression = main.chords.join(" - ");
@@ -126,8 +133,8 @@ export function getMainProgression(profile) {
 }
 
 export function getAnalysisReadyMessage(profile) {
-  const audio = profile.audio;
-  if (!audio) return "Analysis finished, but no audio profile was returned.";
+  const audio = getMusic(profile);
+  if (!audio) return "Research finished, but no music profile was returned.";
 
   const tempoValue = audio.tempo?.primary_bpm ?? audio.tempo_bpm;
   const tempo = tempoValue === null || tempoValue === undefined ? "unknown tempo" : `likely ${Math.round(tempoValue)} BPM`;
@@ -142,11 +149,11 @@ export function getAnalysisReadyMessage(profile) {
       ? `ambiguous tonal center around ${keyValue}`
       : `likely key ${keyValue}`
     : "unknown key";
-  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}, with probable chords and A/B/C structure below.`;
+  return `Research ready for ${profile.source.label}: ${tempo}, ${key}, with cited musical evidence below.`;
 }
 
 export function getStructureTimeline(profile) {
-  const sections = profile.audio?.structure?.sections ?? [];
+  const sections = getMusic(profile)?.structure?.sections ?? [];
   return sections.map((section) => ({
     label: section.label,
     bars: `${section.start_bar}-${section.end_bar}`,
@@ -157,14 +164,14 @@ export function getStructureTimeline(profile) {
 }
 
 export function getAnalysisNotes(profile) {
-  return (profile.audio?.analysis_notes ?? []).map((note) => ({
+  return (getMusic(profile)?.analysis_notes ?? []).map((note) => ({
     label: note.severity,
     message: note.message,
   }));
 }
 
 export function getLegacyEnergySections(profile) {
-  const sections = profile.audio?.sections ?? [];
+  const sections = getMusic(profile)?.sections ?? [];
   const usefulSections = sections.filter((section) => {
     const hasEnergy = section.energy !== null && section.energy !== undefined;
     return hasEnergy && section.energy_confidence > 0;
@@ -201,8 +208,8 @@ export function isReferenceQuestion(prompt) {
 
 export function answerReferenceQuestion(prompt, profile) {
   const normalized = prompt.toLowerCase();
-  const audio = profile.audio;
-  if (!audio) return "I do not have an audio profile for this reference yet.";
+  const audio = getMusic(profile);
+  if (!audio) return "I do not have a music profile for this reference yet.";
 
   // "chorus"/"verse" are structural terms, handled by the structure branch below.
   if (/\b(chord|chords|harmony|harmonic)\b/.test(normalized)) {

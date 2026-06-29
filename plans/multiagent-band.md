@@ -23,7 +23,7 @@ Durable decisions that apply across all phases:
 - **Monorepo**: `apps/api` (Python: LangGraph + FastAPI + music21 + pretty_midi) and
   `apps/web` (Next.js App Router + React + TypeScript, deploys to Vercel).
 - **Shared contract**: `SongState` is the single source of truth. Pydantic in
-  `apps/api/llm_band/domain/song_state.py`; mirrored as TypeScript in `apps/web/lib/types.ts`
+  `apps/api/music_assistant/domain/song_state.py`; mirrored as TypeScript in `apps/web/lib/types.ts`
   (keep in sync; prefer generating TS from the JSON schema in CI).
 - **API surface**: `POST /compose` starts a run and **streams Server-Sent Events**
   (director done → roster; each agent pass → negotiation feed; convergence → done).
@@ -237,7 +237,7 @@ Optional caching of the stable header/system prompts if the provider supports it
 ### What to build
 
 Introduce the listening bounded context without doing heavy MIR yet. Add
-`ReferenceProfile`/`AudioProfile` domain models, application use cases
+`ReferenceProfile`/`MusicProfile` domain models, application use cases
 (`ResolveReference`, `AnalyzeReference`, `AnswerMusicQuestion` skeletons), and
 ports for search/resolution/audio analysis/transcription/stem separation/storage.
 Implement fake/local adapters so tests never need YouTube or network access.
@@ -254,7 +254,7 @@ returns candidate metadata but refuses unauthorized commercial downloads.
 
 ---
 
-## Phase 10: MIR AudioProfile
+## Phase 10: MIR MusicProfile
 
 **Branch**: `feat/mir-audio-profile`
 **User stories**: US7
@@ -269,7 +269,7 @@ artifacts under the `reference_id`.
 
 ### Acceptance criteria
 
-- [ ] A short permitted audio fixture produces an `AudioProfile` with tempo/key/sections and confidence values.
+- [ ] A short permitted audio fixture produces an `MusicProfile` with tempo/key/sections and confidence values.
 - [ ] Low-confidence features are represented explicitly instead of hidden or overstated.
 - [ ] Analysis is cached/idempotent by `reference_id`.
 - [ ] Tests cover analyzer success, unsupported format, duration-too-long, and low-confidence outputs.
@@ -285,7 +285,7 @@ artifacts under the `reference_id`.
 ### What to build
 
 Add a UI flow for asking questions about a reference. The backend combines a
-multimodal model impression (Gemini audio when configured) with the `AudioProfile`
+multimodal model impression (Gemini audio when configured) with the `MusicProfile`
 evidence, then answers in natural language with timestamps and confidence-aware
 language. The frontend shows the reference, question thread, key evidence, and a
 minimal timeline/section visualization.

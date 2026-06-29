@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from llm_band.domain.audio_profile import (
+from music_assistant.domain.reference_profile import (
     AnalysisNote,
-    AudioProfile,
+    MusicProfile,
     ChordCandidate,
     ChordEstimate,
     ChordSpan,
@@ -91,7 +91,7 @@ def test_reference_profile_serializes_legacy_and_deep_harmonic_fields():
     profile = ReferenceProfile(
         reference_id="ref_deep",
         source=_source(),
-        audio=AudioProfile(
+        music=MusicProfile(
             duration_seconds=48.0,
             tempo_bpm=118.0,
             tempo_confidence=0.84,
@@ -215,23 +215,23 @@ def test_reference_profile_serializes_legacy_and_deep_harmonic_fields():
 
     payload = profile.model_dump(mode="json")
 
-    assert payload["audio"]["tempo_bpm"] == 118.0
-    assert payload["audio"]["key"] == "A minor"
-    assert payload["audio"]["chord_estimates"][0]["label"] == "Probably Am - F - C - G"
-    assert payload["audio"]["tempo"]["candidates"][1]["relation"] == "half_time"
-    assert payload["audio"]["meter"]["time_signature"] == [4, 4]
-    assert payload["audio"]["harmony"]["key"]["primary"]["key"] == "A minor"
-    assert payload["audio"]["harmony"]["key"]["candidates"][1]["key"] == "C major"
-    assert payload["audio"]["harmony"]["chord_spans"][0]["chosen"]["label"] == "Am"
-    assert payload["audio"]["harmony"]["progressions"][0]["chords"] == ["Am", "F", "C", "G"]
-    assert [section["label"] for section in payload["audio"]["structure"]["sections"]] == ["A", "B", "C"]
-    assert payload["audio"]["stems"][0]["role"] == "percussion"
-    assert payload["audio"]["stems"][0]["available"] is True
-    assert payload["audio"]["analysis_notes"][0]["severity"] == "warning"
+    assert payload["music"]["tempo_bpm"] == 118.0
+    assert payload["music"]["key"] == "A minor"
+    assert payload["music"]["chord_estimates"][0]["label"] == "Probably Am - F - C - G"
+    assert payload["music"]["tempo"]["candidates"][1]["relation"] == "half_time"
+    assert payload["music"]["meter"]["time_signature"] == [4, 4]
+    assert payload["music"]["harmony"]["key"]["primary"]["key"] == "A minor"
+    assert payload["music"]["harmony"]["key"]["candidates"][1]["key"] == "C major"
+    assert payload["music"]["harmony"]["chord_spans"][0]["chosen"]["label"] == "Am"
+    assert payload["music"]["harmony"]["progressions"][0]["chords"] == ["Am", "F", "C", "G"]
+    assert [section["label"] for section in payload["music"]["structure"]["sections"]] == ["A", "B", "C"]
+    assert payload["music"]["stems"][0]["role"] == "percussion"
+    assert payload["music"]["stems"][0]["available"] is True
+    assert payload["music"]["analysis_notes"][0]["severity"] == "warning"
 
 
 def test_audio_profile_keeps_legacy_minimal_defaults():
-    audio = AudioProfile(duration_seconds=12.0)
+    audio = MusicProfile(duration_seconds=12.0)
 
     assert audio.meter.time_signature == (4, 4)
     assert audio.meter.source == "assumed"

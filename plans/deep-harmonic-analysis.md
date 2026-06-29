@@ -62,7 +62,7 @@ Chords:   Am ... Am-F-C-G ... F-C-G-Am ...
 
 ## Target Domain Contract
 
-Extend `apps/api/llm_band/domain/audio_profile.py` with compact models that keep compatibility with the current `ReferenceProfile` while moving the useful data into explicit harmonic and structural fields.
+Extend `apps/api/music_assistant/domain/audio_profile.py` with compact models that keep compatibility with the current `ReferenceProfile` while moving the useful data into explicit harmonic and structural fields.
 
 ```python
 class AnalysisNote(BaseModel):
@@ -162,7 +162,7 @@ class StemProfile(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 ```
 
-`AudioProfile` should keep existing fields during migration and add:
+`MusicProfile` should keep existing fields during migration and add:
 
 ```python
 tempo: TempoProfile | None = None
@@ -178,55 +178,55 @@ Existing `tempo_bpm`, `tempo_confidence`, `key`, `key_confidence`, `chord_estima
 
 ### Backend Domain
 
-- Modify `apps/api/llm_band/domain/audio_profile.py`
+- Modify `apps/api/music_assistant/domain/audio_profile.py`
   - Add tempo, meter, key, chord, harmony, structure, stem, and analysis note models.
   - Add bounded list lengths for renderable outputs.
   - Keep current fields available during migration.
 
 ### Backend Ports
 
-- Modify `apps/api/llm_band/ports/stem_separator.py`
+- Modify `apps/api/music_assistant/ports/stem_separator.py`
   - Return a compact stem bundle/profile, not Demucs internals.
-- Keep `apps/api/llm_band/ports/audio_analyzer.py`
+- Keep `apps/api/music_assistant/ports/audio_analyzer.py`
   - `AudioAnalyzer.analyze(source: ReferenceSource) -> ReferenceProfile` remains the boundary.
 
 ### Backend Infrastructure
 
-- Modify `apps/api/llm_band/infrastructure/mir/demucs_separator.py`
+- Modify `apps/api/music_assistant/infrastructure/mir/demucs_separator.py`
   - Implement Demucs separation for `drums`, `bass`, `vocals`, `other`.
   - Save stems under the analysis upload/job directory.
   - Return compact stem metadata.
-- Create `apps/api/llm_band/infrastructure/mir/deep_harmonic_analyzer.py`
+- Create `apps/api/music_assistant/infrastructure/mir/deep_harmonic_analyzer.py`
   - Orchestrate the full deep harmonic pipeline behind `AudioAnalyzer`.
-- Create `apps/api/llm_band/infrastructure/mir/harmonic_source.py`
+- Create `apps/api/music_assistant/infrastructure/mir/harmonic_source.py`
   - Build `bass + other` harmonic source when stems exist.
   - Build HPSS harmonic fallback when stems are unavailable.
-- Create `apps/api/llm_band/infrastructure/mir/tempo_grid.py`
+- Create `apps/api/music_assistant/infrastructure/mir/tempo_grid.py`
   - Estimate tempo candidates, beat grid, and bar grid assuming `4/4`.
-- Create `apps/api/llm_band/infrastructure/mir/key_features.py`
+- Create `apps/api/music_assistant/infrastructure/mir/key_features.py`
   - Estimate key candidates from harmonic source using CQT/HPCP-style features.
-- Create `apps/api/llm_band/infrastructure/mir/chord_features.py`
+- Create `apps/api/music_assistant/infrastructure/mir/chord_features.py`
   - Estimate triad chord candidates per bar and smooth the chord timeline.
-- Create `apps/api/llm_band/infrastructure/mir/structure_features.py`
+- Create `apps/api/music_assistant/infrastructure/mir/structure_features.py`
   - Group repeated progressions into A/B/C bar-aligned sections.
-- Keep `apps/api/llm_band/infrastructure/mir/librosa_analyzer.py`
+- Keep `apps/api/music_assistant/infrastructure/mir/librosa_analyzer.py`
   - Use only as compatibility/fallback helper during migration.
 
 ### Backend Application
 
-- Modify `apps/api/llm_band/application/analyze_reference.py`
+- Modify `apps/api/music_assistant/application/analyze_reference.py`
   - Keep `AnalyzeReference` thin.
   - Continue to call the injected `AudioAnalyzer`.
   - Do not put Demucs, harmony, or routing logic in the use case.
-- Later modify `apps/api/llm_band/application/answer_music_question.py`
+- Later modify `apps/api/music_assistant/application/answer_music_question.py`
   - Answer from `harmony` and `structure` evidence.
 
 ### Backend Interface
 
-- Modify `apps/api/llm_band/interfaces/api.py`
+- Modify `apps/api/music_assistant/interfaces/api.py`
   - `/references/analyze` should use `DeepHarmonicAnalyzer` by default.
   - Add streaming progress after the contract and analyzer stabilize.
-- Modify `apps/api/llm_band/interfaces/api_models.py`
+- Modify `apps/api/music_assistant/interfaces/api_models.py`
   - Add analysis progress SSE models when streaming is introduced.
 
 ### Frontend
@@ -252,12 +252,12 @@ Existing `tempo_bpm`, `tempo_confidence`, `key`, `key_confidence`, `chord_estima
 ## Phase 0: Contract First
 
 **Files:**
-- Modify `apps/api/llm_band/domain/audio_profile.py`
+- Modify `apps/api/music_assistant/domain/audio_profile.py`
 - Modify `apps/web/lib/types.ts`
 - Create `apps/api/tests/test_deep_harmonic_contract.py`
 
 - [x] Add the new Pydantic models listed in "Target Domain Contract".
-- [x] Keep legacy `AudioProfile` fields so existing API and frontend tests still pass.
+- [x] Keep legacy `MusicProfile` fields so existing API and frontend tests still pass.
 - [x] Add validators or `max_length` constraints so no raw feature arrays can leak into `ReferenceProfile`.
 - [x] Add TypeScript mirrors for every new model in `apps/web/lib/types.ts`.
 - [x] Write contract tests that build a full `ReferenceProfile` with:
@@ -285,8 +285,8 @@ npm run typecheck
 ## Phase 1: Stem Separation With Demucs
 
 **Files:**
-- Modify `apps/api/llm_band/ports/stem_separator.py`
-- Modify `apps/api/llm_band/infrastructure/mir/demucs_separator.py`
+- Modify `apps/api/music_assistant/ports/stem_separator.py`
+- Modify `apps/api/music_assistant/infrastructure/mir/demucs_separator.py`
 - Modify `apps/api/pyproject.toml`
 - Modify `apps/api/Dockerfile`
 - Create `apps/api/tests/test_demucs_separator.py`
@@ -325,7 +325,7 @@ docker compose build api
 ## Phase 2: Harmonic Source Builder
 
 **Files:**
-- Create `apps/api/llm_band/infrastructure/mir/harmonic_source.py`
+- Create `apps/api/music_assistant/infrastructure/mir/harmonic_source.py`
 - Create `apps/api/tests/test_harmonic_source.py`
 
 - [x] Implement `build_harmonic_source(stems, output_path)`:
@@ -355,7 +355,7 @@ python -m pytest tests/test_harmonic_source.py
 ## Phase 3: Tempo, Beat Grid, And Assumed 4/4 Bar Grid
 
 **Files:**
-- Create `apps/api/llm_band/infrastructure/mir/tempo_grid.py`
+- Create `apps/api/music_assistant/infrastructure/mir/tempo_grid.py`
 - Create `apps/api/tests/test_tempo_grid.py`
 
 - [x] Implement tempo candidate extraction from the full mix and, when available, the drum stem. (Beat input prefers `drum_path`; `beat_tracker` is injectable for fast unit tests.)
@@ -379,7 +379,7 @@ python -m pytest tests/test_tempo_grid.py
 ## Phase 4: Key Candidates
 
 **Files:**
-- Create `apps/api/llm_band/infrastructure/mir/key_features.py`
+- Create `apps/api/music_assistant/infrastructure/mir/key_features.py`
 - Create `apps/api/tests/test_key_features.py`
 
 - [x] Estimate key candidates from the harmonic source, not the full mix when stems or HPSS are available. (`estimate_key(harmonic_path, ...)`; `confidence_adjustment` carries the HPSS/mix penalty from `HarmonicSource`.)
@@ -398,7 +398,7 @@ python -m pytest tests/test_key_features.py
 ## Phase 5: Triad Chord Estimation Per Bar
 
 **Files:**
-- Create `apps/api/llm_band/infrastructure/mir/chord_features.py`
+- Create `apps/api/music_assistant/infrastructure/mir/chord_features.py`
 - Create `apps/api/tests/test_chord_features.py`
 
 - [x] Define triad templates for major, minor, and diminished chords.
@@ -419,7 +419,7 @@ python -m pytest tests/test_chord_features.py
 ## Phase 6: Progressions And A/B/C Structure
 
 **Files:**
-- Create `apps/api/llm_band/infrastructure/mir/structure_features.py`
+- Create `apps/api/music_assistant/infrastructure/mir/structure_features.py`
 - Create `apps/api/tests/test_structure_features.py`
 
 - [x] Detect repeated chord windows over bar-aligned `ChordSpan` data. (Fixed 4-bar phrase windows; signature = chosen-chord tuple.)
@@ -440,8 +440,8 @@ python -m pytest tests/test_structure_features.py
 ## Phase 7: Deep Analyzer Orchestrator
 
 **Files:**
-- Create `apps/api/llm_band/infrastructure/mir/deep_harmonic_analyzer.py`
-- Modify `apps/api/llm_band/interfaces/api.py`
+- Create `apps/api/music_assistant/infrastructure/mir/deep_harmonic_analyzer.py`
+- Modify `apps/api/music_assistant/interfaces/api.py`
 - Create `apps/api/tests/test_deep_harmonic_analyzer.py`
 - Modify `apps/api/tests/test_reference_analysis_api.py`
 
@@ -471,8 +471,8 @@ python -m pytest tests/test_deep_harmonic_analyzer.py tests/test_reference_analy
 ## Phase 8: Analysis Progress Streaming
 
 **Files:**
-- Modify `apps/api/llm_band/interfaces/api_models.py`
-- Modify `apps/api/llm_band/interfaces/api.py`
+- Modify `apps/api/music_assistant/interfaces/api_models.py`
+- Modify `apps/api/music_assistant/interfaces/api.py`
 - Modify `apps/web/app/api/references/analyze/route.ts`
 - Create `apps/api/tests/test_reference_analysis_stream.py`
 
@@ -536,7 +536,7 @@ node --test lib/referenceProfileView.test.mjs
 ## Phase 10: Evidence-Grounded Music Q&A
 
 **Files:**
-- Modify `apps/api/llm_band/application/answer_music_question.py`
+- Modify `apps/api/music_assistant/application/answer_music_question.py`
 - Create `apps/api/tests/test_answer_music_question.py`
 
 - [ ] Add a deterministic fallback explainer over `HarmonicProfile` and `StructureProfile`.

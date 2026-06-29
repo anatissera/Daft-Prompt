@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from llm_band.domain.audio_profile import ReferenceSource
-from llm_band.infrastructure.mir.librosa_analyzer import LibrosaAnalyzer
+from music_assistant.domain.reference_profile import ReferenceSource
+from music_assistant.infrastructure.mir.librosa_analyzer import LibrosaAnalyzer
 
 
 def _write_synthetic_chord_loop(path: Path, duration_seconds: float = 8.0) -> None:
@@ -58,24 +58,24 @@ def test_analyze_local_audio_returns_compact_reference_profile(tmp_path: Path):
 
     assert profile.reference_id == "ref_synthetic"
     assert profile.source == source
-    assert profile.audio is not None
-    assert profile.audio.duration_seconds == pytest.approx(8.0, abs=0.2)
-    assert profile.audio.tempo_bpm is not None
-    assert 0.0 <= profile.audio.tempo_confidence <= 1.0
-    assert profile.audio.key is not None
-    assert 0.0 <= profile.audio.key_confidence <= 1.0
-    assert 0.0 <= profile.audio.overall_confidence <= 1.0
-    assert profile.audio.energy_curve
-    assert all(0.0 <= point.energy <= 1.0 for point in profile.audio.energy_curve)
-    assert profile.audio.sections
-    assert profile.audio.chord_estimates
-    assert len(profile.audio.chord_estimates) >= 4
-    assert len({tuple(chord.chords) for chord in profile.audio.chord_estimates}) > 1
-    assert all(chord.is_probable for chord in profile.audio.chord_estimates)
+    assert profile.music is not None
+    assert profile.music.duration_seconds == pytest.approx(8.0, abs=0.2)
+    assert profile.music.tempo_bpm is not None
+    assert 0.0 <= profile.music.tempo_confidence <= 1.0
+    assert profile.music.key is not None
+    assert 0.0 <= profile.music.key_confidence <= 1.0
+    assert 0.0 <= profile.music.overall_confidence <= 1.0
+    assert profile.music.energy_curve
+    assert all(0.0 <= point.energy <= 1.0 for point in profile.music.energy_curve)
+    assert profile.music.sections
+    assert profile.music.chord_estimates
+    assert len(profile.music.chord_estimates) >= 4
+    assert len({tuple(chord.chords) for chord in profile.music.chord_estimates}) > 1
+    assert all(chord.is_probable for chord in profile.music.chord_estimates)
     assert {
-        chord.confidence_label for chord in profile.audio.chord_estimates
+        chord.confidence_label for chord in profile.music.chord_estimates
     } <= {"low", "medium", "high"}
-    assert "Probably" in profile.audio.chord_estimates[0].label
+    assert "Probably" in profile.music.chord_estimates[0].label
     assert "probably" in profile.summary.lower()
 
 
@@ -93,8 +93,8 @@ def test_analyze_accepts_file_uri(tmp_path: Path):
     profile = LibrosaAnalyzer().analyze(source)
 
     assert profile.reference_id == "ref_file_uri"
-    assert profile.audio is not None
-    assert profile.audio.duration_seconds == pytest.approx(4.0, abs=0.2)
+    assert profile.music is not None
+    assert profile.music.duration_seconds == pytest.approx(4.0, abs=0.2)
 
 
 def test_analyze_rejects_non_local_sources():

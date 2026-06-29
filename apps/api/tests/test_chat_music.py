@@ -6,20 +6,20 @@ from typing import Optional
 
 import pytest
 
-from llm_band.application.answer_music_question import AnswerMusicQuestion
-from llm_band.application.chat_music import ChatMusic, ChatRequest
-from llm_band.application.compose_song import ComposeSong
-from llm_band.canned import canned_song
-from llm_band.domain.audio_profile import (
-    AudioProfile,
+from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.application.chat_music import ChatMusic, ChatRequest
+from music_assistant.application.compose_song import ComposeSong
+from music_assistant.canned import canned_song
+from music_assistant.domain.reference_profile import (
+    MusicProfile,
     ChordEstimate,
     ExplanationAnswer,
     ReferenceProfile,
     ReferenceSource,
     SectionProfile,
 )
-from llm_band.domain.song_state import SongState
-from llm_band.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
+from music_assistant.domain.song_state import SongState
+from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 
 
 def _make_profile(reference_id: str = "ref_demo") -> ReferenceProfile:
@@ -30,7 +30,7 @@ def _make_profile(reference_id: str = "ref_demo") -> ReferenceProfile:
         uri="local://demo.wav",
         authorized=True,
     )
-    audio = AudioProfile(
+    audio = MusicProfile(
         duration_seconds=90.0,
         tempo_bpm=118.0,
         tempo_confidence=0.8,

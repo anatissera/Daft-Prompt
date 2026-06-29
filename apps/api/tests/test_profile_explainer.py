@@ -1,21 +1,21 @@
-"""ProfileExplainer over legacy AudioProfile fields (tempo_bpm, key, chord_estimates, sections)."""
+"""ProfileExplainer over legacy MusicProfile fields (tempo_bpm, key, chord_estimates, sections)."""
 
 from __future__ import annotations
 
 import pytest
 
-from llm_band.application.answer_music_question import AnswerMusicQuestion
-from llm_band.domain.audio_profile import (
-    AudioProfile,
+from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.domain.reference_profile import (
+    MusicProfile,
     ChordEstimate,
     ReferenceProfile,
     ReferenceSource,
     SectionProfile,
 )
-from llm_band.infrastructure.explainer.profile_explainer import ProfileExplainer
+from music_assistant.infrastructure.explainer.profile_explainer import ProfileExplainer
 
 
-def _profile(audio: AudioProfile | None = None) -> ReferenceProfile:
+def _profile(audio: MusicProfile | None = None) -> ReferenceProfile:
     source = ReferenceSource(
         reference_id="ref_test",
         kind="upload",
@@ -26,8 +26,8 @@ def _profile(audio: AudioProfile | None = None) -> ReferenceProfile:
     return ReferenceProfile(reference_id="ref_test", source=source, audio=audio)
 
 
-def _audio_with_everything() -> AudioProfile:
-    return AudioProfile(
+def _audio_with_everything() -> MusicProfile:
+    return MusicProfile(
         duration_seconds=124.0,
         tempo_bpm=118.3,
         tempo_confidence=0.84,

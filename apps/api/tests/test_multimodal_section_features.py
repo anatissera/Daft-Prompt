@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from llm_band.domain.audio_profile import ChordCandidate, ChordSpan
-from llm_band.infrastructure.mir.multimodal_features import (
+from music_assistant.domain.reference_profile import ChordCandidate, ChordSpan
+from music_assistant.infrastructure.mir.multimodal_features import (
     MultimodalBarFeatures,
     extract_multimodal_features,
     robust_normalize,
 )
-from llm_band.infrastructure.mir.section_features import (
+from music_assistant.infrastructure.mir.section_features import (
     _merge_adjacent_sections,
     detect_multimodal_sections,
 )
@@ -174,7 +174,7 @@ def test_adjacent_segments_with_same_signature_are_merged():
 
 
 def test_adjacent_equal_labels_are_collapsed_after_similarity_grouping():
-    from llm_band.domain.audio_profile import StructuralSection
+    from music_assistant.domain.reference_profile import StructuralSection
 
     sections = [
         StructuralSection(label="A", start_bar=1, end_bar=8, start_seconds=0, end_seconds=16, confidence=0.6),

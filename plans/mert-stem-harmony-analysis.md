@@ -1,5 +1,9 @@
 # MERT And Stem-Harmony Analysis Plan
 
+> **Status in `feat/scraping-analysis`: paused.** This plan belongs to the
+> heavier local-audio analysis direction. The active experiment in this branch is
+> research-only song analysis from public web evidence.
+
 ## Goal
 
 Improve local song understanding by delaying musical decisions until after the
@@ -347,4 +351,3 @@ of these honest outcomes:
 
 Mitigation: keep confidence calibrated, preserve audit evidence, and prefer
 unknown/ambiguous output over forced certainty.
-

@@ -10,10 +10,10 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from llm_band.application.analyze_reference import AnalyzeReference, ResolveReference
-from llm_band.application.answer_music_question import AnswerMusicQuestion
-from llm_band.domain.audio_profile import (
-    AudioProfile,
+from music_assistant.application.analyze_reference import AnalyzeReference, ResolveReference
+from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.domain.reference_profile import (
+    MusicProfile,
     ChordEstimate,
     EnergyPoint,
     ExplanationAnswer,
@@ -68,7 +68,7 @@ def test_reference_analysis_use_cases_run_with_fakes_and_no_audio_or_network():
     profile = ReferenceProfile(
         reference_id="ref_demo",
         source=resolved,
-        audio=AudioProfile(
+        music=MusicProfile(
             duration_seconds=12.0,
             tempo_bpm=118.0,
             tempo_confidence=0.86,
@@ -110,17 +110,17 @@ def test_reference_analysis_use_cases_run_with_fakes_and_no_audio_or_network():
     analyzer = FakeAudioAnalyzer({"ref_demo": profile})
     analyzed = AnalyzeReference(analyzer).execute(resolved)
 
-    assert analyzed.audio is not None
-    assert analyzed.audio.tempo_bpm == 118.0
-    assert analyzed.audio.tempo_confidence == 0.86
-    assert analyzed.audio.key_confidence == 0.73
-    assert analyzed.audio.overall_confidence == 0.91
-    assert analyzed.audio.energy_curve[1].energy == 0.82
-    assert analyzed.audio.chord_estimates[0].is_probable is True
-    assert analyzed.audio.chord_estimates[0].label == "Probably Am - F - C - G"
-    assert analyzed.audio.sections[0].energy == 0.78
-    assert analyzed.audio.sections[0].chord_estimates[0].confidence_label == "medium"
-    dumped_chord = analyzed.model_dump(mode="json")["audio"]["chord_estimates"][0]
+    assert analyzed.music is not None
+    assert analyzed.music.tempo_bpm == 118.0
+    assert analyzed.music.tempo_confidence == 0.86
+    assert analyzed.music.key_confidence == 0.73
+    assert analyzed.music.overall_confidence == 0.91
+    assert analyzed.music.energy_curve[1].energy == 0.82
+    assert analyzed.music.chord_estimates[0].is_probable is True
+    assert analyzed.music.chord_estimates[0].label == "Probably Am - F - C - G"
+    assert analyzed.music.sections[0].energy == 0.78
+    assert analyzed.music.sections[0].chord_estimates[0].confidence_label == "medium"
+    dumped_chord = analyzed.model_dump(mode="json")["music"]["chord_estimates"][0]
     assert dumped_chord["label"] == "Probably Am - F - C - G"
     assert dumped_chord["confidence_label"] == "medium"
 
@@ -149,7 +149,7 @@ def test_unauthorized_reference_fails_before_analysis():
 
 
 def test_composition_modules_do_not_import_reference_analysis_internals():
-    root = Path(__file__).resolve().parents[1] / "llm_band"
+    root = Path(__file__).resolve().parents[1] / "music_assistant"
     checked = [
         root / "application" / "compose_song.py",
         root / "graph.py",
@@ -167,10 +167,10 @@ def test_composition_modules_do_not_import_reference_analysis_internals():
             else:
                 continue
             if any(
-                name.startswith("llm_band.ports.audio_analyzer")
-                or name.startswith("llm_band.ports.stem_separator")
-                or name.startswith("llm_band.ports.transcription")
-                or name.startswith("llm_band.infrastructure.mir")
+                name.startswith("music_assistant.ports.music_analyzer")
+                or name.startswith("music_assistant.ports.stem_separator")
+                or name.startswith("music_assistant.ports.transcription")
+                or name.startswith("music_assistant.infrastructure.mir")
                 for name in names
             ):
                 forbidden.append((path.name, names))

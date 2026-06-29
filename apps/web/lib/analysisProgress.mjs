@@ -1,11 +1,8 @@
 export const ANALYSIS_STAGES = [
-  ["separating_stems", "Stem separation"],
-  ["building_harmonic_source", "Harmonic source"],
-  ["estimating_tempo_grid", "Tempo / grid"],
-  ["estimating_key", "Key analysis"],
-  ["estimating_chords", "Chord analysis"],
-  ["extracting_stem_features", "Stem features"],
-  ["detecting_structure", "Structure analysis"],
+  ["searching_sources", "Source search"],
+  ["fetching_pages", "Page fetch"],
+  ["extracting_claims", "Claim extraction"],
+  ["fusing_evidence", "Evidence fusion"],
 ];
 
 
@@ -21,7 +18,7 @@ export function createAnalysisProgress() {
 
 
 export function updateAnalysisProgress(progress, event) {
-  if (event.type === "accepted" || event.type === "analysis_keepalive") {
+  if (event.type === "accepted" || event.type === "research_keepalive") {
     return progress;
   }
   return progress.map((stage) => {

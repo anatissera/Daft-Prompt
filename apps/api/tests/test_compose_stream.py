@@ -8,15 +8,15 @@ import json
 
 from fastapi.testclient import TestClient
 
-import llm_band.interfaces.api as api
-from llm_band.agents.director import (
+import music_assistant.interfaces.api as api
+from music_assistant.agents.director import (
     ArrangementInstrument,
     ArrangementSection,
     DirectorOutput,
     arrangement_to_song,
 )
-from llm_band.domain.song_state import Part
-from llm_band.infrastructure.llm import LLMQuotaExceeded
+from music_assistant.domain.song_state import Part
+from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
 
 def _parse_sse(text: str) -> list[dict]:

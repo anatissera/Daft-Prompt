@@ -1,18 +1,20 @@
 import { isReferenceQuestion } from "./referenceProfileView.mjs";
 
 export function chooseChatAction({ prompt, hasSelectedFile, hasReferenceProfile }) {
-  const messageText = normalizeMessageText(prompt, hasSelectedFile);
-  if (hasSelectedFile) return { type: "analyze", messageText };
+  const messageText = normalizeMessageText(prompt);
   if (hasReferenceProfile && isReferenceQuestion(messageText)) {
     return { type: "answer_reference", messageText };
+  }
+  if (isReferenceQuestion(messageText)) {
+    return { type: "research", messageText };
   }
   return { type: "compose", messageText };
 }
 
-export function normalizeMessageText(prompt, hasSelectedFile = false) {
+export function normalizeMessageText(prompt) {
   const trimmed = prompt.trim();
   if (trimmed) return trimmed;
-  return hasSelectedFile ? "Analyze this audio." : "Compose a short song.";
+  return "Compose a short song.";
 }
 
 export function createTextMessage(role, text, index) {

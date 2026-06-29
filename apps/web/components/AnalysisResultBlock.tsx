@@ -10,7 +10,8 @@ import {
 } from "@/lib/referenceProfileView.mjs";
 
 export default function AnalysisResultBlock({ profile }: { profile: ReferenceProfile }) {
-  const audio = profile.audio;
+  const music = profile.music;
+  const evidence = profile.research_evidence ?? [];
   const summaryRows = describeReferenceSummary(profile);
   const chordEstimates = getTopChordEstimates(profile, 5);
   const keyCandidates = getKeyCandidateSummary(profile);
@@ -22,9 +23,9 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
     <section className="result-block" aria-label="Reference analysis result">
       <div className="result-block-header">
         <div>
-          <p className="section-title">Reference analysis</p>
+          <p className="section-title">Reference research</p>
           <h2 className="result-title">{profile.source.label}</h2>
-          <p className="context-muted">{profile.summary || "Local audio profile ready."}</p>
+          <p className="context-muted">{profile.summary || "Research profile ready."}</p>
         </div>
         <span className="reference-kind">{profile.source.kind}</span>
       </div>
@@ -60,15 +61,15 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
               <span className="context-muted">
                 {mainProgression.bars} · repeats {mainProgression.repetitions}x · {mainProgression.confidence}
               </span>
-              {audio?.harmony?.harmonic_rhythm_label ? (
-                <span className="context-muted">Harmonic rhythm: {audio.harmony.harmonic_rhythm_label}</span>
+              {music?.harmony?.harmonic_rhythm_label ? (
+                <span className="context-muted">Harmonic rhythm: {music.harmony.harmonic_rhythm_label}</span>
               ) : null}
             </div>
           ) : null}
         </details>
       ) : null}
 
-      {audio?.structure?.sections.length ? (
+      {music?.structure?.sections.length ? (
         <details className="details-panel" open>
           <summary className="details-summary">A/B/C timeline</summary>
           <HarmonyTimeline profile={profile} />
@@ -119,6 +120,22 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
                   <span style={{ width: `${section.energy}%` }} />
                 </div>
                 <span className="context-muted">Energy {section.energy}% · {section.confidence}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      {evidence.length > 0 ? (
+        <details className="details-panel" open>
+          <summary className="details-summary">Sources</summary>
+          <ul className="chord-list">
+            {evidence.slice(0, 8).map((item) => (
+              <li key={`${item.url}-${item.claim_type}-${item.value}`} className="chord-row">
+                <span className="chord-label">{item.site}: {item.claim_type}</span>
+                <span className="context-muted">
+                  {item.value} · {Math.round(item.confidence * 100)}% · {item.url}
+                </span>
               </li>
             ))}
           </ul>

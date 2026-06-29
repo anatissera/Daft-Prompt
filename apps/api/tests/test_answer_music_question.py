@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from llm_band.application.answer_music_question import AnswerMusicQuestion
-from llm_band.domain.audio_profile import (
+from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.domain.reference_profile import (
     AnalysisNote,
-    AudioProfile,
+    MusicProfile,
     ChordCandidate,
     ChordSpan,
     HarmonicProfile,
@@ -31,7 +31,7 @@ def _profile() -> ReferenceProfile:
             uri="/tmp/demo.wav",
             authorized=True,
         ),
-        audio=AudioProfile(
+        audio=MusicProfile(
             duration_seconds=32.0,
             confidence=0.75,
             overall_confidence=0.75,
@@ -123,7 +123,7 @@ def _low_usefulness_profile() -> ReferenceProfile:
             uri="/tmp/weak.wav",
             authorized=True,
         ),
-        audio=AudioProfile(
+        audio=MusicProfile(
             duration_seconds=10.0,
             analysis_notes=[
                 AnalysisNote(
@@ -173,7 +173,7 @@ def test_answers_chord_questions_from_progression_estimates():
 
 def test_answers_chord_questions_with_weak_loop_candidate_before_triads():
     profile = _profile()
-    profile.audio.harmony.progressions = [
+    profile.music.harmony.progressions = [
         ProgressionEstimate(
             start_bar=1,
             end_bar=4,
@@ -204,7 +204,7 @@ def test_answers_structure_questions_from_structure_profile():
 
 def test_key_answer_mentions_close_alternatives_when_confidence_is_low():
     profile = _profile()
-    key_profile = profile.audio.harmony.key
+    key_profile = profile.music.harmony.key
     key_profile.primary = KeyCandidate(key="Ab major", mode="major", confidence=0.44)
     key_profile.candidates = [
         KeyCandidate(key="Ab major", mode="major", confidence=0.44),
@@ -226,8 +226,8 @@ def test_key_answer_mentions_close_alternatives_when_confidence_is_low():
 
 def test_structure_answer_mentions_uncertainty_when_confidence_is_low():
     profile = _profile()
-    profile.audio.structure.confidence = 0.25
-    for section in profile.audio.structure.sections:
+    profile.music.structure.confidence = 0.25
+    for section in profile.music.structure.sections:
         section.confidence = 0.25
 
     answer = AnswerMusicQuestion().execute("what is the form?", profile)
