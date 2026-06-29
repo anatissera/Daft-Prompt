@@ -15,6 +15,7 @@ PROVIDER_LABELS = {
     "gemini": "Gemini",
     "groq": "Groq",
     "openrouter": "OpenRouter",
+    "vertexai": "Vertex AI",
 }
 
 
@@ -199,6 +200,21 @@ def _build_chat_model(provider: str, model: str, settings: Settings):
             base_url=settings.openrouter_base_url,
             temperature=0.7,
             max_retries=max(0, settings.llm_max_retries),
+        )
+
+    if provider == "vertexai":
+        try:
+            from langchain_google_vertexai import ChatVertexAI
+        except ModuleNotFoundError as exc:
+            raise LLMProviderUnavailable(
+                provider=provider,
+                model=model,
+                detail='Install backend extra: pip install -e ".[vertexai]"',
+            ) from exc
+        return ChatVertexAI(
+            model=model,
+            project=settings.google_cloud_project,
+            temperature=0.7,
         )
 
     raise LLMProviderUnavailable(provider=provider, model=model, detail="unknown provider")
