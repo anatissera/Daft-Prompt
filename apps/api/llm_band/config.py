@@ -8,13 +8,14 @@ from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-Provider = Literal["gemini", "groq", "openrouter"]
+Provider = Literal["gemini", "groq", "openrouter", "vertexai"]
 
 # sensible free-tier defaults per provider when MODEL_* isn't set explicitly
 DEFAULT_MODELS: dict[str, str] = {
     "gemini": "gemini-2.5-flash",
     "groq": "llama-3.3-70b-versatile",
     "openrouter": "deepseek/deepseek-chat",
+    "vertexai": "gemini-2.5-flash",
 }
 
 
@@ -24,6 +25,7 @@ class Settings(BaseSettings):
     gemini_api_key: Optional[str] = None
     groq_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
+    google_cloud_project: Optional[str] = None
 
     model_director: Optional[str] = None
     model_instrument: Optional[str] = None
@@ -48,6 +50,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     def api_key_for(self, provider: str) -> Optional[str]:
+        if provider == "vertexai":
+            return "adc"  # ADC — no API key required
         return {
             "gemini": self.gemini_api_key,
             "groq": self.groq_api_key,
