@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from dotenv import load_dotenv
+
+load_dotenv()
 from inspect import signature
 from pathlib import Path
 from queue import Empty, Queue
@@ -13,7 +16,6 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
-from llm_band.agents.director import run_director
 from llm_band.application.analyze_reference import AnalyzeReference
 from llm_band.application.answer_music_question import AnswerMusicQuestion
 from llm_band.application.chat_music import ChatMusic
@@ -242,7 +244,6 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
 def _compose_song() -> ComposeSong:
     return ComposeSong(
         llm_configured=lambda: get_settings().llm_configured,
-        director=run_director,
         negotiator=run_negotiation,
         event_streamer=iter_negotiation_events,
         canned=canned_song,
