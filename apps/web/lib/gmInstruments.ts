@@ -139,10 +139,16 @@ export function isDrumByName(name: string): boolean {
   return PERCUSSION_RE.test(name);
 }
 
-// MIDI note number → letter name Tone.Sampler expects (e.g. 60 -> "C4").
-const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+// MIDI note number → file name FluidR3 ships (sharps, no slashes).
+// midi 61 -> "Cs4" because the soundfont's filename is `Cs4.mp3`.
+const NOTE_NAMES = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
 export function midiToName(midi: number): string {
   const octave = Math.floor(midi / 12) - 1;
   const name = NOTE_NAMES[((midi % 12) + 12) % 12];
   return `${name}${octave}`;
 }
+
+// FluidR3 percussion-mp3 covers the standard GM drum kit (MIDI 35..81)
+// but a handful of high keys are missing. Stick to the safe slice.
+export const PERCUSSION_MIN = 35;
+export const PERCUSSION_MAX = 77;
