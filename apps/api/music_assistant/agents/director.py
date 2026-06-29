@@ -57,7 +57,9 @@ _SYSTEM = (
     f"instrumentation — choose {MIN_ROSTER}-{MAX_ROSTER} instruments and {MIN_BARS}-{MAX_BARS} bars that genuinely "
     "fit the style (reason about it; do not use a fixed genre table). For each "
     "instrument give a General MIDI program, a sensible MIDI pitch range, and its "
-    "role. Mark drum/percussion kits with is_drum=true."
+    "role. All percussion must be represented as exactly one drum kit roster item "
+    "with is_drum=true. Do not create separate entries for kick, snare, hi-hat, "
+    "cymbals, toms, or other drum sounds; they are MIDI pitches inside the same kit."
 )
 
 
@@ -67,6 +69,31 @@ def _prompt(style: str) -> list[tuple[str, str]]:
 
 def _clamp_roster(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
     return items[:MAX_ROSTER]
+
+
+def _collapse_drum_components(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
+    if not any(item.is_drum for item in items):
+        return items
+
+    drum_kit = ArrangementInstrument(
+        id="drums",
+        instrument="drum_kit",
+        midi_program=0,
+        midi_low=35,
+        midi_high=81,
+        role="full percussion kit",
+        is_drum=True,
+    )
+    collapsed: list[ArrangementInstrument] = []
+    inserted_drum_kit = False
+    for item in items:
+        if item.is_drum:
+            if not inserted_drum_kit:
+                collapsed.append(drum_kit)
+                inserted_drum_kit = True
+            continue
+        collapsed.append(item)
+    return collapsed
 
 
 def _clamp_num_bars(value: int) -> int:
@@ -102,7 +129,7 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
             role=i.role,
             is_drum=i.is_drum,
         )
-        for i in _clamp_roster(out.instruments)
+        for i in _clamp_roster(_collapse_drum_components(out.instruments))
     ]
     return SongState(request=style, header=header, roster=roster, parts={})
 

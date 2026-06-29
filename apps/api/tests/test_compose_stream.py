@@ -1,6 +1,6 @@
 """Phase 6: POST /compose/stream emits SSE events (director, agent_pass,
-convergence, done) over the same director/canned + negotiation pipeline as
-/compose. LLM/negotiation mocked — no API key needed."""
+convergence, done) over the same director + negotiation pipeline as /compose.
+LLM/negotiation mocked — no API key needed."""
 
 from __future__ import annotations
 
@@ -149,7 +149,7 @@ def test_compose_stream_preserves_partial_parts_after_quota_error(monkeypatch):
     assert events[-1]["song"]["converged"] is False
 
 
-def test_compose_stream_canned_path_emits_director_and_done(monkeypatch):
+def test_compose_stream_emits_error_without_llm_configuration(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _NoLLMCfg())
     monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
@@ -158,5 +158,8 @@ def test_compose_stream_canned_path_emits_director_and_done(monkeypatch):
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
     types = [e["type"] for e in events]
-    assert types == ["director", "convergence", "done"]
-    assert events[-1]["source"] == "canned"
+    assert types == ["error"]
+    assert events[0]["code"] == "llm_not_configured"
+    assert events[0]["partial"] is False
+    assert "LLM" in events[0]["message"]
+    assert "provider" in events[0]["message"].lower()

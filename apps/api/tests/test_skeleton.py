@@ -29,12 +29,14 @@ def test_canned_song_renders_valid_musicxml(tmp_path):
     assert "score-partwise" in text  # well-formed MusicXML root
 
 
-class _NoLLMCfg:
-    llm_configured = False
+class _Cfg:
+    llm_configured = True
 
 
 def test_compose_endpoint_returns_artifacts(monkeypatch):
-    monkeypatch.setattr(api, "get_settings", lambda: _NoLLMCfg())
+    monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
+    monkeypatch.setattr(api, "run_director", canned_song)
+    monkeypatch.setattr(api, "run_negotiation", lambda song: song)
     client = TestClient(api.app)
     resp = client.post("/compose", json={"style": "slow blues"})
     assert resp.status_code == 200

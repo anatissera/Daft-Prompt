@@ -72,12 +72,56 @@ def test_roster_is_capped():
     assert len(song.roster) == MAX_ROSTER
 
 
+def test_multiple_drum_components_are_collapsed_to_one_kit():
+    out = DirectorOutput(
+        genre="funk",
+        key="C minor",
+        tempo_bpm=104,
+        time_sig_numerator=4,
+        time_sig_denominator=4,
+        num_bars=8,
+        sections=[ArrangementSection(name="groove", start_bar=0, end_bar=8)],
+        instruments=[
+            ArrangementInstrument(
+                id="kick_drum", instrument="kick_drum", midi_program=0,
+                midi_low=36, midi_high=36, role="kick pattern", is_drum=True,
+            ),
+            ArrangementInstrument(
+                id="snare_drum", instrument="snare_drum", midi_program=0,
+                midi_low=38, midi_high=38, role="backbeat", is_drum=True,
+            ),
+            ArrangementInstrument(
+                id="closed_hi_hat", instrument="closed_hi_hat", midi_program=0,
+                midi_low=42, midi_high=42, role="subdivision", is_drum=True,
+            ),
+            ArrangementInstrument(
+                id="bass", instrument="electric_bass", midi_program=33,
+                midi_low=28, midi_high=55, role="groove", is_drum=False,
+            ),
+            ArrangementInstrument(
+                id="keys", instrument="electric_piano", midi_program=4,
+                midi_low=48, midi_high=84, role="harmony", is_drum=False,
+            ),
+        ],
+    )
+
+    song = arrangement_to_song("funk kit", out)
+
+    drums = [item for item in song.roster if item.is_drum]
+    assert len(drums) == 1
+    assert drums[0].id == "drums"
+    assert drums[0].instrument == "drum_kit"
+    assert drums[0].midi_program == 0
+    assert drums[0].midi_range == (35, 81)
+    assert [item.id for item in song.roster if not item.is_drum] == ["bass", "keys"]
+
+
 def test_midi_range_is_normalized():
     out = _output(3)
-    out.instruments[0].midi_low = 60
-    out.instruments[0].midi_high = 40  # backwards on purpose
+    out.instruments[1].midi_low = 60
+    out.instruments[1].midi_high = 40  # backwards on purpose
     song = arrangement_to_song("x", out)
-    assert song.roster[0].midi_range == (40, 60)
+    assert song.roster[1].midi_range == (40, 60)
 
 
 def test_director_clamps_bar_count_and_sections():

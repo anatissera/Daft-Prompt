@@ -8,6 +8,11 @@ from typing import Any
 from music_assistant.domain.song_state import SongState
 
 
+class ComposeConfigurationError(RuntimeError):
+    code = "llm_not_configured"
+    user_message = "LLM provider is not configured. Set LLM_PROVIDER and the matching provider API key before composing."
+
+
 class ComposeSong:
     def __init__(
         self,
@@ -28,7 +33,7 @@ class ComposeSong:
         if self.llm_configured():
             song = self.director(style)
             return self.negotiator(song), "director"
-        return self.canned(style), "canned"
+        raise ComposeConfigurationError()
 
     def stream(self, style: str) -> Iterator[tuple[dict[str, Any], SongState | None, str]]:
         if self.llm_configured():
@@ -39,16 +44,7 @@ class ComposeSong:
             yield {}, song, source
             return
 
-        song = self.canned(style)
-        source = "canned"
-        yield _director_event(song, source), song, source
-        yield {
-            "type": "convergence",
-            "round": song.round,
-            "converged": True,
-            "resolved_requests": [],
-        }, song, source
-        yield {}, song, source
+        raise ComposeConfigurationError()
 
 
 def _director_event(song: SongState, source: str) -> dict[str, Any]:

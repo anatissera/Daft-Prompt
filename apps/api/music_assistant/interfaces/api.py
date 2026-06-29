@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from music_assistant.agents.director import run_director
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
 from music_assistant.application.chat_music import ChatMusic
-from music_assistant.application.compose_song import ComposeSong
+from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
 from music_assistant.application.research_reference import ResearchReference
 from music_assistant.canned import canned_song
 from music_assistant.config import get_settings
@@ -92,6 +92,8 @@ def chat(req: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=404, detail=f"reference_id not found: {req.reference_id}")
     try:
         return _chat_music().handle(req)
+    except ComposeConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=_compose_configuration_error_event(exc)) from exc
     except LLMError as exc:
         raise HTTPException(status_code=503, detail=_llm_error_event(exc, partial=False)) from exc
 
@@ -114,6 +116,8 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
     job = ARTIFACTS.create_job()
     try:
         song, source = _compose_song().compose(req.style)
+    except ComposeConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=_compose_configuration_error_event(exc)) from exc
     except LLMError as exc:
         raise HTTPException(status_code=503, detail=_llm_error_event(exc, partial=False)) from exc
     render_artifacts(song, job.path)
@@ -166,6 +170,9 @@ def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base
                 by_alias=True, mode="json"
             )
             return
+    except ComposeConfigurationError as exc:
+        yield _compose_configuration_error_event(exc)
+        return
     except LLMError as exc:
         yield _llm_error_event(exc, partial=last_song is not None)
         if last_song is None:
@@ -214,6 +221,14 @@ def _llm_error_event(exc: LLMError, *, partial: bool) -> dict:
         provider=None if provider == "all" else provider,
         model=None if model == "all" else model,
         partial=partial,
+    ).model_dump(mode="json")
+
+
+def _compose_configuration_error_event(exc: ComposeConfigurationError) -> dict:
+    return ErrorEvent(
+        code=exc.code,
+        message=exc.user_message,
+        partial=False,
     ).model_dump(mode="json")
 
 
