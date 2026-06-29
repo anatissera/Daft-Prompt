@@ -43,14 +43,14 @@ Backend analysis
 * Tempo grid with beat and bar boundaries (assumed 4/4)
 * Key candidates via Krumhansl-Schmuckler profiles
 * Per-bar triad chord estimation (major/minor/diminished) with smoothing
-* A/B/C structure detection from chord patterns
+* Multimodal A/B/C structure detection from vocal, drum, bass, harmony, and timbre changes
 * Analysis notes for degradation cases (separation unavailable, weak bar grid)
 * Full orchestration → `ReferenceProfile` with legacy compat fields
 
 UI
 * Chat-first workspace with reference context sidebar
 * File upload for local audio analysis
-* Realtime analysis progress (SSE) → future streaming
+* Realtime analysis progress checklist with completed-stage timings
 * Music question answering over `ReferenceProfile` (deterministic)
 * Composition from scratch or reference-guided
 * Song playback, MIDI inspection, export
@@ -122,7 +122,7 @@ ReferenceSource (local file path)
   → Phase 3: Tempo grid (beat + bar boundaries, drum-preferred onset detection)
   → Phase 4: Key profile (Krumhansl-Schmuckler, 8 candidates, relative ambiguity flag)
   → Phase 5: Chord spans (per-bar triads, confidence weighted by separation)
-  → Phase 6: Structure (A/B/C labels from chord patterns, 4-bar phrases)
+  → Phase 6: Structure (per-stem bar vectors, sustained novelty, reusable A/B/C labels)
   → Phase 7: Assembly → ReferenceProfile (harmony + structure + legacy compat)
 ```
 
@@ -169,9 +169,17 @@ pip install -e ".[gemini]"    # or [groq], [openrouter]
 export LLM_PROVIDER=gemini
 export GOOGLE_API_KEY=xxx
 
+# Optional development-only cache: skips repeated Demucs runs for a file with
+# the same normalized name and size. Analysis features are always recalculated.
+export REFERENCE_STEM_CACHE_ENABLED=true
+
 # Run
 uvicorn llm_band.interfaces.api:app --reload --port 8000
 ```
+
+The local stem cache lives under `apps/api/uploads/.stem-cache`. Delete that
+directory to clear it. Keep the cache disabled in production: its name-and-size
+identity is intentionally a cheap local-development shortcut and can collide.
 
 ### Docker (both services)
 

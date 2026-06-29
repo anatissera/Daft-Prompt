@@ -24,6 +24,7 @@ from llm_band.domain.audio_profile import ReferenceProfile, ReferenceSource
 from llm_band.domain.song_state import Part
 from llm_band.graph import iter_negotiation_events, run_negotiation
 from llm_band.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
+from llm_band.infrastructure.mir.demucs_separator import DemucsSeparator
 from llm_band.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from llm_band.infrastructure.storage.render_artifacts import render_artifacts
 from llm_band.infrastructure.storage.local_store import LocalArtifactStore
@@ -145,8 +146,23 @@ async def _store_reference_upload(file: UploadFile | None) -> ReferenceSource:
 def _reference_analysis_stream_events(source: ReferenceSource) -> Iterator[dict]:
     events: Queue[dict | None] = Queue()
 
-    def progress(stage: str, message: str) -> None:
-        events.put(AnalysisProgressEvent(type=stage, message=message).model_dump(mode="json"))
+    def progress(
+        stage: str,
+        message: str,
+        *,
+        status: str = "started",
+        elapsed_seconds: float | None = None,
+        cache_hit: bool | None = None,
+    ) -> None:
+        events.put(
+            AnalysisProgressEvent(
+                type=stage,
+                message=message,
+                status=status,
+                elapsed_seconds=elapsed_seconds,
+                cache_hit=cache_hit,
+            ).model_dump(mode="json")
+        )
 
     def worker() -> None:
         analyzer = _reference_analyzer()
@@ -188,7 +204,21 @@ def _analyze_with_progress(analyzer, source: ReferenceSource, progress) -> Refer
 
 
 def _reference_analyzer() -> DeepHarmonicAnalyzer:
-    return DeepHarmonicAnalyzer(output_root=_reference_upload_root())
+    settings = get_settings()
+    upload_root = _reference_upload_root()
+    configured_cache_root = getattr(settings, "reference_stem_cache_dir", None)
+    separator = DemucsSeparator(
+        output_root=upload_root,
+        cache_enabled=bool(
+            getattr(settings, "reference_stem_cache_enabled", False)
+        ),
+        cache_root=(
+            Path(configured_cache_root).expanduser()
+            if configured_cache_root
+            else upload_root / ".stem-cache"
+        ),
+    )
+    return DeepHarmonicAnalyzer(output_root=upload_root, separator=separator)
 
 
 @app.post("/chat", response_model=ChatResponse)

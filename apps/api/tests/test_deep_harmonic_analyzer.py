@@ -20,6 +20,7 @@ from llm_band.domain.audio_profile import (
 )
 from llm_band.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from llm_band.infrastructure.mir.harmonic_source import HarmonicSource
+from llm_band.infrastructure.mir.multimodal_features import MultimodalBarFeatures
 from llm_band.infrastructure.mir.tempo_grid import TempoGrid
 from llm_band.ports.stem_separator import SeparatedStem
 
@@ -123,6 +124,7 @@ def _analyzer(
         stem_activity_provider=lambda stem_paths, bar_times, duration: [
             {name: 0.5 for name in stem_paths} for _ in bar_times
         ],
+        multimodal_feature_provider=None,
         duration_provider=lambda path: 8.0,
     )
 
@@ -335,6 +337,72 @@ def test_orchestrator_feeds_energy_and_stem_signals_into_section_detector(tmp_pa
     assert captured["energy_by_bar"] == [0.2, 0.2, 0.9, 0.9]
     assert captured["stem_activity_by_bar"] and "drums" in captured["stem_activity_by_bar"][0]
     assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
+
+
+def test_orchestrator_prefers_multimodal_sections_when_harmonic_structure_is_weak(tmp_path):
+    captured: dict = {}
+    expected = StructureProfile(
+        sections=[
+            StructuralSection(
+                label="A", start_bar=1, end_bar=2, start_seconds=0.0, end_seconds=4.0, confidence=0.7
+            ),
+            StructuralSection(
+                label="B", start_bar=3, end_bar=4, start_seconds=4.0, end_seconds=8.0, confidence=0.7
+            ),
+        ],
+        confidence=0.7,
+    )
+
+    def feature_provider(stem_paths, bar_times, duration):
+        captured["stem_paths"] = stem_paths
+        captured["bar_times"] = bar_times
+        return MultimodalBarFeatures(
+            by_stem={"drums": [pytest.importorskip("numpy").array([0.2])] * 4}
+        )
+
+    def detector(spans, features):
+        captured["features"] = features
+        return expected
+
+    analyzer = _analyzer(tmp_path, structure_confidence=0.25)
+    analyzer.multimodal_feature_provider = feature_provider
+    analyzer.multimodal_section_detector = detector
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    assert set(captured["stem_paths"]) == {"drums", "bass", "vocals", "other"}
+    assert captured["bar_times"] == [0.0, 2.0, 4.0, 6.0]
+    assert profile.audio.structure == expected
+
+
+def test_orchestrator_emits_started_and_completed_stage_timings(tmp_path):
+    ticks = iter(float(value) for value in range(20))
+    events: list[tuple[str, dict]] = []
+    analyzer = _analyzer(tmp_path)
+    analyzer.clock = lambda: next(ticks)
+    analyzer.multimodal_feature_provider = lambda stems, bars, duration: MultimodalBarFeatures()
+
+    analyzer.analyze(
+        _source(tmp_path),
+        progress=lambda stage, message, **details: events.append((stage, details)),
+    )
+
+    expected_stages = [
+        "separating_stems",
+        "building_harmonic_source",
+        "estimating_tempo_grid",
+        "estimating_key",
+        "estimating_chords",
+        "extracting_stem_features",
+        "detecting_structure",
+    ]
+    assert [stage for stage, details in events if details["status"] == "started"] == expected_stages
+    assert [stage for stage, details in events if details["status"] == "completed"] == expected_stages
+    assert all(
+        details["elapsed_seconds"] == 1.0
+        for _stage, details in events
+        if details["status"] == "completed"
+    )
 
 
 def test_non_local_source_is_rejected(tmp_path):

@@ -7,6 +7,11 @@ import type { ChatMessage, FeedEvent } from "@/lib/chatTypes";
 import type { AnalysisEvent, ComposeEvent, ComposeResponse, Header, ReferenceProfile } from "@/lib/types";
 import { answerReferenceQuestion } from "@/lib/referenceProfileView.mjs";
 import {
+  createAnalysisProgress,
+  updateAnalysisProgress,
+  type AnalysisStageState,
+} from "@/lib/analysisProgress.mjs";
+import {
   chooseChatAction,
   createAnalysisMessage,
   createCompositionMessage,
@@ -27,6 +32,7 @@ export default function Home() {
   ]);
   const [referenceProfile, setReferenceProfile] = useState<ReferenceProfile | null>(null);
   const [activeWork, setActiveWork] = useState<string | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisStageState[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const busy = activeWork !== null;
@@ -63,6 +69,7 @@ export default function Home() {
 
   async function analyzeReference(file: File) {
     setActiveWork("File accepted. Extracting tempo, key, energy, sections, and probable chords...");
+    setAnalysisProgress(createAnalysisProgress());
     setReferenceProfile(null);
     try {
       const formData = new FormData();
@@ -94,6 +101,9 @@ export default function Home() {
             throw new Error(event.message);
           } else {
             setActiveWork(event.message);
+            setAnalysisProgress((current) => (
+              current ? updateAnalysisProgress(current, event) : current
+            ));
           }
         }
       }
@@ -108,6 +118,7 @@ export default function Home() {
       appendMessage(createTextMessage("assistant", `I could not analyze that file: ${message}`, nextMessageIndex()));
     } finally {
       setActiveWork(null);
+      setAnalysisProgress(null);
     }
   }
 
@@ -206,7 +217,11 @@ export default function Home() {
       </section>
 
       <section className="chat-panel" aria-label="Conversation">
-        <ChatThread messages={messages} busyLabel={activeWork} />
+        <ChatThread
+          messages={messages}
+          busyLabel={activeWork}
+          analysisProgress={analysisProgress}
+        />
         {error ? (
           <p className="error-banner" role="alert">
             {error}

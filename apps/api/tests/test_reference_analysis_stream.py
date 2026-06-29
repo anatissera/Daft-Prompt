@@ -106,7 +106,14 @@ class _ProgressAnalyzer:
             "estimating_chords",
             "detecting_structure",
         ]:
-            progress(stage, f"{stage} message")
+            progress(stage, f"{stage} started", status="started")
+            progress(
+                stage,
+                f"{stage} completed",
+                status="completed",
+                elapsed_seconds=1.25,
+                cache_hit=stage == "separating_stems",
+            )
         return _profile(source)
 
 
@@ -136,16 +143,17 @@ def test_analyze_reference_stream_emits_progress_and_done(tmp_path: Path, monkey
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     events = _parse_sse(response.text)
-    assert [event["type"] for event in events] == [
-        "accepted",
-        "separating_stems",
-        "building_harmonic_source",
-        "estimating_tempo_grid",
-        "estimating_key",
-        "estimating_chords",
-        "detecting_structure",
-        "done",
+    assert events[0]["type"] == "accepted"
+    assert events[0]["status"] == "started"
+    assert events[-1]["type"] == "done"
+    stage_events = events[1:-1]
+    assert [event["status"] for event in stage_events] == [
+        status
+        for _stage in range(6)
+        for status in ("started", "completed")
     ]
+    assert stage_events[1]["elapsed_seconds"] == 1.25
+    assert stage_events[1]["cache_hit"] is True
     assert events[-1]["profile"]["audio"]["harmony"]["key"]["primary"]["key"] == "A minor"
     assert events[-1]["profile"]["audio"]["structure"]["sections"][0]["label"] == "A"
 

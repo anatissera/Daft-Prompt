@@ -141,6 +141,86 @@ def test_demucs_separator_returns_mix_fallback_when_outputs_are_missing(tmp_path
     assert stems[0].path == str(audio_path)
 
 
+def test_development_cache_reuses_complete_stems_for_same_name_and_size(tmp_path):
+    output_root = tmp_path / "outputs"
+    cache_root = output_root / ".stem-cache"
+    calls: list[list[str]] = []
+
+    def runner(command: list[str]) -> None:
+        calls.append(command)
+        source = Path(command[-1])
+        destination = Path(command[command.index("-o") + 1])
+        stem_root = destination / "htdemucs" / source.stem
+        stem_root.mkdir(parents=True)
+        for name in ("drums", "bass", "vocals", "other"):
+            (stem_root / f"{name}.wav").write_bytes(f"{name} audio".encode())
+
+    first_audio = tmp_path / "first" / "demo.wav"
+    second_audio = tmp_path / "second" / "demo.wav"
+    first_audio.parent.mkdir()
+    second_audio.parent.mkdir()
+    first_audio.write_bytes(b"same size")
+    second_audio.write_bytes(b"different")
+    first = _source(str(first_audio)).model_copy(update={"reference_id": "ref_first"})
+    second = _source(str(second_audio)).model_copy(update={"reference_id": "ref_second"})
+    separator = DemucsSeparator(
+        output_root=output_root,
+        command_runner=runner,
+        cache_enabled=True,
+        cache_root=cache_root,
+    )
+
+    separator.separate(first)
+    cached = separator.separate(second)
+
+    assert len(calls) == 1
+    assert separator.last_cache_hit is True
+    assert {stem.name for stem in cached} == {"drums", "bass", "vocals", "other"}
+    assert all(Path(stem.path).is_file() for stem in cached)
+
+
+def test_development_cache_ignores_incomplete_entry(tmp_path):
+    audio_path = tmp_path / "demo.wav"
+    audio_path.write_bytes(b"input")
+    calls: list[list[str]] = []
+
+    def runner(command: list[str]) -> None:
+        calls.append(command)
+        _write_expected_stems(tmp_path / "outputs")
+
+    separator = DemucsSeparator(
+        output_root=tmp_path / "outputs",
+        command_runner=runner,
+        cache_enabled=True,
+    )
+    cache_dir = separator.cache_path_for(audio_path)
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "drums.wav").write_bytes(b"partial")
+
+    stems = separator.separate(_source(str(audio_path)))
+
+    assert len(calls) == 1
+    assert separator.last_cache_hit is False
+    assert {stem.name for stem in stems} == {"drums", "bass", "vocals", "other"}
+
+
+def test_development_cache_is_disabled_by_default(tmp_path):
+    audio_path = tmp_path / "demo.wav"
+    audio_path.write_bytes(b"input")
+    output_root = tmp_path / "outputs"
+    _write_expected_stems(output_root)
+    calls: list[list[str]] = []
+    separator = DemucsSeparator(
+        output_root=output_root,
+        command_runner=lambda command: calls.append(command),
+    )
+
+    separator.separate(_source(str(audio_path)))
+
+    assert len(calls) == 1
+    assert separator.last_cache_hit is False
+
+
 @pytest.mark.skipif(
     os.environ.get("LLMINEM_RUN_DEMUCS_TESTS") != "1",
     reason="real Demucs separation is slow and downloads model weights",

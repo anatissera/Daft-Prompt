@@ -260,11 +260,20 @@ export type AnalysisProgressType =
   | "estimating_tempo_grid"
   | "estimating_key"
   | "estimating_chords"
+  | "extracting_stem_features"
   | "detecting_structure"
   | "analysis_keepalive";
 
+export interface AnalysisProgressEvent {
+  type: AnalysisProgressType;
+  message: string;
+  status: "started" | "completed";
+  elapsed_seconds: number | null;
+  cache_hit: boolean | null;
+}
+
 export type AnalysisEvent =
-  | { type: AnalysisProgressType; message: string }
+  | AnalysisProgressEvent
   | { type: "done"; message: string; profile: ReferenceProfile }
   | { type: "error"; message: string };
 

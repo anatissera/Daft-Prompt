@@ -98,6 +98,7 @@ AnalysisProgressType = Literal[
     "estimating_tempo_grid",
     "estimating_key",
     "estimating_chords",
+    "extracting_stem_features",
     "detecting_structure",
     "analysis_keepalive",
 ]
@@ -106,6 +107,9 @@ AnalysisProgressType = Literal[
 class AnalysisProgressEvent(BaseModel):
     type: AnalysisProgressType
     message: str
+    status: Literal["started", "completed"] = "started"
+    elapsed_seconds: float | None = Field(default=None, ge=0.0)
+    cache_hit: bool | None = None
 
 
 class AnalysisDoneEvent(BaseModel):
