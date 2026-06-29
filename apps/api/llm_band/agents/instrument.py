@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from langsmith import get_current_run_tree, traceable
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
@@ -122,6 +123,7 @@ def _invoke_structured(structured, messages, schema_name: str):
     return None
 
 
+@traceable(run_type="chain", name="instrument:compose")
 def compose_part(
     header: Header,
     roster_item: RosterItem,
@@ -135,6 +137,9 @@ def compose_part(
     `validate_song` on the full song surfaces it in `song.errors` rather than crashing
     the run.
     """
+    run = get_current_run_tree()
+    if run is not None:
+        run.name = roster_item.instrument
     if llm is None:
         from llm_band.infrastructure.gemini.llm import make_llm
 
@@ -206,6 +211,7 @@ def _negotiation_etiquette() -> str:
     )
 
 
+@traceable(run_type="chain", name="instrument:turn")
 def run_instrument_turn(
     header: Header,
     roster_item: RosterItem,
@@ -221,6 +227,9 @@ def run_instrument_turn(
     Same never-crash contract as `compose_part` — repair failures ship as-is and
     surface later via `validate_song`.
     """
+    run = get_current_run_tree()
+    if run is not None:
+        run.name = roster_item.instrument
     if llm is None:
         from llm_band.infrastructure.gemini.llm import make_llm
 
