@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from ..domain.song_state import ChordSpan, Header, RosterItem, Section, SongState
@@ -107,6 +108,7 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
     return SongState(request=style, header=header, roster=roster, parts={})
 
 
+@traceable(run_type="chain", name="director")
 def run_director(style: str, llm=None) -> SongState:
     """Run the director. Pass `llm` (a chat model) to inject a fake in tests;
     otherwise a provider model is built from settings."""

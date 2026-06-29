@@ -8,7 +8,7 @@ of the last-write-wins default.
 
 from __future__ import annotations
 
-from typing import Annotated, TypedDict
+from typing import Annotated, Optional, TypedDict
 
 from .domain.song_state import Header, NegotiationRequest, Part, RosterItem
 
@@ -38,9 +38,20 @@ def take_latest(_left: int, right: int) -> int:
 
 
 class BandState(TypedDict):
-    header: Header
+    request: str
+    header: Optional[Header]
     roster: list[RosterItem]
     parts: Annotated[dict[str, Part], merge_parts]
     negotiation_requests: Annotated[list[NegotiationRequest], merge_requests]
     round: Annotated[int, take_latest]
     converged: bool
+
+
+class InstrumentsState(TypedDict):
+    """State for the instruments subgraph. Shares keys with BandState so
+    LangGraph can pass state between parent and subgraph automatically."""
+    header: Optional[Header]
+    roster: list[RosterItem]
+    parts: Annotated[dict[str, Part], merge_parts]
+    negotiation_requests: Annotated[list[NegotiationRequest], merge_requests]
+    round: Annotated[int, take_latest]

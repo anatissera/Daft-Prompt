@@ -1,7 +1,16 @@
-"""Phase 4: one-shot fan-out — one instrument node per roster entry, merged via a
-LangGraph state reducer. No negotiation rounds (see `run_negotiation` below for
-Phase 5's round loop): all instruments compose in parallel from the header +
-role + peer roles, so `peer_summaries` is empty on this first pass.
+"""Composition graphs.
+
+Phase 4: one-shot fan-out via `build_graph` / `run_instruments`.
+Phase 5: full negotiation via `_build_negotiation_graph` / `run_negotiation` /
+         `iter_negotiation_events`.
+
+The negotiation graph structure:
+  START → director → instruments (subgraph) → check_convergence
+        → next_round → instruments (loop)
+        → arbiter → END
+
+The instruments subgraph groups all parallel instrument_turn nodes so they
+appear as a single collapsed unit in LangSmith traces.
 """
 
 from __future__ import annotations
@@ -15,7 +24,7 @@ from .agents.arbiter import run_arbiter
 from .agents.instrument import NewRequest, RequestResolution, compose_part, run_instrument_turn
 from .config import get_settings
 from .domain.song_state import Header, NegotiationRequest, Part, RosterItem, SongState
-from .state import BandState, merge_parts, merge_requests, take_latest
+from .state import BandState, InstrumentsState, merge_parts, merge_requests, take_latest
 
 
 class _InstrumentPayload(TypedDict):
@@ -68,18 +77,13 @@ def run_instruments(song: SongState, llm=None) -> SongState:
 
 # ---- Phase 5: negotiation rounds -------------------------------------------
 #
-#   START -> [instrument_turn]* (round 0, fan-out to every instrument)
-#   instrument_turn -> round_complete
-#   round_complete -> {arbiter}                      if no requests are pending
-#                   -> {[instrument_turn]*}           next round, fan-out to addressees
-#                   -> {arbiter}                      if the round cap is hit
+#   START -> director
+#   director -> instruments (subgraph, round 0 — all instruments compose)
+#   instruments -> check_convergence
+#   check_convergence -> next_round  if requests pending and round cap not reached
+#                     -> arbiter     otherwise
+#   next_round -> instruments (subsequent round — only addressed instruments)
 #   arbiter -> END
-#
-# Round 0 has no pending requests (nothing exists yet to negotiate about) but
-# can still raise new ones; from round 1 on, only instruments with a pending
-# request addressed to them get a turn — others' parts stay frozen, which is
-# what makes "zero new requests" a reachable fixed point instead of every
-# instrument re-rolling forever.
 
 
 class _TurnPayload(TypedDict):
@@ -124,50 +128,34 @@ def _resolutions_to_updates(
     return updates
 
 
-def _dispatch_round0(state: BandState) -> list[Send]:
-    return [
-        Send(
-            "instrument_turn",
-            {
-                "header": state["header"], "roster_item": r, "roster": state["roster"],
-                "peer_summaries": {}, "pending": [], "existing_part": None, "round": 0,
-            },
-        )
-        for r in state["roster"]
-    ]
+def _build_instruments_subgraph(llm=None):
+    """Subgraph that runs one round of instrument turns in parallel.
 
+    On round 0 all roster instruments compose from scratch.
+    On subsequent rounds only instruments addressed by pending requests get a turn.
+    """
 
-def _build_negotiation_graph(llm=None, max_rounds: int = 3):
-    def _instrument_turn_node(payload: _TurnPayload) -> dict:
-        part, resolutions, new_requests = run_instrument_turn(
-            payload["header"], payload["roster_item"], payload["roster"],
-            payload["peer_summaries"], payload["pending"], payload["existing_part"], llm=llm,
-        )
-        updates = _resolutions_to_updates(payload["pending"], resolutions)
-        updates += _new_requests_to_pending(payload["roster_item"].id, payload["round"], new_requests)
-        return {
-            "parts": {payload["roster_item"].id: part},
-            "negotiation_requests": updates,
-            "round": payload["round"],
-        }
-
-    def _round_complete(_state: BandState) -> dict:
-        return {}
-
-    def _check_convergence(state: BandState):
+    def _dispatch_instruments(state: InstrumentsState) -> list[Send]:
+        if state["round"] == 0:
+            return [
+                Send(
+                    "instrument_turn",
+                    {
+                        "header": state["header"], "roster_item": r,
+                        "roster": state["roster"], "peer_summaries": {},
+                        "pending": [], "existing_part": None, "round": 0,
+                    },
+                )
+                for r in state["roster"]
+            ]
         pending = [r for r in state["negotiation_requests"] if r.status == "pending"]
-        if not pending:
-            return "arbiter"  # fixed point: nothing left to negotiate about
-        next_round = state["round"] + 1
-        if next_round >= max_rounds:
-            return "arbiter"  # round cap hit — force-converge whatever's left
-
         roster_by_id = {r.id: r for r in state["roster"]}
-        peer_summaries = {rid: p.notes_summary for rid, p in state["parts"].items() if p.notes_summary}
+        peer_summaries = {
+            rid: p.notes_summary for rid, p in state["parts"].items() if p.notes_summary
+        }
         pending_by_to: dict[str, list[NegotiationRequest]] = {}
         for r in pending:
             pending_by_to.setdefault(r.to, []).append(r)
-
         return [
             Send(
                 "instrument_turn",
@@ -175,12 +163,52 @@ def _build_negotiation_graph(llm=None, max_rounds: int = 3):
                     "header": state["header"], "roster_item": roster_by_id[to_id],
                     "roster": state["roster"],
                     "peer_summaries": {k: v for k, v in peer_summaries.items() if k != to_id},
-                    "pending": reqs, "existing_part": state["parts"].get(to_id), "round": next_round,
+                    "pending": reqs, "existing_part": state["parts"].get(to_id),
+                    "round": state["round"],
                 },
             )
             for to_id, reqs in pending_by_to.items()
             if to_id in roster_by_id
         ]
+
+    def _instrument_turn_node(payload: _TurnPayload) -> dict:
+        part, resolutions, new_requests = run_instrument_turn(
+            payload["header"], payload["roster_item"], payload["roster"],
+            payload["peer_summaries"], payload["pending"], payload["existing_part"], llm=llm,
+        )
+        updates = _resolutions_to_updates(payload["pending"], resolutions)
+        updates += _new_requests_to_pending(
+            payload["roster_item"].id, payload["round"], new_requests
+        )
+        return {
+            "parts": {payload["roster_item"].id: part},
+            "negotiation_requests": updates,
+            "round": payload["round"],
+        }
+
+    subgraph = StateGraph(InstrumentsState)
+    subgraph.add_node("instrument_turn", _instrument_turn_node)
+    subgraph.add_conditional_edges(START, _dispatch_instruments, ["instrument_turn"])
+    subgraph.add_edge("instrument_turn", END)
+    return subgraph.compile()
+
+
+def _build_negotiation_graph(llm=None, max_rounds: int = 3):
+    instruments = _build_instruments_subgraph(llm=llm)
+
+    def _director_node(state: BandState) -> dict:
+        from .agents.director import run_director
+        song = run_director(state["request"], llm=llm)
+        return {"header": song.header, "roster": song.roster}
+
+    def _next_round(state: BandState) -> dict:
+        return {"round": state["round"] + 1}
+
+    def _check_convergence(state: BandState):
+        pending = [r for r in state["negotiation_requests"] if r.status == "pending"]
+        if not pending or state["round"] + 1 >= max_rounds:
+            return "arbiter"
+        return "next_round"
 
     def _arbiter_node(state: BandState) -> dict:
         pending = [r for r in state["negotiation_requests"] if r.status == "pending"]
@@ -188,75 +216,106 @@ def _build_negotiation_graph(llm=None, max_rounds: int = 3):
         return {"negotiation_requests": resolved, "converged": True}
 
     graph = StateGraph(BandState)
-    graph.add_node("instrument_turn", _instrument_turn_node)
-    graph.add_node("round_complete", _round_complete)
+    graph.add_node("director", _director_node)
+    graph.add_node("instruments", instruments)
+    graph.add_node("next_round", _next_round)
     graph.add_node("arbiter", _arbiter_node)
-    graph.add_conditional_edges(START, _dispatch_round0, ["instrument_turn"])
-    graph.add_edge("instrument_turn", "round_complete")
-    graph.add_conditional_edges("round_complete", _check_convergence, ["instrument_turn", "arbiter"])
+    graph.add_edge(START, "director")
+    graph.add_edge("director", "instruments")
+    graph.add_conditional_edges("instruments", _check_convergence, ["next_round", "arbiter"])
+    graph.add_edge("next_round", "instruments")
     graph.add_edge("arbiter", END)
     return graph.compile()
 
 
-def run_negotiation(song: SongState, llm=None, max_rounds: Optional[int] = None) -> SongState:
-    """Compose + negotiate: instruments compose (round 0), then revise across
-    bounded rounds as they raise and resolve `negotiation_requests`, until a
-    round produces nothing pending (early exit) or the round cap is hit (the
-    arbiter then force-resolves whatever's left). `recursion_limit` is a hard
-    backstop independent of the round-cap logic above.
+def run_negotiation(style: str, llm=None, max_rounds: Optional[int] = None) -> SongState:
+    """Compose + negotiate: director sets the arrangement, then instruments compose
+    (round 0) and revise across bounded rounds, until convergence or the round cap
+    hits and the arbiter force-resolves whatever is left.
     """
-    if not song.roster:
-        return song
     rounds = max_rounds if max_rounds is not None else get_settings().max_rounds
     app = _build_negotiation_graph(llm=llm, max_rounds=rounds)
     result = app.invoke(
         {
-            "header": song.header, "roster": song.roster, "parts": dict(song.parts),
-            "negotiation_requests": list(song.negotiation_requests), "round": 0, "converged": False,
+            "request": style, "header": None, "roster": [],
+            "parts": {}, "negotiation_requests": [], "round": 0, "converged": False,
         },
         config={"recursion_limit": 4 * rounds + 10},
     )
-    song.parts = result["parts"]
-    song.negotiation_requests = result["negotiation_requests"]
-    song.round = result["round"]
-    song.converged = result["converged"]
-    return song
+    return SongState(
+        request=style,
+        header=result["header"],
+        roster=result["roster"],
+        parts=result.get("parts", {}),
+        negotiation_requests=result.get("negotiation_requests", []),
+        round=result.get("round", 0),
+        converged=result.get("converged", True),
+    )
 
 
-def iter_negotiation_events(song: SongState, llm=None, max_rounds: Optional[int] = None) -> Iterator[dict]:
-    """Same negotiation run as `run_negotiation`, but yields one event dict per
-    node execution (each parallel `instrument_turn` Send produces its own chunk
-    under `stream_mode="updates"`, confirmed via a standalone smoke test) instead
-    of blocking until the graph finishes. Keeps `song` synchronized after each
-    update so callers can return partial results if the stream is interrupted.
+def iter_negotiation_events(
+    style: str, llm=None, max_rounds: Optional[int] = None
+) -> Iterator[tuple[dict, Optional[SongState]]]:
+    """Same run as `run_negotiation` but streaming: yields `(event, song_snapshot)`
+    pairs. The first pair carries a `SongState` built from the director's output;
+    subsequent pairs carry `None` (the same object is mutated in place).
+
+    Uses `subgraphs=True` so instrument_turn events inside the instruments
+    subgraph are surfaced alongside parent-graph events.
     """
-    if not song.roster:
-        return
     rounds = max_rounds if max_rounds is not None else get_settings().max_rounds
     app = _build_negotiation_graph(llm=llm, max_rounds=rounds)
-    state = {
-        "header": song.header, "roster": song.roster, "parts": dict(song.parts),
-        "negotiation_requests": list(song.negotiation_requests), "round": 0, "converged": False,
+    state: dict = {
+        "request": style, "header": None, "roster": [],
+        "parts": {}, "negotiation_requests": [], "round": 0, "converged": False,
     }
-    for chunk in app.stream(state, config={"recursion_limit": 4 * rounds + 10}, stream_mode="updates"):
+    song: Optional[SongState] = None
+
+    stream = app.stream(
+        state,
+        config={"recursion_limit": 4 * rounds + 10},
+        stream_mode="updates",
+        subgraphs=True,
+    )
+    for ns, chunk in stream:
         for node, update in chunk.items():
             if not update:
                 continue
+
+            # Sync shared state fields
             if "parts" in update:
                 state["parts"] = merge_parts(state["parts"], update["parts"])
             if "negotiation_requests" in update:
-                state["negotiation_requests"] = merge_requests(state["negotiation_requests"], update["negotiation_requests"])
+                state["negotiation_requests"] = merge_requests(
+                    state["negotiation_requests"], update["negotiation_requests"]
+                )
             if "round" in update:
                 state["round"] = take_latest(state["round"], update["round"])
             if "converged" in update:
                 state["converged"] = update["converged"]
+            if "header" in update:
+                state["header"] = update["header"]
+            if "roster" in update:
+                state["roster"] = update["roster"]
 
-            song.parts = state["parts"]
-            song.negotiation_requests = state["negotiation_requests"]
-            song.round = state["round"]
-            song.converged = state["converged"]
+            if node == "director" and not ns:
+                song = SongState(
+                    request=style,
+                    header=update["header"],
+                    roster=update["roster"],
+                    parts={},
+                )
+                yield {
+                    "type": "director",
+                    "source": "director",
+                    "header": update["header"].model_dump(mode="json"),
+                    "roster": [r.model_dump(mode="json") for r in update["roster"]],
+                }, song
 
-            if node == "instrument_turn":
+            elif node == "instrument_turn" and ns and song is not None:
+                song.parts = state["parts"]
+                song.negotiation_requests = state["negotiation_requests"]
+                song.round = state["round"]
                 instrument_id = next(iter(update["parts"]))
                 reqs = update.get("negotiation_requests", [])
                 yield {
@@ -264,18 +323,29 @@ def iter_negotiation_events(song: SongState, llm=None, max_rounds: Optional[int]
                     "round": update["round"],
                     "instrument_id": instrument_id,
                     "notes_summary": state["parts"][instrument_id].notes_summary,
-                    "new_requests": [r.model_dump(by_alias=True) for r in reqs if r.status == "pending"],
-                    "resolved_requests": [r.model_dump(by_alias=True) for r in reqs if r.status != "pending"],
-                }
-            elif node == "arbiter":
+                    "new_requests": [
+                        r.model_dump(by_alias=True) for r in reqs if r.status == "pending"
+                    ],
+                    "resolved_requests": [
+                        r.model_dump(by_alias=True) for r in reqs if r.status != "pending"
+                    ],
+                }, None
+
+            elif node == "arbiter" and not ns and song is not None:
+                song.converged = True
+                song.negotiation_requests = state["negotiation_requests"]
                 yield {
                     "type": "convergence",
                     "round": state["round"],
                     "converged": True,
-                    "resolved_requests": [r.model_dump(by_alias=True) for r in update.get("negotiation_requests", [])],
-                }
+                    "resolved_requests": [
+                        r.model_dump(by_alias=True)
+                        for r in update.get("negotiation_requests", [])
+                    ],
+                }, None
 
-    song.parts = state["parts"]
-    song.negotiation_requests = state["negotiation_requests"]
-    song.round = state["round"]
-    song.converged = state["converged"]
+    if song is not None:
+        song.parts = state["parts"]
+        song.negotiation_requests = state["negotiation_requests"]
+        song.round = state["round"]
+        song.converged = state["converged"]
