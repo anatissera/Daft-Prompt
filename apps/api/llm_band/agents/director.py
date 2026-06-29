@@ -8,6 +8,7 @@ output so it maps cleanly onto `SongState.header` + `SongState.roster`.
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -66,8 +67,34 @@ def _prompt(style: str) -> list[tuple[str, str]]:
     return [("system", _SYSTEM), ("human", f"Style: {style}")]
 
 
+_ID_SAFE_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slug(value: str, fallback: str) -> str:
+    cleaned = _ID_SAFE_RE.sub("_", (value or "").strip().lower()).strip("_")
+    return cleaned or fallback
+
+
+def _unique_roster_ids(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
+    """LLM often hands back empty or repeated `id` fields; downstream the parts
+    dict is keyed by id so duplicates collapse into a single audible track.
+    Rewrite each id to a unique slug derived from id → instrument → role → idx."""
+    seen: set[str] = set()
+    repaired: list[ArrangementInstrument] = []
+    for idx, item in enumerate(items):
+        base = _slug(item.id, "") or _slug(item.instrument, "") or _slug(item.role, "") or f"agent_{idx}"
+        candidate = base
+        suffix = 2
+        while candidate in seen:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+        seen.add(candidate)
+        repaired.append(item.model_copy(update={"id": candidate}))
+    return repaired
+
+
 def _clamp_roster(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
-    return items[:MAX_ROSTER]
+    return _unique_roster_ids(items[:MAX_ROSTER])
 
 
 def _clamp_num_bars(value: int) -> int:
