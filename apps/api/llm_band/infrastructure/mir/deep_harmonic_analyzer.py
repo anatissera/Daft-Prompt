@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import contextmanager
+import json
+import logging
 from pathlib import Path
 import time
 
@@ -42,6 +44,7 @@ from llm_band.infrastructure.mir.multimodal_features import (
 )
 from llm_band.infrastructure.mir.section_features import (
     detect_multimodal_sections,
+    detect_multimodal_sections_with_audit,
     detect_sections_from_bar_signals,
 )
 from llm_band.infrastructure.mir.structure_features import detect_structure
@@ -58,6 +61,7 @@ LOW_USEFULNESS_THRESHOLD = 0.5
 BAR_PHASE_MIN_CONFIDENCE = 0.15
 AMBIGUOUS_PHASE_GRID_PENALTY = 0.85
 ProgressCallback = Callable[..., None]
+logger = logging.getLogger(__name__)
 
 
 class DeepHarmonicAnalyzer:
@@ -81,6 +85,7 @@ class DeepHarmonicAnalyzer:
         tuning_deviation_provider: Callable[[str], float | None] | None = estimate_tuning_deviation,
         duration_provider: Callable[[Path], float] | None = None,
         clock: Callable[[], float] = time.perf_counter,
+        audit_writer: Callable[[Path, dict], None] | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.separator = separator or DemucsSeparator(output_root=self.output_root)
@@ -99,6 +104,7 @@ class DeepHarmonicAnalyzer:
         self.tuning_deviation_provider = tuning_deviation_provider
         self.duration_provider = duration_provider or _audio_duration
         self.clock = clock
+        self.audit_writer = audit_writer or _write_json
 
     def analyze(
         self,
@@ -247,16 +253,24 @@ class DeepHarmonicAnalyzer:
             "detecting_structure",
             "Detecting repeated progressions and A/B/C structure.",
         ):
+            boundary_audit: list[dict] = []
+            structure_source = "harmonic"
             structure, progressions = self.structure_detector(chord_spans)
             if self.multimodal_section_detector is not None and multimodal_features.by_stem:
-                multimodal_structure = self.multimodal_section_detector(
-                    chord_spans, multimodal_features
-                )
+                if self.multimodal_section_detector is detect_multimodal_sections:
+                    multimodal_structure, boundary_audit = detect_multimodal_sections_with_audit(
+                        chord_spans, multimodal_features
+                    )
+                else:
+                    multimodal_structure = self.multimodal_section_detector(
+                        chord_spans, multimodal_features
+                    )
                 if (
                     len(multimodal_structure.sections) > 1
                     and multimodal_structure.confidence >= 0.4
                 ):
                     structure = multimodal_structure
+                    structure_source = "multimodal"
                     notes.append(
                         AnalysisNote(
                             code="multimodal_sections",
@@ -287,6 +301,7 @@ class DeepHarmonicAnalyzer:
                     and approximate_structure.confidence > structure.confidence
                 ):
                     structure = approximate_structure
+                    structure_source = "fallback"
                     notes.append(
                         AnalysisNote(
                             code="approximate_sections",
@@ -333,6 +348,40 @@ class DeepHarmonicAnalyzer:
             harmonic_rhythm_label=_harmonic_rhythm_label(chord_spans),
             confidence=_harmony_confidence(key_profile, chord_spans, grid_confidence),
         )
+        audit_path = analysis_dir / "section_audit.json"
+        try:
+            self.audit_writer(
+                audit_path,
+                _section_audit_payload(
+                    source=source,
+                    duration=duration,
+                    grid=grid,
+                    key_profile=key_profile,
+                    harmony=harmony,
+                    boundary_audit=boundary_audit,
+                    structure=structure,
+                    structure_source=structure_source,
+                ),
+            )
+            logger.info(
+                "section audit written for %s at %s",
+                source.reference_id,
+                audit_path,
+            )
+        except Exception as exc:
+            logger.warning(
+                "could not write section audit for %s at %s: %s",
+                source.reference_id,
+                audit_path,
+                exc,
+            )
+            notes.append(
+                AnalysisNote(
+                    code="section_audit_unavailable",
+                    message="Section decision audit could not be written.",
+                    severity="warning",
+                )
+            )
 
         audio = AudioProfile(
             duration_seconds=duration,
@@ -357,6 +406,10 @@ class DeepHarmonicAnalyzer:
             audio=audio,
             summary=_summarize(audio),
         )
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 @contextmanager
@@ -529,6 +582,61 @@ def _stem_profile(stem) -> StemProfile:
         available=stem.name in {"drums", "bass", "vocals", "other"},
         confidence=stem.confidence,
     )
+
+
+def _section_audit_payload(
+    *,
+    source: ReferenceSource,
+    duration: float,
+    grid,
+    key_profile,
+    harmony: HarmonicProfile,
+    boundary_audit: list[dict],
+    structure,
+    structure_source: str,
+) -> dict:
+    main_progression = (
+        harmony.progressions[0].chords
+        if harmony.progressions and harmony.progressions[0].chords
+        else []
+    )
+    return {
+        "metadata": {
+            "reference_id": source.reference_id,
+            "label": source.label,
+            "duration_seconds": round(duration, 3),
+            "tempo_bpm": grid.tempo.primary_bpm,
+            "bar_count": len(grid.bar_times),
+            "bar_grid_confidence": grid.tempo.bar_grid_confidence,
+        },
+        "harmony": {
+            "key_candidates": [
+                {
+                    "key": candidate.key,
+                    "mode": candidate.mode,
+                    "confidence": candidate.confidence,
+                }
+                for candidate in key_profile.candidates[:4]
+            ],
+            "key_confidence": key_profile.confidence,
+            "main_progression": main_progression,
+            "harmony_confidence": harmony.confidence,
+        },
+        "boundary_candidates": boundary_audit,
+        "final_sections": [
+            {
+                "label": section.label,
+                "start_bar": section.start_bar,
+                "end_bar": section.end_bar,
+                "start_seconds": section.start_seconds,
+                "end_seconds": section.end_seconds,
+                "confidence": section.confidence,
+                "main_progression": section.main_progression,
+                "source": structure_source,
+            }
+            for section in structure.sections
+        ],
+    }
 
 
 def _harmonic_rhythm_label(chord_spans) -> str:

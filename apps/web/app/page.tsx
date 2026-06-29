@@ -5,7 +5,7 @@ import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
 import type { ChatMessage, FeedEvent } from "@/lib/chatTypes";
 import type { AnalysisEvent, ComposeEvent, ComposeResponse, Header, ReferenceProfile } from "@/lib/types";
-import { answerReferenceQuestion } from "@/lib/referenceProfileView.mjs";
+import { answerReferenceQuestion, getAnalysisReadyMessage } from "@/lib/referenceProfileView.mjs";
 import {
   createAnalysisProgress,
   updateAnalysisProgress,
@@ -109,7 +109,7 @@ export default function Home() {
       }
       if (!profile) throw new Error("analysis stream ended without a profile");
       setReferenceProfile(profile);
-      appendMessage(createAnalysisMessage("assistant", analysisReadyMessage(profile), profile, nextMessageIndex()));
+      appendMessage(createAnalysisMessage("assistant", getAnalysisReadyMessage(profile), profile, nextMessageIndex()));
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
@@ -265,15 +265,4 @@ function normalizeAnalysisError(err: unknown) {
     );
   }
   return message;
-}
-
-function analysisReadyMessage(profile: ReferenceProfile) {
-  const audio = profile.audio;
-  if (!audio) return "Analysis finished, but no audio profile was returned.";
-
-  const tempoValue = audio.tempo?.primary_bpm ?? audio.tempo_bpm;
-  const tempo = tempoValue === null || tempoValue === undefined ? "unknown tempo" : `likely ${Math.round(tempoValue)} BPM`;
-  const keyValue = audio.harmony?.key?.primary?.key ?? audio.key;
-  const key = keyValue ? `likely key ${keyValue}` : "unknown key";
-  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}, with probable chords and A/B/C structure below.`;
 }

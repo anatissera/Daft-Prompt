@@ -74,6 +74,54 @@ def test_sustained_vocal_and_drum_change_creates_boundary_with_bar_and_seconds()
     assert structure.sections[1].start_seconds == 16.0
 
 
+def test_default_multimodal_detection_ignores_four_bar_fragments():
+    spans = [_span(bar) for bar in range(1, 17)]
+    quiet = [[0.1, 0.1, 0.1]] * 4
+    loud = [[0.9, 0.9, 0.9]] * 4
+
+    structure = detect_multimodal_sections(
+        spans,
+        _features(
+            vocals=quiet + loud + quiet + loud,
+            drums=quiet + loud + quiet + loud,
+        ),
+    )
+
+    assert [(section.start_bar, section.end_bar) for section in structure.sections] == [
+        (1, 16),
+    ]
+    assert structure.confidence < 0.4
+
+
+def test_default_multimodal_detection_keeps_strong_eight_bar_sections():
+    spans = [_span(bar) for bar in range(1, 33)]
+    quiet = [[0.1, 0.1, 0.1]] * 8
+    loud = [[0.9, 0.9, 0.9]] * 8
+
+    structure = detect_multimodal_sections(
+        spans,
+        _features(vocals=quiet + loud + quiet + loud, drums=quiet + loud + quiet + loud),
+    )
+
+    assert [(section.label, section.start_bar, section.end_bar) for section in structure.sections] == [
+        ("A", 1, 8),
+        ("B", 9, 16),
+        ("A", 17, 24),
+        ("B", 25, 32),
+    ]
+
+
+def test_single_moderate_stem_change_is_not_enough_for_default_boundary():
+    spans = [_span(bar) for bar in range(1, 17)]
+    other = [[0.2, 0.2]] * 8 + [[0.5, 0.5]] * 8
+
+    structure = detect_multimodal_sections(spans, _features(other=other))
+
+    assert [(section.start_bar, section.end_bar) for section in structure.sections] == [
+        (1, 16),
+    ]
+
+
 def test_single_bar_drum_fill_does_not_create_section():
     spans = [_span(bar) for bar in range(1, 17)]
     drums = [[0.2, 0.2, 0.2] for _ in spans]
@@ -157,7 +205,7 @@ def test_missing_modalities_redistribute_weights():
     assert len(structure.sections) == 2
 
 
-def test_sustained_moderate_single_stem_change_is_not_hidden_by_global_floor():
+def test_sustained_moderate_single_stem_change_is_rejected_as_weak_evidence():
     spans = [_span(bar) for bar in range(1, 17)]
     other = [[0.2, 0.2]] * 8 + [[0.5, 0.5]] * 8
 
@@ -168,10 +216,7 @@ def test_sustained_moderate_single_stem_change_is_not_hidden_by_global_floor():
         min_section_bars=4,
     )
 
-    assert [(section.start_bar, section.end_bar) for section in structure.sections] == [
-        (1, 8),
-        (9, 16),
-    ]
+    assert [(section.start_bar, section.end_bar) for section in structure.sections] == [(1, 16)]
 
 
 def test_harmonic_change_contributes_independent_boundary_evidence():

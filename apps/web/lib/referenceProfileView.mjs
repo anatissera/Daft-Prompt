@@ -101,7 +101,9 @@ export function getKeyCandidateSummary(profile, limit = 4) {
   const candidates = keyProfile?.candidates ?? [];
   const globalConfidence = keyProfile?.confidence;
   return candidates.slice(0, limit).map((candidate) => ({
+    kind: "tonal_candidate",
     label: candidate.key,
+    description: "Tonal center candidate",
     confidence: formatConfidence(
       confidenceLabel(Math.min(candidate.confidence, globalConfidence ?? candidate.confidence)),
       Math.min(candidate.confidence, globalConfidence ?? candidate.confidence),
@@ -115,11 +117,32 @@ export function getMainProgression(profile) {
   if (!main) return null;
   const progression = main.chords.join(" - ");
   return {
-    label: main.confidence < 0.5 ? `Weak chord loop candidate: ${progression}` : `Probably ${progression}`,
+    kind: "chord_progression",
+    label: main.confidence < 0.5 ? `Weak chord loop candidate: ${progression}` : `Probable chord progression: ${progression}`,
     bars: `bars ${main.start_bar}-${main.end_bar}`,
     repetitions: main.repetitions,
     confidence: formatConfidence(confidenceLabel(main.confidence), main.confidence),
   };
+}
+
+export function getAnalysisReadyMessage(profile) {
+  const audio = profile.audio;
+  if (!audio) return "Analysis finished, but no audio profile was returned.";
+
+  const tempoValue = audio.tempo?.primary_bpm ?? audio.tempo_bpm;
+  const tempo = tempoValue === null || tempoValue === undefined ? "unknown tempo" : `likely ${Math.round(tempoValue)} BPM`;
+  const keyProfile = audio.harmony?.key;
+  const keyValue = keyProfile?.primary?.key ?? audio.key;
+  const keyConfidence = keyProfile?.confidence ?? audio.key_confidence;
+  const keyIsAmbiguous = Boolean(
+    keyValue && (keyConfidence < 0.5 || keyProfile?.relative_key_ambiguity),
+  );
+  const key = keyValue
+    ? keyIsAmbiguous
+      ? `ambiguous tonal center around ${keyValue}`
+      : `likely key ${keyValue}`
+    : "unknown key";
+  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}, with probable chords and A/B/C structure below.`;
 }
 
 export function getStructureTimeline(profile) {
@@ -189,11 +212,13 @@ export function answerReferenceQuestion(prompt, profile) {
       return "I do not have probable chord estimates for this reference yet.";
     }
     if (main) {
-      const progression = main.label.replace("Weak chord loop candidate: ", "").replace("Probably ", "");
+      const progression = main.label
+        .replace("Weak chord loop candidate: ", "")
+        .replace("Probable chord progression: ", "");
       if (main.label.startsWith("Weak chord loop candidate:")) {
         return `Weak chord loop candidate: ${progression} across ${main.bars}, with ${main.confidence} confidence.`;
       }
-      return `The main progression is estimated as ${main.label} across ${main.bars}, with ${main.confidence} confidence.`;
+      return `The main progression is estimated as probably ${progression} across ${main.bars}, with ${main.confidence} confidence.`;
     }
     const summary = estimates
       .map((estimate) => `${estimate.label} from ${estimate.timeRange} with ${estimate.confidence} confidence`)
