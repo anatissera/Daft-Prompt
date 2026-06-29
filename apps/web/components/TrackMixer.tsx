@@ -69,12 +69,12 @@ export default function TrackMixer({
   const [loadingSamples, setLoadingSamples] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
-  const startedAtRef = useRef(0);
-  const offsetRef = useRef(0);
+  const toneRef = useRef<typeof ToneType | null>(null);
+  // One sampler + gain per ROW (not per samplerKey) so two channels with the
+  // same MIDI program still get independent mute/solo control.
   const samplersRef = useRef<Map<string, ToneType.Sampler>>(new Map());
   const gainsRef = useRef<Map<string, ToneType.Gain>>(new Map());
   const timerRef = useRef<number | null>(null);
-  const stopTimeoutRef = useRef<number | null>(null);
 
   const audibleTrackIds = useMemo(
     () => getAudibleTrackIds(trackIds, mutedTrackIds, soloTrackIds),
@@ -88,7 +88,7 @@ export default function TrackMixer({
     }
   }, [audibleTrackIds]);
 
-  useEffect(() => () => stopAndCleanup(), []);
+  useEffect(() => () => stopAndCleanup(true), []);
 
   const toggleMuted = useCallback(
     (id: string) => {
@@ -107,43 +107,45 @@ export default function TrackMixer({
     [soloTrackIds, onSoloChange],
   );
 
-  function stopAndCleanup() {
+  function stopAndCleanup(resetPosition: boolean) {
     if (timerRef.current !== null) {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    if (stopTimeoutRef.current !== null) {
-      window.clearTimeout(stopTimeoutRef.current);
-      stopTimeoutRef.current = null;
+    const Tone = toneRef.current;
+    if (Tone) {
+      Tone.Transport.pause();
+      Tone.Transport.cancel(0);
+      for (const s of samplersRef.current.values()) {
+        try { s.releaseAll(); } catch { /* noop */ }
+      }
     }
-    for (const s of samplersRef.current.values()) {
-      try { s.releaseAll(); } catch { /* noop */ }
-    }
+    if (resetPosition && Tone) Tone.Transport.seconds = 0;
+    if (resetPosition) setPosition(0);
     setPlaying(false);
   }
 
   async function ensureSamplers(Tone: typeof ToneType) {
     setLoadingSamples(true);
     try {
-      const wanted = new Set<string>();
-      for (const row of rows) wanted.add(samplerKey(row.roster));
-
+      // Per-row samplers; drop any whose row id no longer exists.
+      const wanted = new Set(rows.map((r) => r.id));
+      for (const [id, s] of samplersRef.current) {
+        if (!wanted.has(id)) {
+          s.disconnect();
+          samplersRef.current.delete(id);
+          gainsRef.current.get(id)?.disconnect();
+          gainsRef.current.delete(id);
+        }
+      }
       const created: Array<Promise<unknown>> = [];
       for (const row of rows) {
-        const key = samplerKey(row.roster);
-        if (samplersRef.current.has(key)) continue;
+        if (samplersRef.current.has(row.id)) continue;
         const gain = new Tone.Gain(audibleTrackIds.has(row.id) ? 0.9 : 0).toDestination();
         const sampler = makeSampler(Tone, row.roster).connect(gain);
-        samplersRef.current.set(key, sampler);
+        samplersRef.current.set(row.id, sampler);
         gainsRef.current.set(row.id, gain);
         created.push((sampler.loaded as unknown as Promise<unknown>) ?? Tone.loaded());
-      }
-      // Drop samplers no longer in use (kept simple — usually song is stable).
-      for (const [key, s] of samplersRef.current) {
-        if (!wanted.has(key)) {
-          s.disconnect();
-          samplersRef.current.delete(key);
-        }
       }
       await Promise.all(created);
       await Tone.loaded();
@@ -154,50 +156,43 @@ export default function TrackMixer({
 
   async function togglePlayback() {
     if (playing) {
-      stopAndCleanup();
+      stopAndCleanup(false);
       return;
     }
     const Tone = await loadTone();
+    toneRef.current = Tone;
     await Tone.start();
     await ensureSamplers(Tone);
 
+    // Clear any leftover scheduled events from a previous run.
+    Tone.Transport.cancel(0);
     const start = position >= duration ? 0 : position;
-    offsetRef.current = start;
-    startedAtRef.current = Tone.now() - start;
+    Tone.Transport.seconds = start;
 
-    const baseTime = Tone.now() + 0.05;
     for (const row of rows) {
-      const key = samplerKey(row.roster);
-      const sampler = samplersRef.current.get(key);
+      const sampler = samplersRef.current.get(row.id);
       if (!sampler) continue;
       const gain = gainsRef.current.get(row.id);
       if (gain) gain.gain.value = audibleTrackIds.has(row.id) ? 0.9 : 0;
 
       for (const event of eventsByTrack[row.id] ?? []) {
-        const startOffset = event.startSeconds - start;
         if (event.startSeconds + event.durationSeconds <= start) continue;
-        if (startOffset < 0) continue;
-        const noteName = midiToName(event.pitch);
-        try {
-          sampler.triggerAttackRelease(
-            noteName,
-            Math.max(0.05, event.durationSeconds),
-            baseTime + startOffset,
-            Math.max(0.1, Math.min(1, event.velocity)),
-          );
-        } catch {
-          // Sampler may reject out-of-range notes; skip silently.
-        }
+        const note = midiToName(event.pitch);
+        const dur = Math.max(0.05, event.durationSeconds);
+        const vel = Math.max(0.1, Math.min(1, event.velocity));
+        // Schedule against the transport so cancel(0) actually clears it.
+        Tone.Transport.schedule((time: number) => {
+          try { sampler.triggerAttackRelease(note, dur, time, vel); } catch { /* skip */ }
+        }, event.startSeconds);
       }
     }
 
+    Tone.Transport.start();
     setPlaying(true);
     timerRef.current = window.setInterval(() => {
-      const elapsed = Tone.now() - startedAtRef.current;
+      const elapsed = Tone.Transport.seconds;
       if (elapsed >= duration) {
-        setPosition(duration);
-        stopAndCleanup();
-        setPosition(0);
+        stopAndCleanup(true);
         return;
       }
       setPosition(elapsed);
@@ -207,9 +202,10 @@ export default function TrackMixer({
   function seek(value: number) {
     const next = Math.min(duration, Math.max(0, value));
     const wasPlaying = playing;
-    if (wasPlaying) stopAndCleanup();
+    if (wasPlaying) stopAndCleanup(false);
     setPosition(next);
-    offsetRef.current = next;
+    const Tone = toneRef.current;
+    if (Tone) Tone.Transport.seconds = next;
   }
 
   return (
