@@ -10,7 +10,15 @@ import {
   getSongDurationSeconds,
   type TrackEvent,
 } from "@/lib/trackMixerLogic.mjs";
-import { FLUIDR3_BASE, folderForProgram, inferProgramFromName, isDrumByName, midiToName } from "@/lib/gmInstruments";
+import {
+  FLUIDR3_BASE,
+  PERCUSSION_MAX,
+  PERCUSSION_MIN,
+  folderForProgram,
+  inferProgramFromName,
+  isDrumByName,
+  midiToName,
+} from "@/lib/gmInstruments";
 
 interface TrackRow {
   id: string;
@@ -33,9 +41,9 @@ async function loadTone(): Promise<typeof ToneType> {
 
 // 5 sparse base notes give Tone.Sampler enough anchors to pitch-shift smoothly.
 const MELODIC_ANCHORS = ["C2", "C3", "C4", "C5", "C6"];
-// FluidR3 percussion folder uses letter-note names mapped to drum keys 35-81.
+// FluidR3 percussion folder uses letter-note names mapped to drum keys.
 const DRUM_KEYS: number[] = [];
-for (let n = 35; n <= 81; n++) DRUM_KEYS.push(n);
+for (let n = PERCUSSION_MIN; n <= PERCUSSION_MAX; n++) DRUM_KEYS.push(n);
 
 function melodicUrls(): Record<string, string> {
   const urls: Record<string, string> = {};
