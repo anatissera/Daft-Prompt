@@ -7,6 +7,7 @@ nothing is left "pending" forever.
 
 from __future__ import annotations
 
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from ..domain.song_state import NegotiationRequest
@@ -36,6 +37,7 @@ def _prompt(pending: list[NegotiationRequest]) -> list[tuple[str, str]]:
     return [("system", system), ("human", "\n".join(lines))]
 
 
+@traceable(run_type="chain", name="arbiter")
 def run_arbiter(pending: list[NegotiationRequest], llm=None) -> list[NegotiationRequest]:
     """Resolve every still-pending request. Never leaves one unresolved: anything
     the LLM doesn't address is auto-declined as a safety net."""

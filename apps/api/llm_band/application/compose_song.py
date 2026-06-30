@@ -17,35 +17,28 @@ class ComposeSong:
         self,
         *,
         llm_configured: Callable[[], bool],
-        director: Callable[[str], SongState],
-        negotiator: Callable[[SongState], SongState],
-        event_streamer: Callable[[SongState], Iterator[dict[str, Any]]],
+        negotiator: Callable[[str], SongState],
+        event_streamer: Callable[[str], Iterator[tuple[dict[str, Any], Any]]],
         canned: Callable[[str], SongState],
     ):
         self.llm_configured = llm_configured
-        self.director = director
         self.negotiator = negotiator
         self.event_streamer = event_streamer
         self.canned = canned
 
     def compose(self, style: str) -> tuple[SongState, str]:
         if self.llm_configured():
-            try:
-                song = self.director(style)
-            except OffTopicRequest:  # not a failure — the director refused; let it surface
-                raise
-            except Exception as exc:  # noqa: BLE001 — fall back to canned on director-level LLM failure
-                log.warning("director failed (%s); falling back to canned arrangement", exc)
-                return self.canned(style), "canned"
-            return self.negotiator(song), "director"
+            return self.negotiator(style), "director"
         return self.canned(style), "canned"
 
     def stream(self, style: str) -> Iterator[tuple[dict[str, Any], SongState | None, str]]:
         if self.llm_configured():
-            song = self.director(style)
             source = "director"
-            yield _director_event(song, source), song, source
-            yield from ((event, song, source) for event in self.event_streamer(song))
+            song = None
+            for event, song_snapshot in self.event_streamer(style):
+                if song_snapshot is not None:
+                    song = song_snapshot
+                yield event, song, source
             yield {}, song, source
             return
 
