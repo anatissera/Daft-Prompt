@@ -20,6 +20,7 @@ from music_assistant.application.analyze_reference import AnalyzeReference
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
 from music_assistant.application.chat_music import ChatMusic
 from music_assistant.application.compose_song import ComposeSong
+from music_assistant.application.research_reference import ResearchReference
 from music_assistant.canned import canned_song
 from music_assistant.config import get_settings
 from music_assistant.domain.audio_profile import ReferenceProfile, ReferenceSource
@@ -29,6 +30,7 @@ from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmon
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
+from music_assistant.infrastructure.web_research.researcher import DefaultSongResearcher
 from music_assistant.infrastructure.llm import LLMAllProvidersFailed, LLMError
 from music_assistant.interfaces.api_models import (
     AnalysisDoneEvent,
@@ -41,6 +43,7 @@ from music_assistant.interfaces.api_models import (
     ComposeResponse,
     DoneEvent,
     ErrorEvent,
+    ResearchRequest,
     sse_data,
 )
 
@@ -92,6 +95,40 @@ async def analyze_reference_upload_stream(file: UploadFile | None = File(None)) 
             yield sse_data(event)
 
     return StreamingResponse(sse(), media_type="text/event-stream")
+
+
+@app.post("/references/research", response_model=ReferenceProfile)
+def research_reference(req: ResearchRequest) -> ReferenceProfile:
+    """Research a song from public web sources (no audio upload) and persist it so
+    follow-up chat questions can find it by reference_id."""
+    try:
+        profile = ResearchReference(_song_researcher()).execute(req.query)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"could not research song: {exc}") from exc
+    REFERENCE_STORE.save(profile)
+    return profile
+
+
+@app.post("/references/research/stream")
+def research_reference_stream(req: ResearchRequest) -> StreamingResponse:
+    def sse() -> Iterator[str]:
+        yield sse_data(AnalysisProgressEvent(type="accepted", message="Research request accepted."))
+        yield sse_data(AnalysisProgressEvent(type="searching_sources", message="Searching public music sources."))
+        yield sse_data(AnalysisProgressEvent(type="fetching_pages", message="Fetching candidate pages."))
+        yield sse_data(AnalysisProgressEvent(type="extracting_claims", message="Extracting musical claims."))
+        try:
+            profile = ResearchReference(_song_researcher()).execute(req.query)
+            REFERENCE_STORE.save(profile)
+            yield sse_data(AnalysisProgressEvent(type="fusing_evidence", message="Fusing source evidence."))
+            yield sse_data(AnalysisDoneEvent(profile=profile, message="Research ready."))
+        except Exception as exc:
+            yield sse_data(AnalysisErrorEvent(message=f"could not research song: {exc}"))
+
+    return StreamingResponse(sse(), media_type="text/event-stream")
+
+
+def _song_researcher() -> DefaultSongResearcher:
+    return DefaultSongResearcher()
 
 
 async def _store_reference_upload(file: UploadFile | None) -> ReferenceSource:
