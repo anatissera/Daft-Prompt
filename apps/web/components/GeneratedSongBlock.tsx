@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import type { CompositionChatMessage } from "@/lib/chatTypes";
 import type { Part, RosterItem, SongState } from "@/lib/types";
 import { getAudibleTrackIds } from "@/lib/trackMixerLogic.mjs";
+import { harmonicFitView, harmonicFitLabel } from "@/lib/harmonicFitView.mjs";
 import { triggerMidiDownload } from "@/lib/midiExport";
 import NegotiationFeed from "@/components/NegotiationFeed";
 import RosterView from "@/components/RosterView";
@@ -59,6 +60,7 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
   const hasPlayableParts = Object.keys(song.parts).length > 0;
   const h = song.header;
   const partsCount = Object.keys(song.parts).length;
+  const fit = useMemo(() => harmonicFitView(result.harmonic_fit), [result.harmonic_fit]);
 
   // Lifted so Roster cards (display + buttons) and TrackMixer (audio gain)
   // share the same Mute/Solo state.
@@ -81,6 +83,12 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             <li><span>METER</span><strong>{h.time_signature[0]}/{h.time_signature[1]}</strong></li>
             <li><span>BARS</span><strong>{h.num_bars}</strong></li>
             <li><span>AGENTS</span><strong>{partsCount}</strong></li>
+            {fit ? (
+              <li title="Fraction of notes that fit the active chord">
+                <span>HARMONY</span>
+                <strong data-fit={harmonicFitLabel(fit.overallPct)}>{fit.overallPct}%</strong>
+              </li>
+            ) : null}
           </ul>
         </div>
       </header>
@@ -126,6 +134,29 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             : "No notes were composed for this song. Try composing again."}
         </p>
       )}
+
+      {fit && fit.rows.length > 0 ? (
+        <details className="details-panel">
+          <summary className="details-summary">
+            Harmonic fit · {fit.overallPct}% chord tones
+          </summary>
+          <ul className="harmony-fit-list">
+            {fit.rows.map((row) => (
+              <li key={row.id} className="harmony-fit-row">
+                <span className="harmony-fit-id">{row.id}</span>
+                <span className="harmony-fit-bar" aria-hidden="true">
+                  <span
+                    className="harmony-fit-bar-fill"
+                    data-fit={harmonicFitLabel(row.pct)}
+                    style={{ width: `${row.pct}%` }}
+                  />
+                </span>
+                <span className="harmony-fit-pct">{row.pct}%</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {hasPlayableParts ? (
         <details className="score-frame">

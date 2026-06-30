@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from music_assistant.application.chat_music import ChatRequest, ChatResponse
 from music_assistant.domain.audio_profile import ReferenceProfile
 from music_assistant.domain.song_state import Header, RosterItem, SongState
+from music_assistant.music.validators import harmonic_fit as _harmonic_fit
 
 __all__ = [
     "ChatRequest",
@@ -47,6 +48,13 @@ class ComposeResponse(BaseModel):
     source: Literal["director", "canned"]
     song: SongState
     artifacts: Artifacts
+
+    @computed_field
+    @property
+    def harmonic_fit(self) -> dict[str, float]:
+        """Per-instrument + "_overall" fraction of sounding notes that are chord
+        tones of their active chord — surfaced so the UI can show composition quality."""
+        return _harmonic_fit(self.song)
 
 
 class DirectorEvent(BaseModel):
@@ -87,6 +95,11 @@ class DoneEvent(BaseModel):
     source: Literal["director", "canned"]
     song: SongState
     artifacts: Artifacts
+
+    @computed_field
+    @property
+    def harmonic_fit(self) -> dict[str, float]:
+        return _harmonic_fit(self.song)
 
 
 ComposeEvent = DirectorEvent | AgentPassEvent | ConvergenceEvent | ErrorEvent | DoneEvent

@@ -43,6 +43,11 @@ def test_compose_endpoint_returns_artifacts(monkeypatch):
     assert body["artifacts"]["midi"].endswith("/song.mid")
     assert body["artifacts"]["musicxml"].endswith("/song.musicxml")
 
+    # harmonic-fit quality metric is surfaced for the UI
+    assert "harmonic_fit" in body
+    assert "_overall" in body["harmonic_fit"]
+    assert 0.0 <= body["harmonic_fit"]["_overall"] <= 1.0
+
     # the advertised artifact is actually downloadable
     midi_path = "/artifacts/" + body["job_id"] + "/song.mid"
     dl = client.get(midi_path)
