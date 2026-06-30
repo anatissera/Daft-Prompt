@@ -252,6 +252,55 @@ def test_arrangement_to_song_raises_on_instrument_missing_from_all_groups():
         arrangement_to_song("funk", out)
 
 
+def _split_drums_output() -> DirectorOutput:
+    """A director that wrongly split the kit into separate kick/snare/hat entries."""
+    out = _full_output()
+    out.instruments = [
+        ArrangementInstrument(id="kick", instrument="Kick", midi_program=0,
+                              midi_low=35, midi_high=36, role="kick", playing_style="x", is_drum=True),
+        ArrangementInstrument(id="snare", instrument="Snare", midi_program=0,
+                              midi_low=38, midi_high=40, role="snare", playing_style="x", is_drum=True),
+        ArrangementInstrument(id="hat", instrument="Hi-hat", midi_program=0,
+                              midi_low=42, midi_high=46, role="hat", playing_style="x", is_drum=True),
+        ArrangementInstrument(id="bass", instrument="Electric Bass", midi_program=34,
+                              midi_low=28, midi_high=55, role="bass", playing_style="x"),
+        ArrangementInstrument(id="epiano", instrument="Rhodes", midi_program=5,
+                              midi_low=48, midi_high=72, role="harmony", playing_style="x"),
+    ]
+    out.composition_groups = [
+        CompositionGroup(name="rhythm", instrument_ids=["kick", "snare", "hat", "bass"], max_negotiation_rounds=1),
+        CompositionGroup(name="harmony", instrument_ids=["epiano"], max_negotiation_rounds=0),
+    ]
+    return out
+
+
+def test_split_percussion_collapses_to_single_drum_kit():
+    song = arrangement_to_song("funk", _split_drums_output())
+    drum_items = [r for r in song.roster if r.is_drum]
+    assert len(drum_items) == 1
+    assert drum_items[0].id == "drums"
+    # the three split components are gone from the roster
+    assert {r.id for r in song.roster} == {"drums", "bass", "epiano"}
+
+
+def test_collapsed_drums_appear_once_in_composition_groups():
+    song = arrangement_to_song("funk", _split_drums_output())
+    rhythm = next(g for g in song.composition_groups if g.name == "rhythm")
+    assert rhythm.instrument_ids == ["drums", "bass"]  # kick/snare/hat → one "drums"
+    # validation passed: every roster id is in exactly one group
+    grouped = [iid for g in song.composition_groups for iid in g.instrument_ids]
+    assert sorted(grouped) == ["bass", "drums", "epiano"]
+
+
+def test_single_drum_kit_is_left_unchanged():
+    # the normal case (one is_drum item) must not be rewritten
+    song = arrangement_to_song("funk", _full_output())
+    drum_items = [r for r in song.roster if r.is_drum]
+    assert len(drum_items) == 1
+    assert drum_items[0].id == "drums"
+    assert drum_items[0].instrument == "Acoustic Drums"  # not replaced by the canonical kit
+
+
 def test_director_prompt_contains_key_musical_concepts():
     messages = _prompt("funk like Jamiroquai")
     system_text = next(m for role, m in messages if role == "system")
