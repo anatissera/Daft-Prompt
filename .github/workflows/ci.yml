@@ -21,7 +21,7 @@ jobs:
           cache: pip
           cache-dependency-path: apps/api/pyproject.toml
       - run: pip install -e ".[dev]"
-      - run: pytest -q
+      - run: python -m pytest -q
 
   frontend-tests:
     name: frontend-tests
