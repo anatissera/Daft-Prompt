@@ -9,6 +9,7 @@ It never touches HTTP, MIR libraries, or LLM clients directly.
 from __future__ import annotations
 
 import re
+import time
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -16,7 +17,9 @@ from pydantic import BaseModel, Field
 from llm_band.application.answer_music_question import AnswerMusicQuestion, MusicQuestionExplainer
 from llm_band.application.compose_song import ComposeSong
 from llm_band.domain.audio_profile import ExplanationAnswer, ReferenceProfile
+from llm_band.domain.errors import OffTopicRequest
 from llm_band.domain.song_state import SongState
+from llm_band.domain.usage import USAGE_TRACKER, UsageTracker
 from llm_band.ports.reference_store import ReferenceStore
 
 
@@ -25,6 +28,7 @@ Intent = Literal[
     "compose",
     "compose_from_reference",
     "clarify",
+    "off_topic",
 ]
 
 
@@ -33,9 +37,23 @@ class ChatRequest(BaseModel):
     reference_id: Optional[str] = None
 
 
+class ChatArtifacts(BaseModel):
+    midi: str
+    musicxml: str
+
+
 class ChatComposeResult(BaseModel):
     song: SongState
     source: str
+    artifacts: Optional[ChatArtifacts] = None
+
+
+class UsageInfo(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    calls: int = 0
+    elapsed_seconds: float = 0.0
 
 
 class ChatResponse(BaseModel):
@@ -45,6 +63,7 @@ class ChatResponse(BaseModel):
     answer: Optional[ExplanationAnswer] = None
     compose: Optional[ChatComposeResult] = None
     clarification: Optional[str] = None
+    usage: Optional[UsageInfo] = None
 
 
 _COMPOSE_RE = re.compile(r"\b(compose|generate|make|write|create|sketch|produce)\b", re.IGNORECASE)
@@ -71,6 +90,24 @@ class ChatMusic:
         self.reference_store = reference_store
 
     def handle(self, request: ChatRequest) -> ChatResponse:
+        tracker = UsageTracker()
+        token = USAGE_TRACKER.set(tracker)
+        started_at = time.monotonic()
+        try:
+            response = self._handle(request)
+        finally:
+            USAGE_TRACKER.reset(token)
+        elapsed = time.monotonic() - started_at
+        usage = UsageInfo(
+            input_tokens=tracker.input_tokens,
+            output_tokens=tracker.output_tokens,
+            total_tokens=tracker.total_tokens,
+            calls=tracker.calls,
+            elapsed_seconds=round(elapsed, 3),
+        )
+        return response.model_copy(update={"usage": usage})
+
+    def _handle(self, request: ChatRequest) -> ChatResponse:
         message = request.message.strip()
         profile = (
             self.reference_store.get(request.reference_id)
@@ -103,7 +140,10 @@ class ChatMusic:
         if intent == "compose_from_reference":
             assert profile is not None
             style = _style_with_reference(message, profile)
-            song, source = self.compose_song.compose(style)
+            try:
+                song, source = self.compose_song.compose(style)
+            except OffTopicRequest as refusal:
+                return _off_topic_response(refusal)
             return ChatResponse(
                 intent="compose_from_reference",
                 reply=_compose_reply(song, source, reference=profile),
@@ -111,7 +151,10 @@ class ChatMusic:
                 compose=ChatComposeResult(song=song, source=source),
             )
 
-        song, source = self.compose_song.compose(message or "demo")
+        try:
+            song, source = self.compose_song.compose(message or "demo")
+        except OffTopicRequest as refusal:
+            return _off_topic_response(refusal)
         return ChatResponse(
             intent="compose",
             reply=_compose_reply(song, source),
@@ -140,6 +183,10 @@ class ChatMusic:
         if asks_about_reference:
             return "clarify"
         return "compose"
+
+
+def _off_topic_response(refusal: OffTopicRequest) -> ChatResponse:
+    return ChatResponse(intent="off_topic", reply=refusal.message)
 
 
 def _compose_reply(song: SongState, source: str, *, reference: Optional[ReferenceProfile] = None) -> str:

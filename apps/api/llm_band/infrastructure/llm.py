@@ -5,9 +5,10 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from typing import Optional, TypeVar
+from typing import Any, Optional, TypeVar
 
 from llm_band.config import DEFAULT_MODELS, Settings, get_settings
+from llm_band.domain.usage import USAGE_TRACKER, UsageTracker
 
 T = TypeVar("T")
 
@@ -235,6 +236,52 @@ def with_fallbacks(role: str, settings: Settings, operation: Callable[[str, str]
     raise LLMAllProvidersFailed(failures)
 
 
+def _record_usage(raw_message: Any) -> None:
+    tracker = USAGE_TRACKER.get()
+    if tracker is None:
+        return
+    usage = getattr(raw_message, "usage_metadata", None)
+    if not usage:
+        response_meta = getattr(raw_message, "response_metadata", {}) or {}
+        usage = response_meta.get("token_usage") or response_meta.get("usage")
+    tracker.add(usage)
+
+
+def _usage_callbacks() -> list:
+    """Return a callback that records usage from the underlying chat call.
+
+    Lives at call-time (not on the chat model) because the tracker is request-
+    scoped via contextvar; the callback closes over the *current* tracker.
+    """
+    try:
+        from langchain_core.callbacks import BaseCallbackHandler
+        from langchain_core.outputs import LLMResult
+    except Exception:
+        return []
+
+    tracker = USAGE_TRACKER.get()
+    if tracker is None:
+        return []
+
+    class _UsageCB(BaseCallbackHandler):  # type: ignore[misc]
+        def on_llm_end(self, response: "LLMResult", **_: Any) -> None:
+            for generations in response.generations:
+                for generation in generations:
+                    message = getattr(generation, "message", None)
+                    if message is None:
+                        continue
+                    usage = getattr(message, "usage_metadata", None)
+                    if not usage:
+                        meta = getattr(message, "response_metadata", {}) or {}
+                        usage = meta.get("token_usage") or meta.get("usage")
+                    tracker.add(usage)
+            llm_output = response.llm_output or {}
+            if (usage := llm_output.get("token_usage")):
+                tracker.add(usage)
+
+    return [_UsageCB()]
+
+
 class _FallbackStructuredInvoker:
     def __init__(self, role: str, schema: type, settings: Settings):
         self.role = role
@@ -245,7 +292,11 @@ class _FallbackStructuredInvoker:
         def operation(provider: str, model: str):
             _RATE_LIMITER.wait(self.settings.llm_rpm_limit)
             chat = _build_chat_model(provider, model, self.settings)
-            return chat.with_structured_output(self.schema).invoke(messages)
+            structured = chat.with_structured_output(self.schema)
+            callbacks = _usage_callbacks()
+            if callbacks:
+                return structured.invoke(messages, config={"callbacks": callbacks})
+            return structured.invoke(messages)
 
         return with_fallbacks(self.role, self.settings, operation)
 

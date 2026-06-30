@@ -29,9 +29,10 @@ def _prompt(pending: list[NegotiationRequest]) -> list[tuple[str, str]]:
         for r in pending
     ]
     system = (
-        "You are the arbiter for a band's arrangement negotiation. The round cap "
+        "/no_think You are the arbiter for a band's arrangement negotiation. The round cap "
         "was reached with these requests still unresolved. Decide accept or decline "
-        "for each, with a short resolution note. Resolve every request listed."
+        "for each, with a short resolution note. Resolve every request listed. "
+        "Respond directly with the structured output only. Do not think out loud or write any reasoning."
     )
     return [("system", system), ("human", "\n".join(lines))]
 

@@ -8,12 +8,19 @@ output so it maps cleanly onto `SongState.header` + `SongState.roster`.
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
+from ..domain.errors import OffTopicRequest
 from ..domain.song_state import ChordSpan, Header, RosterItem, Section, SongState
+
+_DEFAULT_REFUSAL = (
+    "I only handle music tasks: compose a short sketch, analyze an audio file you upload, "
+    "or answer questions about a reference you already shared. Try \"compose a slow blues\"."
+)
 
 MIN_ROSTER = 3
 MAX_ROSTER = 8
@@ -40,25 +47,42 @@ class ArrangementSection(BaseModel):
 
 
 class DirectorOutput(BaseModel):
-    genre: str
-    key: str = Field(description="e.g. 'F# minor', 'C major'")
-    tempo_bpm: float = Field(gt=0)
+    off_topic: bool = Field(
+        False,
+        description="true when the request is NOT a music-composition task (chit-chat, "
+        "trivia, coding, lyrics-only, recommendations, etc.)",
+    )
+    refusal: str = Field(
+        "",
+        description="when off_topic, a short friendly message (in the user's language) "
+        "stating you only handle music tasks and listing what you can do",
+    )
+    genre: str = ""
+    key: str = Field("", description="e.g. 'F# minor', 'C major'")
+    tempo_bpm: float = Field(120.0, gt=0)
     time_sig_numerator: int = Field(4, gt=0)
     time_sig_denominator: int = Field(4, gt=0)
-    num_bars: int = Field(gt=0, description=f"between {MIN_BARS} and {MAX_BARS} bars")
+    num_bars: int = Field(MIN_BARS, gt=0, description=f"between {MIN_BARS} and {MAX_BARS} bars")
     sections: list[ArrangementSection] = Field(default_factory=list)
     instruments: list[ArrangementInstrument] = Field(
-        description=f"between {MIN_ROSTER} and {MAX_ROSTER} instruments"
+        default_factory=list, description=f"between {MIN_ROSTER} and {MAX_ROSTER} instruments"
     )
 
 
 _SYSTEM = (
-    "You are the musical director of an ensemble. Given a style description, decide "
+    "/no_think You are the musical director of an ensemble. You ONLY handle music-composition "
+    "tasks. If the request is not asking you to compose a music sketch (e.g. chit-chat, trivia, "
+    "coding, weather, recommendations, or writing lyrics/text only), set off_topic=true and put a "
+    "short friendly message in `refusal` (in the user's language) saying you only handle music "
+    "tasks and listing what you can do: compose a sketch, analyze an uploaded audio file, or answer "
+    "questions about a reference already shared. In that case leave the arrangement fields empty.\n"
+    "Otherwise set off_topic=false and, given the style description, decide "
     "the key, tempo, time signature, number of bars, a section/form map, and the "
     f"instrumentation — choose {MIN_ROSTER}-{MAX_ROSTER} instruments and {MIN_BARS}-{MAX_BARS} bars that genuinely "
-    "fit the style (reason about it; do not use a fixed genre table). For each "
+    "fit the style (do not use a fixed genre table). For each "
     "instrument give a General MIDI program, a sensible MIDI pitch range, and its "
-    "role. Mark drum/percussion kits with is_drum=true."
+    "role. Mark drum/percussion kits with is_drum=true. "
+    "Respond directly with the structured output only. Do not think out loud or write any reasoning."
 )
 
 
@@ -66,8 +90,34 @@ def _prompt(style: str) -> list[tuple[str, str]]:
     return [("system", _SYSTEM), ("human", f"Style: {style}")]
 
 
+_ID_SAFE_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slug(value: str, fallback: str) -> str:
+    cleaned = _ID_SAFE_RE.sub("_", (value or "").strip().lower()).strip("_")
+    return cleaned or fallback
+
+
+def _unique_roster_ids(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
+    """LLM often hands back empty or repeated `id` fields; downstream the parts
+    dict is keyed by id so duplicates collapse into a single audible track.
+    Rewrite each id to a unique slug derived from id → instrument → role → idx."""
+    seen: set[str] = set()
+    repaired: list[ArrangementInstrument] = []
+    for idx, item in enumerate(items):
+        base = _slug(item.id, "") or _slug(item.instrument, "") or _slug(item.role, "") or f"agent_{idx}"
+        candidate = base
+        suffix = 2
+        while candidate in seen:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+        seen.add(candidate)
+        repaired.append(item.model_copy(update={"id": candidate}))
+    return repaired
+
+
 def _clamp_roster(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
-    return items[:MAX_ROSTER]
+    return _unique_roster_ids(items[:MAX_ROSTER])
 
 
 def _clamp_num_bars(value: int) -> int:
@@ -118,4 +168,6 @@ def run_director(style: str, llm=None) -> SongState:
         llm = make_llm("director")
     structured = llm.with_structured_output(DirectorOutput)
     out: DirectorOutput = structured.invoke(_prompt(style))
+    if out.off_topic:
+        raise OffTopicRequest(out.refusal.strip() or _DEFAULT_REFUSAL)
     return arrangement_to_song(style, out)
