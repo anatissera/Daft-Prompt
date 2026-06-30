@@ -103,12 +103,35 @@ def _clamp_sections(sections: list[ArrangementSection], num_bars: int) -> list[S
     for section in sections:
         start = max(0, min(section.start_bar, num_bars - 1))
         end = max(start + 1, min(section.end_bar, num_bars))
-        clamped.append(Section(name=section.name, start_bar=start, end_bar=end))
+        clamped.append(
+            Section(name=section.name, start_bar=start, end_bar=end, energy=section.energy)
+        )
     return clamped
 
 
+def _validate_groups(
+    groups: list[CompositionGroup], instruments: list[ArrangementInstrument]
+) -> None:
+    instrument_ids = {i.id for i in instruments}
+    seen: set[str] = set()
+    for group in groups:
+        for iid in group.instrument_ids:
+            if iid not in instrument_ids:
+                raise ValueError(f"composition group references unknown instrument: {iid!r}")
+            if iid in seen:
+                raise ValueError(
+                    f"instrument {iid!r} appears in multiple composition groups"
+                )
+            seen.add(iid)
+    missing = instrument_ids - seen
+    if missing:
+        raise ValueError(f"instruments not assigned to any group: {missing}")
+
+
 def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
+    clamped_instruments = _clamp_roster(out.instruments)
     num_bars = _clamp_num_bars(out.num_bars)
+    _validate_groups(out.composition_groups, clamped_instruments)
     header = Header(
         genre=out.genre,
         key=out.key,
@@ -116,7 +139,7 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
         time_signature=(out.time_sig_numerator, out.time_sig_denominator),
         num_bars=num_bars,
         sections=_clamp_sections(out.sections, num_bars),
-        chord_progression=[],  # filled by later phases if needed
+        chord_progression=list(out.chord_progression),
     )
     roster = [
         RosterItem(
@@ -125,11 +148,18 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
             midi_program=i.midi_program,
             midi_range=(min(i.midi_low, i.midi_high), max(i.midi_low, i.midi_high)),
             role=i.role,
+            playing_style=i.playing_style,
             is_drum=i.is_drum,
         )
-        for i in _clamp_roster(out.instruments)
+        for i in clamped_instruments
     ]
-    return SongState(request=style, header=header, roster=roster, parts={})
+    return SongState(
+        request=style,
+        header=header,
+        roster=roster,
+        parts={},
+        composition_groups=list(out.composition_groups),
+    )
 
 
 @traceable(run_type="chain", name="director")

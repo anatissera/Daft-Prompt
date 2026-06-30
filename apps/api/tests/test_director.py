@@ -46,13 +46,17 @@ def _output(n: int = 4) -> DirectorOutput:
         time_sig_numerator=4,
         time_sig_denominator=4,
         num_bars=32,
-        sections=[ArrangementSection(name="verse", start_bar=0, end_bar=8)],
+        sections=[ArrangementSection(name="verse", start_bar=0, end_bar=8, energy="medium")],
+        chord_progression=[ChordSpan(bar=i, chord="Am7") for i in range(32)],
         instruments=[
             ArrangementInstrument(
                 id=f"inst{k}", instrument="electric_bass", midi_program=33,
-                midi_low=28, midi_high=55, role="groove", is_drum=(k == 0),
+                midi_low=28, midi_high=55, role="groove", playing_style="Root notes.", is_drum=(k == 0),
             )
             for k in range(n)
+        ],
+        composition_groups=[
+            CompositionGroup(name="all", instrument_ids=[f"inst{k}" for k in range(min(n, MAX_ROSTER))]),
         ],
     )
 
@@ -197,3 +201,51 @@ def test_arrangement_section_has_energy():
     assert out.sections[0].energy == "low"
     assert out.sections[1].energy == "medium"
     assert out.sections[2].energy == "high"
+
+
+def test_arrangement_to_song_populates_chord_progression():
+    out = _full_output()
+    song = arrangement_to_song("funk", out)
+    assert len(song.header.chord_progression) == 16
+    assert song.header.chord_progression[0].chord == "Dm7"
+
+
+def test_arrangement_to_song_propagates_section_energy():
+    out = _full_output()
+    song = arrangement_to_song("funk", out)
+    assert song.header.sections[0].energy == "low"
+    assert song.header.sections[2].energy == "high"
+
+
+def test_arrangement_to_song_propagates_playing_style():
+    out = _full_output()
+    song = arrangement_to_song("funk", out)
+    drums = next(r for r in song.roster if r.id == "drums")
+    assert drums.playing_style == "Four on the floor kick."
+
+
+def test_arrangement_to_song_populates_composition_groups():
+    out = _full_output()
+    song = arrangement_to_song("funk", out)
+    assert len(song.composition_groups) == 2
+    assert song.composition_groups[0].instrument_ids == ["drums", "bass"]
+
+
+def test_arrangement_to_song_raises_on_duplicate_instrument_in_groups():
+    out = _full_output()
+    out.composition_groups = [
+        CompositionGroup(name="a", instrument_ids=["drums", "bass"]),
+        CompositionGroup(name="b", instrument_ids=["bass", "epiano"]),  # bass duplicated
+    ]
+    with pytest.raises(ValueError, match="multiple"):
+        arrangement_to_song("funk", out)
+
+
+def test_arrangement_to_song_raises_on_instrument_missing_from_all_groups():
+    out = _full_output()
+    out.composition_groups = [
+        CompositionGroup(name="a", instrument_ids=["drums", "bass"]),
+        # epiano missing
+    ]
+    with pytest.raises(ValueError, match="not assigned"):
+        arrangement_to_song("funk", out)
