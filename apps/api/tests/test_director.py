@@ -11,6 +11,7 @@ from llm_band.agents.director import (
     ArrangementInstrument,
     ArrangementSection,
     DirectorOutput,
+    _prompt,
     arrangement_to_song,
     run_director,
 )
@@ -249,3 +250,15 @@ def test_arrangement_to_song_raises_on_instrument_missing_from_all_groups():
     ]
     with pytest.raises(ValueError, match="not assigned"):
         arrangement_to_song("funk", out)
+
+
+def test_director_prompt_contains_key_musical_concepts():
+    messages = _prompt("funk like Jamiroquai")
+    system_text = next(m for role, m in messages if role == "system")
+    human_text = next(m for role, m in messages if role == "human")
+    # verify the prompt requests the new fields
+    assert "chord progression" in system_text.lower()
+    assert "playing_style" in system_text or "playing style" in system_text.lower()
+    assert "composition_group" in system_text or "composition group" in system_text.lower()
+    assert "energy" in system_text.lower()
+    assert "Jamiroquai" in human_text
