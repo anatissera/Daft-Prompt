@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from ..config import get_settings
 from ..infrastructure.llm import LLMError
-from ..music.theory import beats_per_bar
+from ..music.theory import beats_per_bar, chord_tone_names
 from ..music.validators import ValidationIssue, errors_only, validate_song
 from ..domain.song_state import (
     ChordSpan,
@@ -43,8 +43,16 @@ class InstrumentOutput(BaseModel):
 def _chord_map_text(chord_progression: list[ChordSpan]) -> str:
     if not chord_progression:
         return "(no chord map provided)"
-    lines = [f"  bar {cs.bar}: {cs.chord}" for cs in sorted(chord_progression, key=lambda x: x.bar)]
-    return "Chord map:\n" + "\n".join(lines)
+    lines = []
+    for cs in sorted(chord_progression, key=lambda x: x.bar):
+        tones = chord_tone_names(cs.chord)
+        suffix = f"  (chord tones: {', '.join(tones)})" if tones else ""
+        lines.append(f"  bar {cs.bar}: {cs.chord}{suffix}")
+    return (
+        "Chord map — land sustained/structural notes on the listed chord tones; "
+        "passing tones between them are fine, but avoid resting on notes outside both "
+        "the chord and the key:\n" + "\n".join(lines)
+    )
 
 
 def _section_map_text(sections: list[Section]) -> str:
