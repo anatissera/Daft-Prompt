@@ -52,7 +52,7 @@ def _system_prompt(header: Header, roster_item: RosterItem) -> str:
         else ""
     )
     return (
-        f"You are the {roster_item.instrument} player ({roster_item.role}) in a "
+        f"/no_think You are the {roster_item.instrument} player ({roster_item.role}) in a "
         f"{header.genre} ensemble. Hard constraints:\n"
         f"- key: {header.key}, tempo: {header.tempo_bpm} BPM, "
         f"time signature {header.time_signature[0]}/{header.time_signature[1]} "
@@ -63,7 +63,8 @@ def _system_prompt(header: Header, roster_item: RosterItem) -> str:
         "+ start_beat (0-indexed within the bar), MIDI pitch (null = rest), duration in "
         "beats, and velocity (0-127). Stay within your range and the bar/beat bounds. "
         "Also return a short notes_summary other musicians can read instead of your full "
-        "note list."
+        "note list. "
+        "Respond directly with the structured output only. Do not think out loud or write any reasoning."
     )
 
 

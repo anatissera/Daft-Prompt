@@ -1,17 +1,48 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
-import type { ChatMessage, FeedEvent } from "@/lib/chatTypes";
-import type { AnalysisEvent, ComposeEvent, ComposeResponse, Header, ReferenceProfile } from "@/lib/types";
-import { answerReferenceQuestion } from "@/lib/referenceProfileView.mjs";
+import type { ChatMessage } from "@/lib/chatTypes";
+import type { AnalysisEvent, ReferenceProfile, SongState } from "@/lib/types";
 import {
   chooseChatAction,
   createAnalysisMessage,
   createCompositionMessage,
   createTextMessage,
 } from "@/lib/chatActionAdapter.mjs";
+import { deriveSessionTitle } from "@/lib/sessionTitle.mjs";
+
+type Intent = "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
+
+interface UsageInfo {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  calls?: number;
+  elapsed_seconds?: number;
+}
+
+interface ChatArtifacts {
+  midi: string;
+  musicxml: string;
+}
+
+interface ChatComposeResult {
+  song: SongState;
+  source: string;
+  artifacts?: ChatArtifacts | null;
+}
+
+interface ChatResponse {
+  intent: Intent;
+  reply: string;
+  reference_id?: string | null;
+  answer?: { answer: string; confidence?: string } | null;
+  compose?: ChatComposeResult | null;
+  clarification?: string | null;
+  usage?: UsageInfo | null;
+}
 
 export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -21,15 +52,53 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     createTextMessage(
       "assistant",
-      "Tell me what you want to make or understand. You can attach a local song for analysis, ask about a current reference, or compose from a plain-language prompt.",
+      "Daft Prompt — multi-agent music studio. Ask me to compose a sketch (\"slow blues in F minor\"), upload audio to analyze, or ask about a loaded reference.",
       0,
     ),
   ]);
   const [referenceProfile, setReferenceProfile] = useState<ReferenceProfile | null>(null);
   const [activeWork, setActiveWork] = useState<string | null>(null);
+  const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
+  const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
+  const sessionTitledRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  function maybeTitleSession(firstUserMessage: string) {
+    if (sessionTitledRef.current) return;
+    sessionTitledRef.current = true;
+    const title = deriveSessionTitle(firstUserMessage);
+    if (title) setSessionTitle(title);
+  }
 
   const busy = activeWork !== null;
+
+  useEffect(() => {
+    if (busyStartedAt === null) {
+      setBusyElapsedMs(0);
+      return;
+    }
+    const id = setInterval(() => setBusyElapsedMs(performance.now() - busyStartedAt), 100);
+    return () => clearInterval(id);
+  }, [busyStartedAt]);
+
+  function startWork(label: string) {
+    setActiveWork(label);
+    setBusyStartedAt(performance.now());
+  }
+
+  function stopWork() {
+    setActiveWork(null);
+    setBusyStartedAt(null);
+    abortRef.current = null;
+  }
+
+  function cancelWork() {
+    if (abortRef.current) abortRef.current.abort();
+    appendMessage(createTextMessage("assistant", "(cancelled)", nextMessageIndex()));
+    stopWork();
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -38,7 +107,6 @@ export default function Home() {
     const action = chooseChatAction({
       prompt,
       hasSelectedFile: selectedFile !== null,
-      hasReferenceProfile: referenceProfile !== null,
     });
     const attachedText = selectedFile ? `${action.messageText} Attached: ${selectedFile.name}` : action.messageText;
 
@@ -51,26 +119,70 @@ export default function Home() {
       await analyzeReference(selectedFile);
       return;
     }
+    await chat(action.messageText);
+  }
 
-    if (action.type === "answer_reference") {
-      if (!referenceProfile) return;
-      appendMessage(createTextMessage("assistant", answerReferenceQuestion(action.messageText, referenceProfile), nextMessageIndex()));
-      return;
+  async function chat(message: string) {
+    startWork("Thinking…");
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const startedAt = performance.now();
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          message,
+          reference_id: referenceProfile?.reference_id ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error(await readApiError(res));
+      const data = (await res.json()) as ChatResponse;
+      const meta = formatMeta(data, performance.now() - startedAt);
+      const idx = nextMessageIndex();
+      // Title the session from the first user message (client-side, no LLM).
+      maybeTitleSession(message);
+      if (data.compose && data.compose.artifacts) {
+        const composeResponse = {
+          job_id: "chat",
+          source: data.compose.source as "director" | "canned",
+          song: data.compose.song,
+          artifacts: data.compose.artifacts,
+        };
+        const msg = createCompositionMessage(
+          "assistant",
+          data.reply,
+          composeResponse,
+          [],
+          data.compose.song.header,
+          composeResponse.source,
+          idx,
+        );
+        appendMessage({ ...msg, meta });
+      } else {
+        const msg = createTextMessage("assistant", data.reply, idx);
+        appendMessage({ ...msg, meta });
+      }
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      const m = err instanceof Error ? err.message : "unknown chat error";
+      setError(m);
+      appendMessage(createTextMessage("assistant", `Chat failed: ${m}`, nextMessageIndex()));
+    } finally {
+      if (!controller.signal.aborted) stopWork();
     }
-
-    await compose(action.messageText);
   }
 
   async function analyzeReference(file: File) {
-    setActiveWork("File accepted. Extracting tempo, key, energy, sections, and probable chords...");
+    startWork("Analyzing audio (tempo, key, energy, sections, chords)…");
+    const controller = new AbortController();
+    abortRef.current = controller;
     setReferenceProfile(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/references/analyze", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch("/api/references/analyze", { method: "POST", body: formData, signal: controller.signal });
       if (!res.ok) throw new Error(await readApiError(res));
       if (!res.body) throw new Error("backend did not return an analysis stream");
 
@@ -103,78 +215,16 @@ export default function Home() {
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
-      const message = normalizeAnalysisError(err);
-      setError(message);
-      appendMessage(createTextMessage("assistant", `I could not analyze that file: ${message}`, nextMessageIndex()));
+      if (controller.signal.aborted) return;
+      const m = normalizeAnalysisError(err);
+      setError(m);
+      appendMessage(createTextMessage("assistant", `I could not analyze that file: ${m}`, nextMessageIndex()));
     } finally {
-      setActiveWork(null);
+      if (!controller.signal.aborted) stopWork();
     }
   }
 
-  async function compose(style: string) {
-    setActiveWork("Director is choosing the arrangement...");
-    const feed: FeedEvent[] = [];
-    let header: Header | null = null;
-    let source: ComposeResponse["source"] | null = null;
-
-    try {
-      const res = await fetch("/api/compose", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ style }),
-      });
-      if (!res.ok || !res.body) throw new Error(`backend error ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const chunks = buffer.split("\n\n");
-        buffer = chunks.pop() ?? "";
-        for (const chunk of chunks) {
-          const line = chunk.split("\n").find((entry) => entry.startsWith("data:"));
-          if (!line) continue;
-          const event = JSON.parse(line.slice(5).trim()) as ComposeEvent;
-          if (event.type === "director") {
-            source = event.source;
-            header = event.header;
-            setActiveWork(`Director picked ${event.header.genre} at ${event.header.tempo_bpm} BPM. Agents are composing...`);
-          } else if (event.type === "agent_pass" || event.type === "convergence" || event.type === "error") {
-            feed.push(event);
-            setActiveWork(event.type === "agent_pass" ? `${event.instrument_id} wrote a part...` : "Agents are resolving the arrangement...");
-            if (event.type === "error") {
-              setError(event.message);
-            }
-          } else if (event.type === "done") {
-            appendMessage(
-              createCompositionMessage(
-                "assistant",
-                `Generated a ${event.song.header.genre} sketch at ${event.song.header.tempo_bpm} BPM.`,
-                event,
-                feed.slice(),
-                header,
-                source,
-                nextMessageIndex(),
-              ),
-            );
-          }
-        }
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "unknown composition error";
-      setError(message);
-      appendMessage(createTextMessage("assistant", `Composition failed: ${message}`, nextMessageIndex()));
-    } finally {
-      setActiveWork(null);
-    }
-  }
-
-  function appendMessage(message: ChatMessage) {
-    setMessages((prev) => [...prev, message]);
-  }
+  function appendMessage(m: ChatMessage) { setMessages((prev) => [...prev, m]); }
 
   function nextMessageIndex() {
     const next = messageIndexRef.current;
@@ -182,35 +232,60 @@ export default function Home() {
     return next;
   }
 
-  return (
-    <main className="chat-workspace">
-      <section className="chat-hero" aria-label="Daft Prompt chat workspace">
-        <p className="hero-eyebrow">
-          <span className="hero-eyebrow-dot" aria-hidden="true" />
-          Digital Studio // AI Music Lab
-        </p>
-        <h1 className="hero-title" aria-label="Daft Prompt">
-          <span className="logo-wrapper">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/daft-prompt-logo.png"
-              alt="Daft Prompt"
-              className="logo-image"
-              width={340}
-              height={340}
-            />
-            <span className="logo-shimmer" aria-hidden="true" />
-          </span>
-        </h1>
-        <p className="hero-subtitle">Upload a track for harmonic analysis, ask musical questions, or compose a new sketch — all from the same chat.</p>
-      </section>
+  function resetConversation() {
+    setMessages(messages.slice(0, 1));
+    setError(null);
+    setSessionTitle("Untitled session");
+    sessionTitledRef.current = false;
+  }
 
-      <section className="chat-panel" aria-label="Conversation">
-        <ChatThread messages={messages} busyLabel={activeWork} />
+  return (
+    <main className="app-shell">
+      <aside className="app-sidebar" aria-label="Sessions">
+        <div className="sidebar-brand-block">
+          <span className="sidebar-brand">DAFT PROMPT</span>
+          <span className="sidebar-tagline">MULTI-AGENT STUDIO</span>
+        </div>
+
+        <button type="button" className="sidebar-new" onClick={resetConversation}>
+          <span className="sidebar-new-plus" aria-hidden="true">+</span>
+          New session
+        </button>
+
+        <div className="sidebar-section">
+          <span className="sidebar-section-title">Recent sessions</span>
+          <div className="sidebar-recent-list">
+            <button type="button" className="sidebar-recent">
+              <span className="sidebar-recent-title">{sessionTitle}</span>
+              <span className="sidebar-recent-meta">NOW · LIVE</span>
+            </button>
+          </div>
+        </div>
+
+        {referenceProfile ? (
+          <div className="sidebar-section">
+            <span className="sidebar-section-title">Reference loaded</span>
+            <span className="sidebar-item sidebar-item-active">{referenceProfile.source.label}</span>
+          </div>
+        ) : null}
+
+        <div className="sidebar-footer">
+          <span className="sidebar-model-dot" aria-hidden="true" />
+          <span>STUDIO LIVE · 8 AGENTS IDLE</span>
+        </div>
+      </aside>
+
+      <section className="app-main" aria-label="Conversation">
+        <header className="app-topbar">
+          <div className="app-topbar-left">
+            <span className="app-topbar-dot" aria-hidden="true" />
+            <span className="app-topbar-title">{sessionTitle}</span>
+          </div>
+          <span className="app-topbar-meta">TWILIGHT · OUTPUT MIDI</span>
+        </header>
+        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} />
         {error ? (
-          <p className="error-banner" role="alert">
-            {error}
-          </p>
+          <p className="error-banner" role="alert">{error}</p>
         ) : null}
         <ChatComposer
           busy={busy}
@@ -228,11 +303,31 @@ export default function Home() {
 
 async function readApiError(response: Response) {
   try {
-    const body = (await response.json()) as { detail?: unknown };
-    return typeof body.detail === "string" ? body.detail : `backend error ${response.status}`;
+    const body = (await response.json()) as { detail?: unknown; error?: { message?: unknown } };
+    if (typeof body.detail === "string") return body.detail;
+    if (body.error && typeof body.error.message === "string") return body.error.message;
+    return `backend error ${response.status}`;
   } catch {
     return `backend error ${response.status}`;
   }
+}
+
+function formatMeta(data: ChatResponse, elapsedMs: number): string {
+  const seconds = elapsedMs / 1000;
+  const usage = data.usage;
+  if (usage && (usage.output_tokens || usage.total_tokens || usage.calls)) {
+    const elapsedReal = usage.elapsed_seconds ?? seconds;
+    const out = usage.output_tokens ?? 0;
+    const total = usage.total_tokens ?? 0;
+    const calls = usage.calls ?? 0;
+    const tps = out > 0 ? out / Math.max(elapsedReal, 0.01) : 0;
+    const tpsLabel = tps > 0 ? ` · ${tps.toFixed(1)} tok/s` : "";
+    const callsLabel = calls ? ` · ${calls} llm call${calls === 1 ? "" : "s"}` : "";
+    return `${elapsedReal.toFixed(1)}s · ${out} out / ${total} total tokens${tpsLabel}${callsLabel}`;
+  }
+  const approxTokens = Math.max(1, Math.round(data.reply.length / 4));
+  const tps = approxTokens / Math.max(seconds, 0.01);
+  return `${seconds.toFixed(1)}s · ~${approxTokens} tok · ~${tps.toFixed(1)} tok/s (estimate)`;
 }
 
 function normalizeAnalysisError(err: unknown) {
@@ -255,10 +350,9 @@ function normalizeAnalysisError(err: unknown) {
 function analysisReadyMessage(profile: ReferenceProfile) {
   const audio = profile.audio;
   if (!audio) return "Analysis finished, but no audio profile was returned.";
-
   const tempoValue = audio.tempo?.primary_bpm ?? audio.tempo_bpm;
-  const tempo = tempoValue === null || tempoValue === undefined ? "unknown tempo" : `likely ${Math.round(tempoValue)} BPM`;
+  const tempo = tempoValue == null ? "unknown tempo" : `likely ${Math.round(tempoValue)} BPM`;
   const keyValue = audio.harmony?.key?.primary?.key ?? audio.key;
   const key = keyValue ? `likely key ${keyValue}` : "unknown key";
-  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}, with probable chords and A/B/C structure below.`;
+  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}.`;
 }

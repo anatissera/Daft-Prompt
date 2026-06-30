@@ -5,36 +5,26 @@ import { chooseChatAction, createTextMessage, createAnalysisMessage, createCompo
 
 test("chooseChatAction analyzes when a local file is attached", () => {
   assert.deepEqual(
-    chooseChatAction({
-      prompt: "what key is this in?",
-      hasSelectedFile: true,
-      hasReferenceProfile: false,
-    }),
+    chooseChatAction({ prompt: "what key is this in?", hasSelectedFile: true }),
     { type: "analyze", messageText: "what key is this in?" },
   );
 });
 
-test("chooseChatAction answers reference questions from the current profile", () => {
+test("chooseChatAction defaults to chat for plain prompts", () => {
   assert.deepEqual(
-    chooseChatAction({
-      prompt: "What chords are probably in the chorus?",
-      hasSelectedFile: false,
-      hasReferenceProfile: true,
-    }),
-    { type: "answer_reference", messageText: "What chords are probably in the chorus?" },
+    chooseChatAction({ prompt: "compose a slow blues", hasSelectedFile: false }),
+    { type: "chat", messageText: "compose a slow blues" },
   );
 });
 
-test("chooseChatAction composes when there is no attachment or reference question", () => {
-  assert.deepEqual(
-    chooseChatAction({
-      prompt: "",
-      hasSelectedFile: false,
-      hasReferenceProfile: true,
-    }),
-    { type: "compose", messageText: "Compose a short song." },
-  );
+test("normalizeMessageText fills in a default for empty prompts", () => {
+  assert.equal(normalizeText(""), "Hello.");
+  assert.equal(normalizeText("", true), "Analyze this audio.");
 });
+
+function normalizeText(prompt, hasFile = false) {
+  return chooseChatAction({ prompt, hasSelectedFile: hasFile }).messageText;
+}
 
 test("message helpers create stable enriched chat messages", () => {
   const text = createTextMessage("assistant", "Hello", 0);

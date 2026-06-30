@@ -4,6 +4,8 @@ the recursion_limit backstop. All LLMs mocked — no API key needed."""
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 from langgraph.errors import GraphRecursionError
 
@@ -159,7 +161,12 @@ def test_recursion_limit_is_a_real_backstop_independent_of_round_cap():
         )
 
 
-def test_iter_negotiation_events_keeps_song_updated_before_later_llm_error():
+def test_iter_negotiation_events_isolates_per_instrument_llm_failures():
+    """When one instrument's LLM call fails mid-run, the others' partial output
+    is preserved and the failing instrument gets an empty-part placeholder so
+    the compose finishes instead of aborting the whole graph."""
+    call_lock = threading.Lock()
+
     class PartialThenQuotaLLM:
         calls = 0
 
@@ -168,8 +175,10 @@ def test_iter_negotiation_events_keeps_song_updated_before_later_llm_error():
             return self
 
         def invoke(self, _messages):
-            self.calls += 1
-            if self.calls == 1:
+            with call_lock:
+                PartialThenQuotaLLM.calls += 1
+                seq = PartialThenQuotaLLM.calls
+            if seq == 1:
                 return InstrumentTurnOutput(
                     notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)],
                     notes_summary="partial bass",
@@ -177,12 +186,11 @@ def test_iter_negotiation_events_keeps_song_updated_before_later_llm_error():
             raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota")
 
     song = _song()
-    stream = iter_negotiation_events(song, llm=PartialThenQuotaLLM(), max_rounds=3)
-    first = next(stream)
+    events = list(iter_negotiation_events(song, llm=PartialThenQuotaLLM(), max_rounds=3))
 
-    assert first["type"] == "agent_pass"
-    assert song.parts["bass"].notes_summary == "partial bass"
-
-    with pytest.raises(LLMQuotaExceeded):
-        next(stream)
-    assert song.parts["bass"].notes_summary == "partial bass"
+    assert any(e["type"] == "agent_pass" for e in events)
+    # The first successful instrument's part is preserved.
+    successful = [pid for pid, part in song.parts.items() if part.notes_summary == "partial bass"]
+    failed = [pid for pid, part in song.parts.items() if part.notes_summary.startswith("(failed")]
+    assert len(successful) == 1, song.parts
+    assert len(failed) >= 1, song.parts

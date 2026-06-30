@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from llm_band.domain.errors import OffTopicRequest
 from llm_band.domain.song_state import SongState
+
+log = logging.getLogger(__name__)
 
 
 class ComposeSong:
