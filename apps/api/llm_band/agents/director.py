@@ -76,14 +76,25 @@ class DirectorOutput(BaseModel):
     )
 
 
-_SYSTEM = (
-    "You are the musical director of an ensemble. Given a style description, decide "
-    "the key, tempo, time signature, number of bars, a section/form map, and the "
-    f"instrumentation — choose {MIN_ROSTER}-{MAX_ROSTER} instruments and {MIN_BARS}-{MAX_BARS} bars that genuinely "
-    "fit the style (reason about it; do not use a fixed genre table). For each "
-    "instrument give a General MIDI program, a sensible MIDI pitch range, and its "
-    "role. Mark drum/percussion kits with is_drum=true."
-)
+_SYSTEM = f"""You are the musical director of an ensemble. Given a style description, produce a complete arrangement plan with the following required outputs:
+
+1. ARRANGEMENT: key, tempo, time signature, num_bars ({MIN_BARS}-{MAX_BARS}). Reason about what genuinely fits the style.
+
+2. SONG FORM: 3-6 named sections (e.g. Intro, Verse, PreChorus, Chorus, Bridge, Outro). Each section has start_bar, end_bar, and an energy level: "low", "medium", or "high". Sections must cover all bars 0..num_bars-1 without overlap or gap.
+
+3. CHORD PROGRESSION: one ChordSpan per bar covering every bar (0..num_bars-1). Use chord names like "Dm7", "G7", "Cm9". Chords must fit the key and genre idiom.
+
+4. INSTRUMENTATION: {MIN_ROSTER}-{MAX_ROSTER} instruments. For each instrument:
+   - A General MIDI program number and a sensible MIDI pitch range for that instrument in that register (e.g. bass: 28-55, not 0-127).
+   - Its musical role.
+   - A playing_style: 1-2 sentences of idiomatic technique a real musician of this instrument in this genre would immediately recognise. Be specific about rhythm, articulation, and register. Examples:
+     * Funk bass: "Anchor beat 1 firmly. Use ghost notes between the 2 and 4. Slap on the upbeat 16th just before beat 3 in bar-ending phrases."
+     * Funk guitar: "Short 16th-note chord stabs on beats 2 and 4 with percussive muting between hits. Wah on fill bars. Stay in the mid register."
+     * String pad: "Sustained whole-note pads below the melody register. Swell into the chorus. Avoid the top octave to leave room for the lead."
+
+5. COMPOSITION GROUPS: ordered batches specifying which instruments compose in which wave. Each instrument_id must appear in exactly one group. Put rhythmic foundation first (drums, bass), harmonic layer second, melodic/textural layer last. Set max_negotiation_rounds (0-2) — use 1 for rhythm section, 0 for texture layers.
+
+Do not use a fixed genre-to-instrument mapping. Reason about what genuinely fits the requested style."""
 
 
 def _prompt(style: str) -> list[tuple[str, str]]:
