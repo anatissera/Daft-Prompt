@@ -15,6 +15,7 @@ import {
   PERCUSSION_MAX,
   PERCUSSION_MIN,
   folderForProgram,
+  midiToFileName,
   midiToName,
   resolveIsDrum,
   resolveProgram,
@@ -47,13 +48,15 @@ for (let n = PERCUSSION_MIN; n <= PERCUSSION_MAX; n++) DRUM_KEYS.push(n);
 
 function melodicUrls(): Record<string, string> {
   const urls: Record<string, string> = {};
+  // Anchors are natural notes only, so file name == Tone key.
   for (const n of MELODIC_ANCHORS) urls[n] = `${n}.mp3`;
   return urls;
 }
 
 function drumUrls(): Record<string, string> {
   const urls: Record<string, string> = {};
-  for (const k of DRUM_KEYS) urls[midiToName(k)] = `${midiToName(k)}.mp3`;
+  // Tone needs `C#2`-style keys; FluidR3 ships `Cs2.mp3` files.
+  for (const k of DRUM_KEYS) urls[midiToName(k)] = `${midiToFileName(k)}.mp3`;
   return urls;
 }
 

@@ -160,12 +160,21 @@ export function isDrumByName(name: string): boolean {
   return PERCUSSION_RE.test(name);
 }
 
-// MIDI note number → file name FluidR3 ships (sharps, no slashes).
-// midi 61 -> "Cs4" because the soundfont's filename is `Cs4.mp3`.
-const NOTE_NAMES = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
+// FluidR3 filenames use letter+`s` for sharps (e.g. `Cs4.mp3`), but Tone.Sampler
+// only accepts standard pitch notation as url keys (e.g. `C#4`). So we expose
+// two helpers: `midiToName` returns the Tone-parseable name (used as the sampler
+// url key AND for `triggerAttackRelease`), and `midiToFileName` returns the
+// FluidR3 filename stem.
+const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const NOTE_NAMES_FILE = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
 export function midiToName(midi: number): string {
   const octave = Math.floor(midi / 12) - 1;
-  const name = NOTE_NAMES[((midi % 12) + 12) % 12];
+  const name = NOTE_NAMES_SHARP[((midi % 12) + 12) % 12];
+  return `${name}${octave}`;
+}
+export function midiToFileName(midi: number): string {
+  const octave = Math.floor(midi / 12) - 1;
+  const name = NOTE_NAMES_FILE[((midi % 12) + 12) % 12];
   return `${name}${octave}`;
 }
 
