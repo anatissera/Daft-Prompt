@@ -39,10 +39,14 @@ def test_compose_uses_director_when_configured(monkeypatch):
     assert [r["id"] for r in body["song"]["roster"]] == ["bass", "lead", "drums"]
 
 
-def test_compose_falls_back_to_canned_without_llm(monkeypatch):
+def test_compose_returns_error_without_llm_configuration(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _NoLLMCfg())
     monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose", json={"style": "slow blues"})
-    assert resp.status_code == 200
-    assert resp.json()["source"] == "canned"
+    assert resp.status_code == 503
+    detail = resp.json()["detail"]
+    assert detail["type"] == "error"
+    assert detail["code"] == "llm_not_configured"
+    assert detail["partial"] is False
+    assert "provider" in detail["message"].lower()
