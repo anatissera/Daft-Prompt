@@ -16,6 +16,7 @@ __all__ = [
     "ChatResponse",
     "ComposeRequest",
     "ComposeResponse",
+    "ResearchRequest",
     "Artifacts",
     "DirectorEvent",
     "AgentPassEvent",
@@ -100,7 +101,15 @@ AnalysisProgressType = Literal[
     "estimating_chords",
     "detecting_structure",
     "analysis_keepalive",
+    "searching_sources",
+    "fetching_pages",
+    "extracting_claims",
+    "fusing_evidence",
 ]
+
+
+class ResearchRequest(BaseModel):
+    query: str = Field(min_length=1)
 
 
 class AnalysisProgressEvent(BaseModel):
