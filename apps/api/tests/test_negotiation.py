@@ -15,11 +15,13 @@ from llm_band.infrastructure.llm import LLMQuotaExceeded
 
 HEADER = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
 BASS = RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove")
-DRUMS = RosterItem(id="drums", instrument="kit", role="beat", is_drum=True)
+# Phase 2 efficiency: drums skip the LLM (see test_drum_shortcut), so negotiation
+# pipeline tests use two melodic instruments to keep both peers on the LLM path.
+LEAD = RosterItem(id="lead", instrument="lead_synth", midi_range=(48, 84), role="hook")
 
 
 def _song() -> SongState:
-    return SongState(request="x", header=HEADER, roster=[BASS, DRUMS])
+    return SongState(request="x", header=HEADER, roster=[BASS, LEAD])
 
 
 def _human_text(messages) -> str:
@@ -28,7 +30,7 @@ def _human_text(messages) -> str:
 
 class ScriptedInstrumentLLM:
     """Each call advances through a scripted list of InstrumentTurnOutput, keyed
-    by call order (round 0: bass then drums; later rounds dispatched by `to`)."""
+    by call order (round 0: bass then lead; later rounds dispatched by `to`)."""
 
     def __init__(self, script):
         self.script = list(script)
@@ -49,34 +51,34 @@ def test_negotiation_creates_routes_and_resolves_requests_through_shared_state()
         InstrumentTurnOutput(  # round 0: bass
             notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)],
             notes_summary="root notes",
-            new_requests=[NewRequest(to="drums", bars=[1], request="leave beat 0 open", rationale="fill")],
+            new_requests=[NewRequest(to="lead", bars=[1], request="leave beat 0 open", rationale="fill")],
         ),
-        InstrumentTurnOutput(  # round 0: drums
-            notes=[Note(bar=1, start_beat=0.0, pitch=36, dur=1.0)],
-            notes_summary="four on the floor",
+        InstrumentTurnOutput(  # round 0: lead
+            notes=[Note(bar=1, start_beat=0.0, pitch=60, dur=1.0)],
+            notes_summary="hook on the downbeat",
         ),
-        InstrumentTurnOutput(  # round 1: drums (only addressee gets a turn)
-            notes=[Note(bar=1, start_beat=0.5, pitch=36, dur=0.5)],
-            notes_summary="left beat 0 of bar 1 open for bass",
+        InstrumentTurnOutput(  # round 1: lead (only addressee gets a turn)
+            notes=[Note(bar=1, start_beat=0.5, pitch=60, dur=0.5)],
+            notes_summary="moved off beat 0 of bar 1 for bass",
             request_resolutions=[RequestResolution(request_id="req_0_bass_0", accepted=True, resolution="left space open")],
         ),
     ]
     llm = ScriptedInstrumentLLM(script)
     result = run_negotiation(_song(), llm=llm, max_rounds=3)
 
-    assert llm.calls == 3  # bass round0, drums round0, drums round1 — bass never re-rolled
+    assert llm.calls == 3  # bass round0, lead round0, lead round1 — bass never re-rolled
     req = next(r for r in result.negotiation_requests if r.id == "req_0_bass_0")
     assert req.status == "resolved"
     assert req.resolution == "left space open"
-    # the visible accommodation: drums' bar-1 note moved off beat 0 as requested
-    assert result.parts["drums"].notes[0].start_beat == 0.5
+    # the visible accommodation: lead's bar-1 note moved off beat 0 as requested
+    assert result.parts["lead"].notes[0].start_beat == 0.5
     assert result.converged is True
 
 
 def test_zero_new_requests_exits_early_without_a_second_round():
     script = [
         InstrumentTurnOutput(notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)], notes_summary="bass, no asks"),
-        InstrumentTurnOutput(notes=[Note(bar=0, start_beat=0.0, pitch=36, dur=1.0)], notes_summary="drums, no asks"),
+        InstrumentTurnOutput(notes=[Note(bar=0, start_beat=0.0, pitch=60, dur=1.0)], notes_summary="lead, no asks"),
     ]
     llm = ScriptedInstrumentLLM(script)
     result = run_negotiation(_song(), llm=llm, max_rounds=5)
@@ -97,7 +99,7 @@ def test_round_cap_forces_arbiter_convergence_with_no_pending_left():
 
         def invoke(self, messages):
             text = _human_text(messages)
-            target = "drums" if "drums" not in text else "bass"
+            target = "lead" if "lead" not in text else "bass"
             return InstrumentTurnOutput(
                 notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)],
                 notes_summary="still negotiating",
@@ -139,7 +141,7 @@ def test_recursion_limit_is_a_real_backstop_independent_of_round_cap():
 
         def invoke(self, messages):
             text = _human_text(messages)
-            target = "drums" if "drums" not in text else "bass"
+            target = "lead" if "lead" not in text else "bass"
             return InstrumentTurnOutput(
                 notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)],
                 notes_summary="never settles",
@@ -152,7 +154,7 @@ def test_recursion_limit_is_a_real_backstop_independent_of_round_cap():
     with pytest.raises(GraphRecursionError):
         app.invoke(
             {
-                "header": HEADER, "roster": [BASS, DRUMS], "parts": {},
+                "header": HEADER, "roster": [BASS, LEAD], "parts": {},
                 "negotiation_requests": [], "round": 0, "converged": False,
             },
             config={"recursion_limit": 6},

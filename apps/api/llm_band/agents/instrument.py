@@ -21,6 +21,8 @@ from ..infrastructure.llm import LLMError
 from ..music.theory import beats_per_bar
 from ..music.validators import ValidationIssue, errors_only, validate_song
 from ..domain.song_state import Header, NegotiationRequest, Note, Part, RosterItem, SongState
+from ..skills._tables import DRUM_PATTERNS, DRUM_PATTERN_ALIASES
+from ..skills.rhythm import drum_pattern
 
 MAX_REPAIRS = 2
 STRUCTURED_OUTPUT_RETRIES = 1
@@ -88,6 +90,40 @@ def _to_part(roster_item: RosterItem, out: InstrumentOutput) -> Part:
     )
 
 
+def _resolve_drum_style(header: Header, roster_item: RosterItem) -> str:
+    """Pick a `drum_pattern` style key from the roster item's role and the header's
+    genre. Role wins (so the director can override per-song with "drums — boom_bap");
+    otherwise the genre is matched directly, then aliased, then defaulted to
+    `rock_basic` — the same fallback `drum_pattern` itself uses.
+    """
+    haystacks = [roster_item.role.lower(), header.genre.lower()]
+    for hay in haystacks:
+        for name in DRUM_PATTERNS:
+            if name in hay:
+                return name
+        for alias, target in DRUM_PATTERN_ALIASES.items():
+            if alias in hay:
+                return target
+    return "rock_basic"
+
+
+def _drum_part(header: Header, roster_item: RosterItem) -> Part:
+    """Build a drum part verbatim from `drum_pattern` — no LLM call.
+
+    `notes_summary` names the pattern so peer instruments still get useful context
+    in negotiation rounds. `self_notes` records that the part is skill-derived so
+    a future revision pass can tell it apart from an LLM-generated part.
+    """
+    style = _resolve_drum_style(header, roster_item)
+    notes = drum_pattern(style, header.time_signature, header.num_bars)
+    return Part(
+        instrument_id=roster_item.id,
+        notes=notes,
+        notes_summary=f"{style} pattern, {header.num_bars} bars",
+        self_notes=f"skill:drum_pattern[{style}]",
+    )
+
+
 def _fallback_part(roster_item: RosterItem, reason: str = "model did not return structured output") -> Part:
     return Part(
         instrument_id=roster_item.id,
@@ -134,7 +170,13 @@ def compose_part(
     Never raises: an issue still unresolved after `MAX_REPAIRS` retries ships as-is —
     `validate_song` on the full song surfaces it in `song.errors` rather than crashing
     the run.
+
+    Drum parts (`roster_item.is_drum`) skip the LLM entirely and ship a deterministic
+    `drum_pattern` — generating drum hits note-by-note buys no quality over a curated
+    pattern table and costs a full turn per round.
     """
+    if roster_item.is_drum:
+        return _drum_part(header, roster_item)
     if llm is None:
         from llm_band.infrastructure.gemini.llm import make_llm
 
@@ -220,7 +262,22 @@ def run_instrument_turn(
 
     Same never-crash contract as `compose_part` — repair failures ship as-is and
     surface later via `validate_song`.
+
+    Drum parts skip the LLM (see `compose_part`) and additionally do not
+    participate in negotiation: their part is regenerated verbatim and they emit
+    no resolutions or new requests. A pending request addressed to the drums is
+    declined here so the arbiter sees it as resolved rather than stuck pending.
     """
+    if roster_item.is_drum:
+        part = _drum_part(header, roster_item)
+        declined = [
+            RequestResolution(
+                request_id=r.id, accepted=False,
+                resolution="drums use a deterministic pattern this round",
+            )
+            for r in pending
+        ]
+        return part, declined, []
     if llm is None:
         from llm_band.infrastructure.gemini.llm import make_llm
 
