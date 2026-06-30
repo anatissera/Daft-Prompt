@@ -6,12 +6,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 import llm_band.interfaces.api as api
-from llm_band.agents.director import (
-    ArrangementInstrument,
-    ArrangementSection,
-    DirectorOutput,
-    arrangement_to_song,
-)
+from llm_band.domain.song_state import Header, RosterItem, SongState
 
 
 class _Cfg:
@@ -22,27 +17,19 @@ class _NoLLMCfg:
     llm_configured = False
 
 
-def _fake_song(style: str):
-    out = DirectorOutput(
-        genre="disco", key="C major", tempo_bpm=120,
-        time_sig_numerator=4, time_sig_denominator=4, num_bars=8,
-        sections=[ArrangementSection(name="loop", start_bar=0, end_bar=8)],
-        instruments=[
-            ArrangementInstrument(id="bass", instrument="electric_bass",
-                                  midi_program=33, midi_low=28, midi_high=55, role="groove"),
-            ArrangementInstrument(id="lead", instrument="lead", midi_program=0,
-                                  midi_low=60, midi_high=84, role="melody"),
-            ArrangementInstrument(id="drums", instrument="kit", midi_program=0,
-                                  midi_low=35, midi_high=81, role="beat", is_drum=True),
-        ],
-    )
-    return arrangement_to_song(style, out)
+def _fake_song(style: str) -> SongState:
+    header = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=8)
+    roster = [
+        RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove"),
+        RosterItem(id="lead", instrument="lead", midi_range=(60, 84), role="melody"),
+        RosterItem(id="drums", instrument="kit", role="beat", is_drum=True),
+    ]
+    return SongState(request=style, header=header, roster=roster)
 
 
 def test_compose_uses_director_when_configured(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
-    monkeypatch.setattr(api, "run_director", _fake_song)
-    monkeypatch.setattr(api, "run_negotiation", lambda song: song)
+    monkeypatch.setattr(api, "run_negotiation", lambda style, **kw: _fake_song(style))
     monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose", json={"style": "disco"})
