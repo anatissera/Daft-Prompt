@@ -102,7 +102,7 @@ From Phase 8-10 of [`plans/deep-harmonic-analysis.md`](./plans/deep-harmonic-ana
 ### Backend Layers
 
 ```
-apps/api/llm_band/
+apps/api/music_assistant/
   domain/           → AudioProfile, ReferenceProfile, SongState models
   application/      → AnalyzeReference, ComposeSong, AnswerMusicQuestion
   ports/            → LLM, StemSeparator, AudioAnalyzer, TranscriptionService
@@ -170,7 +170,7 @@ export LLM_PROVIDER=gemini
 export GOOGLE_API_KEY=xxx
 
 # Run
-uvicorn llm_band.interfaces.api:app --reload --port 8000
+uvicorn music_assistant.interfaces.api:app --reload --port 8000
 ```
 
 ### Docker (both services)
@@ -195,7 +195,7 @@ pytest
 pytest tests/test_*_features.py tests/test_deep_harmonic_analyzer.py
 
 # With coverage
-pytest --cov=llm_band tests/
+pytest --cov=music_assistant tests/
 ```
 
 Key test strategy: All feature modules accept injectable fakes for speed. The test suite skips real Demucs separation (too slow) but covers fallback paths, confidence adjustments, and graceful degradation.

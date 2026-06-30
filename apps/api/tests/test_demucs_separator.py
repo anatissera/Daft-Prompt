@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from llm_band.domain.audio_profile import ReferenceSource
-from llm_band.infrastructure.mir.demucs_separator import DemucsSeparator
-from llm_band.ports.stem_separator import SeparatedStem
+from music_assistant.domain.audio_profile import ReferenceSource
+from music_assistant.infrastructure.mir.demucs_separator import DemucsSeparator
+from music_assistant.ports.stem_separator import SeparatedStem
 
 
 def _source(uri: str, kind: str = "upload") -> ReferenceSource:

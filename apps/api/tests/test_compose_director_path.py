@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-import llm_band.interfaces.api as api
-from llm_band.domain.song_state import Header, RosterItem, SongState
+import music_assistant.interfaces.api as api
+from music_assistant.domain.song_state import Header, RosterItem, SongState
 
 
 class _Cfg:

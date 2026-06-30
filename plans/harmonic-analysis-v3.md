@@ -50,9 +50,9 @@ found the work is architecturally sound, honest in its copy, and fully tested
 ## Phase 1: Feed Real Energy/Activity Into Section Detection
 
 **Files:**
-- Create `apps/api/llm_band/infrastructure/mir/bar_energy.py`
+- Create `apps/api/music_assistant/infrastructure/mir/bar_energy.py`
 - Create `apps/api/tests/test_bar_energy.py`
-- Modify `apps/api/llm_band/infrastructure/mir/deep_harmonic_analyzer.py`
+- Modify `apps/api/music_assistant/infrastructure/mir/deep_harmonic_analyzer.py`
 - Modify `apps/api/tests/test_deep_harmonic_analyzer.py`
 
 - [x] Add `per_bar_energy(audio_path, bar_times, end_seconds, *, rms_provider=None)`
@@ -73,7 +73,7 @@ found the work is architecturally sound, honest in its copy, and fully tested
 ## Phase 2: Bass-Informed Chord Roots
 
 **Files:**
-- Modify `apps/api/llm_band/infrastructure/mir/chord_features.py`
+- Modify `apps/api/music_assistant/infrastructure/mir/chord_features.py`
 - Modify `apps/api/tests/test_chord_features.py`
 
 - [x] Add an optional per-bar bass-root prior (from a bass chroma/root vote) that
@@ -90,7 +90,7 @@ found the work is architecturally sound, honest in its copy, and fully tested
 ## Phase 3: Downbeat / Bar-Phase Offset Check
 
 **Files:**
-- Modify `apps/api/llm_band/infrastructure/mir/tempo_grid.py` (or a new
+- Modify `apps/api/music_assistant/infrastructure/mir/tempo_grid.py` (or a new
   `bar_phase.py` helper)
 - Create/modify the matching test
 
@@ -109,8 +109,8 @@ found the work is architecturally sound, honest in its copy, and fully tested
 ## Phase 4: Usefulness Gate
 
 **Files:**
-- Modify `apps/api/llm_band/infrastructure/mir/deep_harmonic_analyzer.py`
-- Modify `apps/api/llm_band/application/answer_music_question.py`
+- Modify `apps/api/music_assistant/infrastructure/mir/deep_harmonic_analyzer.py`
+- Modify `apps/api/music_assistant/application/answer_music_question.py`
 - Modify `apps/web/lib/referenceProfileView.mjs`
 - Update matching tests
 
@@ -127,8 +127,8 @@ found the work is architecturally sound, honest in its copy, and fully tested
 ## Phase 5: Decouple Tuning From Labeling
 
 **Files:**
-- Modify `apps/api/llm_band/infrastructure/mir/key_features.py`
-- Modify `apps/api/llm_band/infrastructure/mir/chord_features.py`
+- Modify `apps/api/music_assistant/infrastructure/mir/key_features.py`
+- Modify `apps/api/music_assistant/infrastructure/mir/chord_features.py`
 - Update matching tests
 
 - [x] Use estimated tuning for the chroma that is *scored* (key + chords); keep
@@ -142,9 +142,9 @@ found the work is architecturally sound, honest in its copy, and fully tested
 ## Phase 6: Cleanups
 
 **Files:**
-- Modify `apps/api/llm_band/application/answer_music_question.py`
-- Modify `apps/api/llm_band/infrastructure/mir/deep_harmonic_analyzer.py`
-- Modify `apps/api/llm_band/infrastructure/mir/structure_features.py`
+- Modify `apps/api/music_assistant/application/answer_music_question.py`
+- Modify `apps/api/music_assistant/infrastructure/mir/deep_harmonic_analyzer.py`
+- Modify `apps/api/music_assistant/infrastructure/mir/structure_features.py`
 
 - [x] Route `"chorus"`/`"verse"` to the structure branch, not the chord branch.
   (Removed `"chorus"` from the chord regex in backend Q&A and frontend view.)

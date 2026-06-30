@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from llm_band.infrastructure.mir.bar_energy import (
+from music_assistant.infrastructure.mir.bar_energy import (
     bar_means_from_rms,
     per_bar_energy,
     per_stem_activity_by_bar,

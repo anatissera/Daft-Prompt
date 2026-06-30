@@ -1,6 +1,6 @@
 """Tests for the state schema and reducers."""
 
-from llm_band.state import merge_summaries
+from music_assistant.state import merge_summaries
 
 
 def test_merge_summaries_right_wins_on_conflict():
