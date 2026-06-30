@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from llm_band.domain.audio_profile import ChordCandidate, ChordSpan
-from llm_band.infrastructure.mir.chord_features import (
+from music_assistant.domain.audio_profile import ChordCandidate, ChordSpan
+from music_assistant.infrastructure.mir.chord_features import (
     _default_chroma_time_provider,
     apply_key_context,
     bass_root_from_chroma,
@@ -191,7 +191,7 @@ def test_default_chroma_time_provider_tunes_chroma_for_scoring(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "librosa", fake_librosa)
     monkeypatch.setattr(
-        "llm_band.infrastructure.mir.librosa_analyzer._prepare_librosa_import",
+        "music_assistant.infrastructure.mir.librosa_analyzer._prepare_librosa_import",
         lambda: None,
     )
 

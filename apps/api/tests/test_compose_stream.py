@@ -8,9 +8,9 @@ import json
 
 from fastapi.testclient import TestClient
 
-import llm_band.interfaces.api as api
-from llm_band.domain.song_state import Header, Part, RosterItem, SongState
-from llm_band.infrastructure.llm import LLMQuotaExceeded
+import music_assistant.interfaces.api as api
+from music_assistant.domain.song_state import Header, Part, RosterItem, SongState
+from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
 
 def _parse_sse(text: str) -> list[dict]:

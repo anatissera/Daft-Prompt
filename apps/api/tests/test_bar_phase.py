@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from llm_band.infrastructure.mir.bar_phase import (
+from music_assistant.infrastructure.mir.bar_phase import (
     beat_chromas_from_audio,
     choose_bar_phase_offset,
     select_bar_phase_offset,

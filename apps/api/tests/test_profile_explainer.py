@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from llm_band.application.answer_music_question import AnswerMusicQuestion
-from llm_band.domain.audio_profile import (
+from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.domain.audio_profile import (
     AudioProfile,
     ChordEstimate,
     ReferenceProfile,
     ReferenceSource,
     SectionProfile,
 )
-from llm_band.infrastructure.explainer.profile_explainer import ProfileExplainer
+from music_assistant.infrastructure.explainer.profile_explainer import ProfileExplainer
 
 
 def _profile(audio: AudioProfile | None = None) -> ReferenceProfile:

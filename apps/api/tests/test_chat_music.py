@@ -6,11 +6,11 @@ from typing import Optional
 
 import pytest
 
-from llm_band.application.answer_music_question import AnswerMusicQuestion
-from llm_band.application.chat_music import ChatMusic, ChatRequest
-from llm_band.application.compose_song import ComposeSong
-from llm_band.canned import canned_song
-from llm_band.domain.audio_profile import (
+from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.application.chat_music import ChatMusic, ChatRequest
+from music_assistant.application.compose_song import ComposeSong
+from music_assistant.canned import canned_song
+from music_assistant.domain.audio_profile import (
     AudioProfile,
     ChordEstimate,
     ExplanationAnswer,
@@ -18,8 +18,8 @@ from llm_band.domain.audio_profile import (
     ReferenceSource,
     SectionProfile,
 )
-from llm_band.domain.song_state import SongState
-from llm_band.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
+from music_assistant.domain.song_state import SongState
+from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 
 
 def _make_profile(reference_id: str = "ref_demo") -> ReferenceProfile:

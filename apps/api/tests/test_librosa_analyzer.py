@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from llm_band.domain.audio_profile import ReferenceSource
-from llm_band.infrastructure.mir.librosa_analyzer import LibrosaAnalyzer
+from music_assistant.domain.audio_profile import ReferenceSource
+from music_assistant.infrastructure.mir.librosa_analyzer import LibrosaAnalyzer
 
 
 def _write_synthetic_chord_loop(path: Path, duration_seconds: float = 8.0) -> None:

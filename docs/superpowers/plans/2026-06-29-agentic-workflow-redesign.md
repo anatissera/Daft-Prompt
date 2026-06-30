@@ -23,11 +23,11 @@
 
 | File | Action | Responsibility |
 |---|---|---|
-| `apps/api/llm_band/domain/song_state.py` | Modify | Add `Section.energy`, `RosterItem.playing_style`, `CompositionGroup`, `SongState.composition_groups` |
-| `apps/api/llm_band/agents/director.py` | Modify | New schema fields, enriched `arrangement_to_song()`, rewritten system prompt |
-| `apps/api/llm_band/state.py` | Modify | New `BandState`/`InstrumentsState` fields, `merge_summaries` reducer |
-| `apps/api/llm_band/agents/instrument.py` | Modify | New prompt helpers, enriched `_system_prompt`, `_negotiation_etiquette(batch_peer_ids)`, updated `run_instrument_turn` signature |
-| `apps/api/llm_band/graph.py` | Modify | Batch sequencer replacing `_build_negotiation_graph`, updated `run_negotiation` / `iter_negotiation_events` |
+| `apps/api/music_assistant/domain/song_state.py` | Modify | Add `Section.energy`, `RosterItem.playing_style`, `CompositionGroup`, `SongState.composition_groups` |
+| `apps/api/music_assistant/agents/director.py` | Modify | New schema fields, enriched `arrangement_to_song()`, rewritten system prompt |
+| `apps/api/music_assistant/state.py` | Modify | New `BandState`/`InstrumentsState` fields, `merge_summaries` reducer |
+| `apps/api/music_assistant/agents/instrument.py` | Modify | New prompt helpers, enriched `_system_prompt`, `_negotiation_etiquette(batch_peer_ids)`, updated `run_instrument_turn` signature |
+| `apps/api/music_assistant/graph.py` | Modify | Batch sequencer replacing `_build_negotiation_graph`, updated `run_negotiation` / `iter_negotiation_events` |
 | `apps/api/tests/test_director.py` | Modify | Tests for new fields, `arrangement_to_song` validation |
 | `apps/api/tests/test_instrument.py` | Modify | Tests for new prompt helpers and updated `run_instrument_turn` signature |
 | `apps/api/tests/test_graph.py` | Modify | Tests for batch sequencing, peer summary propagation, intra-batch scoping |
@@ -38,7 +38,7 @@
 ## Task 1: domain/song_state.py — Section energy, RosterItem playing style, CompositionGroup
 
 **Files:**
-- Modify: `apps/api/llm_band/domain/song_state.py`
+- Modify: `apps/api/music_assistant/domain/song_state.py`
 - Test: `apps/api/tests/test_director.py`
 
 **Interfaces:**
@@ -53,7 +53,7 @@
 ```python
 # In apps/api/tests/test_director.py, add at the bottom:
 
-from llm_band.domain.song_state import CompositionGroup, Section, RosterItem, SongState
+from music_assistant.domain.song_state import CompositionGroup, Section, RosterItem, SongState
 
 
 def test_section_has_energy_field_defaulting_to_medium():
@@ -86,7 +86,7 @@ def test_composition_group_max_negotiation_rounds_clamps_to_range():
 
 
 def test_song_state_has_composition_groups_defaulting_to_empty():
-    from llm_band.domain.song_state import Header
+    from music_assistant.domain.song_state import Header
     song = SongState(
         request="test",
         header=Header(genre="funk", key="D minor", tempo_bpm=100, num_bars=8),
@@ -104,7 +104,7 @@ Expected: FAIL — `Section` has no `energy`, `CompositionGroup` not found, `Son
 
 - [ ] **Step 3: Implement the domain changes**
 
-Replace the contents of `apps/api/llm_band/domain/song_state.py`:
+Replace the contents of `apps/api/music_assistant/domain/song_state.py`:
 
 ```python
 """Canonical `SongState` schema shared across the composition pipeline."""
@@ -209,7 +209,7 @@ Expected: all tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/llm_band/domain/song_state.py apps/api/tests/test_director.py
+git add apps/api/music_assistant/domain/song_state.py apps/api/tests/test_director.py
 git commit -m "feat: add Section.energy, RosterItem.playing_style, CompositionGroup to domain"
 ```
 
@@ -218,7 +218,7 @@ git commit -m "feat: add Section.energy, RosterItem.playing_style, CompositionGr
 ## Task 2: agents/director.py — Schema additions
 
 **Files:**
-- Modify: `apps/api/llm_band/agents/director.py`
+- Modify: `apps/api/music_assistant/agents/director.py`
 - Test: `apps/api/tests/test_director.py`
 
 **Interfaces:**
@@ -234,13 +234,13 @@ git commit -m "feat: add Section.energy, RosterItem.playing_style, CompositionGr
 ```python
 # Add to apps/api/tests/test_director.py:
 
-from llm_band.agents.director import (
+from music_assistant.agents.director import (
     ArrangementInstrument,
     ArrangementSection,
     CompositionGroup,  # re-exported from director
     DirectorOutput,
 )
-from llm_band.domain.song_state import ChordSpan
+from music_assistant.domain.song_state import ChordSpan
 
 
 def _full_output() -> DirectorOutput:
@@ -313,7 +313,7 @@ Expected: FAIL — `ArrangementInstrument` has no `playing_style`, `DirectorOutp
 
 - [ ] **Step 3: Update the schema in director.py**
 
-In `apps/api/llm_band/agents/director.py`, replace the model section (lines 1–62) with:
+In `apps/api/music_assistant/agents/director.py`, replace the model section (lines 1–62) with:
 
 ```python
 """Director agent — reasons an arrangement (header + roster) from a style string.
@@ -405,7 +405,7 @@ Expected: all tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/llm_band/agents/director.py apps/api/tests/test_director.py
+git add apps/api/music_assistant/agents/director.py apps/api/tests/test_director.py
 git commit -m "feat: add playing_style, energy, chord_progression, composition_groups to director schema"
 ```
 
@@ -414,7 +414,7 @@ git commit -m "feat: add playing_style, energy, chord_progression, composition_g
 ## Task 3: agents/director.py — arrangement_to_song() propagation and validation
 
 **Files:**
-- Modify: `apps/api/llm_band/agents/director.py`
+- Modify: `apps/api/music_assistant/agents/director.py`
 - Test: `apps/api/tests/test_director.py`
 
 **Interfaces:**
@@ -488,7 +488,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Update arrangement_to_song() and helpers in director.py**
 
-Replace the `_clamp_*` functions and `arrangement_to_song` in `apps/api/llm_band/agents/director.py` with:
+Replace the `_clamp_*` functions and `arrangement_to_song` in `apps/api/music_assistant/agents/director.py` with:
 
 ```python
 def _clamp_roster(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
@@ -600,7 +600,7 @@ Expected: all tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/api/llm_band/agents/director.py apps/api/tests/test_director.py
+git add apps/api/music_assistant/agents/director.py apps/api/tests/test_director.py
 git commit -m "feat: arrangement_to_song propagates chord progression, energy, playing style, and validates groups"
 ```
 
@@ -609,7 +609,7 @@ git commit -m "feat: arrangement_to_song propagates chord progression, energy, p
 ## Task 4: agents/director.py — System prompt rewrite
 
 **Files:**
-- Modify: `apps/api/llm_band/agents/director.py`
+- Modify: `apps/api/music_assistant/agents/director.py`
 - Test: `apps/api/tests/test_director.py`
 
 **Interfaces:**
@@ -620,7 +620,7 @@ git commit -m "feat: arrangement_to_song propagates chord progression, energy, p
 ```python
 # Add to apps/api/tests/test_director.py:
 
-from llm_band.agents.director import _prompt
+from music_assistant.agents.director import _prompt
 
 
 def test_director_prompt_contains_key_musical_concepts():
@@ -682,7 +682,7 @@ Expected: all tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/llm_band/agents/director.py apps/api/tests/test_director.py
+git add apps/api/music_assistant/agents/director.py apps/api/tests/test_director.py
 git commit -m "feat: rewrite director system prompt to elicit chords, playing style, and composition groups"
 ```
 
@@ -691,7 +691,7 @@ git commit -m "feat: rewrite director system prompt to elicit chords, playing st
 ## Task 5: state.py — New BandState and InstrumentsState fields
 
 **Files:**
-- Modify: `apps/api/llm_band/state.py`
+- Modify: `apps/api/music_assistant/state.py`
 
 **Interfaces:**
 - Consumes: `CompositionGroup` from `domain/song_state.py` (Task 1)
@@ -705,7 +705,7 @@ git commit -m "feat: rewrite director system prompt to elicit chords, playing st
 ```python
 # Create apps/api/tests/test_state.py:
 
-from llm_band.state import merge_summaries
+from music_assistant.state import merge_summaries
 
 
 def test_merge_summaries_right_wins_on_conflict():
@@ -733,7 +733,7 @@ Expected: FAIL — `merge_summaries` not found.
 
 - [ ] **Step 3: Update state.py**
 
-Replace `apps/api/llm_band/state.py` with:
+Replace `apps/api/music_assistant/state.py` with:
 
 ```python
 """LangGraph state schema for the composition pipeline."""
@@ -811,7 +811,7 @@ Expected: `test_state.py` all PASS. Graph/negotiation tests may fail due to the 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/llm_band/state.py apps/api/tests/test_state.py
+git add apps/api/music_assistant/state.py apps/api/tests/test_state.py
 git commit -m "feat: add peer_summaries, composition_groups, batch fields to BandState and InstrumentsState"
 ```
 
@@ -820,7 +820,7 @@ git commit -m "feat: add peer_summaries, composition_groups, batch fields to Ban
 ## Task 6: agents/instrument.py — Prompt helpers and updated signature
 
 **Files:**
-- Modify: `apps/api/llm_band/agents/instrument.py`
+- Modify: `apps/api/music_assistant/agents/instrument.py`
 - Test: `apps/api/tests/test_instrument.py`
 
 **Interfaces:**
@@ -837,8 +837,8 @@ git commit -m "feat: add peer_summaries, composition_groups, batch fields to Ban
 ```python
 # Add to apps/api/tests/test_instrument.py:
 
-from llm_band.agents.instrument import _chord_map_text, _section_map_text, _negotiation_etiquette
-from llm_band.domain.song_state import ChordSpan, Section
+from music_assistant.agents.instrument import _chord_map_text, _section_map_text, _negotiation_etiquette
+from music_assistant.domain.song_state import ChordSpan, Section
 
 
 def test_chord_map_text_formats_bar_chord_pairs():
@@ -884,8 +884,8 @@ def test_negotiation_etiquette_no_scope_hint_when_no_peers():
 
 
 def test_system_prompt_includes_chord_map_and_section_map():
-    from llm_band.agents.instrument import _system_prompt
-    from llm_band.domain.song_state import Header, RosterItem, ChordSpan, Section
+    from music_assistant.agents.instrument import _system_prompt
+    from music_assistant.domain.song_state import Header, RosterItem, ChordSpan, Section
     header = Header(
         genre="funk", key="D minor", tempo_bpm=110, num_bars=8,
         chord_progression=[ChordSpan(bar=i, chord="Dm7") for i in range(8)],
@@ -903,8 +903,8 @@ def test_system_prompt_includes_chord_map_and_section_map():
 
 
 def test_run_instrument_turn_accepts_batch_peer_ids():
-    from llm_band.agents.instrument import InstrumentTurnOutput, run_instrument_turn
-    from llm_band.domain.song_state import Header, Note, RosterItem
+    from music_assistant.agents.instrument import InstrumentTurnOutput, run_instrument_turn
+    from music_assistant.domain.song_state import Header, Note, RosterItem
 
     class TurnLLM:
         def with_structured_output(self, schema):
@@ -939,7 +939,7 @@ Expected: FAIL — `_chord_map_text` not found, `run_instrument_turn` takes no `
 
 - [ ] **Step 3: Update instrument.py**
 
-Replace `apps/api/llm_band/agents/instrument.py` with:
+Replace `apps/api/music_assistant/agents/instrument.py` with:
 
 ```python
 """Instrument agent — composes one part.
@@ -1128,7 +1128,7 @@ def compose_part(
     if run is not None:
         run.name = roster_item.instrument
     if llm is None:
-        from llm_band.infrastructure.gemini.llm import make_llm
+        from music_assistant.infrastructure.gemini.llm import make_llm
         llm = make_llm("instrument")
     structured = llm.with_structured_output(InstrumentOutput)
 
@@ -1208,7 +1208,7 @@ def run_instrument_turn(
     if run is not None:
         run.name = roster_item.instrument
     if llm is None:
-        from llm_band.infrastructure.gemini.llm import make_llm
+        from music_assistant.infrastructure.gemini.llm import make_llm
         llm = make_llm("instrument")
     structured = llm.with_structured_output(InstrumentTurnOutput)
 
@@ -1252,7 +1252,7 @@ Expected: all tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/llm_band/agents/instrument.py apps/api/tests/test_instrument.py
+git add apps/api/music_assistant/agents/instrument.py apps/api/tests/test_instrument.py
 git commit -m "feat: enrich instrument prompts with chord map, section energy, playing style; add batch_peer_ids scope to negotiation"
 ```
 
@@ -1261,7 +1261,7 @@ git commit -m "feat: enrich instrument prompts with chord map, section energy, p
 ## Task 7: graph.py — Batch sequencer
 
 **Files:**
-- Modify: `apps/api/llm_band/graph.py`
+- Modify: `apps/api/music_assistant/graph.py`
 - Modify: `apps/api/tests/test_graph.py`
 - Modify: `apps/api/tests/test_negotiation.py`
 
@@ -1287,14 +1287,14 @@ from __future__ import annotations
 import pytest
 from langgraph.errors import GraphRecursionError
 
-from llm_band.agents.arbiter import ArbiterOutput, ArbiterResolution
-from llm_band.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
-from llm_band.agents.director import DirectorOutput, ArrangementInstrument, ArrangementSection, CompositionGroup as DCompositionGroup
-from llm_band.graph import _build_negotiation_graph, run_negotiation
-from llm_band.domain.song_state import (
+from music_assistant.agents.arbiter import ArbiterOutput, ArbiterResolution
+from music_assistant.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
+from music_assistant.agents.director import DirectorOutput, ArrangementInstrument, ArrangementSection, CompositionGroup as DCompositionGroup
+from music_assistant.graph import _build_negotiation_graph, run_negotiation
+from music_assistant.domain.song_state import (
     ChordSpan, CompositionGroup, Header, Note, RosterItem, SongState,
 )
-from llm_band.infrastructure.llm import LLMQuotaExceeded
+from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
 HEADER = Header(genre="funk", key="D minor", tempo_bpm=110, num_bars=4)
 DRUMS = RosterItem(id="drums", instrument="kit", role="beat", is_drum=True)
@@ -1335,7 +1335,7 @@ class DirectorLLM:
         self._output = director_output
 
     def with_structured_output(self, schema):
-        from llm_band.agents.director import DirectorOutput as DO
+        from music_assistant.agents.director import DirectorOutput as DO
         if schema is DO:
             return self
         raise AssertionError(f"DirectorLLM called with unexpected schema: {schema}")
@@ -1367,8 +1367,8 @@ class CombinedLLM:
         self._arbiter_calls = 0
 
     def with_structured_output(self, schema):
-        from llm_band.agents.director import DirectorOutput as DO
-        from llm_band.agents.arbiter import ArbiterOutput as AO
+        from music_assistant.agents.director import DirectorOutput as DO
+        from music_assistant.agents.arbiter import ArbiterOutput as AO
         if schema is DO:
             return self._director
         if schema is ArbiterOutput:
@@ -1404,7 +1404,7 @@ def test_batches_execute_in_order_and_peer_summaries_propagate():
         calls = 0
 
         def with_structured_output(self, schema):
-            from llm_band.agents.director import DirectorOutput as DO
+            from music_assistant.agents.director import DirectorOutput as DO
             if schema is DO:
                 return DirectorLLM(_make_director_output([DRUMS, BASS, EPIANO], GROUPS))
             assert schema is InstrumentTurnOutput
@@ -1454,7 +1454,7 @@ def test_cross_batch_requests_are_not_dispatched_within_batch():
 
     class TrackingLLM:
         def with_structured_output(self, schema):
-            from llm_band.agents.director import DirectorOutput as DO
+            from music_assistant.agents.director import DirectorOutput as DO
             if schema is DO:
                 return DirectorLLM(director_out)
             assert schema is InstrumentTurnOutput
@@ -1527,7 +1527,7 @@ Expected: FAIL (graph API changes not yet implemented).
 
 - [ ] **Step 3: Implement the new graph.py**
 
-Replace `apps/api/llm_band/graph.py` with:
+Replace `apps/api/music_assistant/graph.py` with:
 
 ```python
 """Composition graphs.
@@ -1958,7 +1958,7 @@ Expected: all tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/llm_band/graph.py apps/api/tests/test_negotiation.py apps/api/tests/test_graph.py
+git add apps/api/music_assistant/graph.py apps/api/tests/test_negotiation.py apps/api/tests/test_graph.py
 git commit -m "feat: replace negotiation graph with batched sequential composer; intra-batch mini-negotiation scoped to group"
 ```
 

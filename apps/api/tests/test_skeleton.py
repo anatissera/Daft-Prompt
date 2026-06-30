@@ -6,10 +6,10 @@ from __future__ import annotations
 import pretty_midi
 from fastapi.testclient import TestClient
 
-import llm_band.interfaces.api as api
-from llm_band.canned import canned_song
-from llm_band.music.render_midi import render_midi
-from llm_band.music.render_sheet import render_musicxml
+import music_assistant.interfaces.api as api
+from music_assistant.canned import canned_song
+from music_assistant.music.render_midi import render_midi
+from music_assistant.music.render_sheet import render_musicxml
 
 
 def test_canned_song_renders_reparseable_midi(tmp_path):

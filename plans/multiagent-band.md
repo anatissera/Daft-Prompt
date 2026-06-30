@@ -23,7 +23,7 @@ Durable decisions that apply across all phases:
 - **Monorepo**: `apps/api` (Python: LangGraph + FastAPI + music21 + pretty_midi) and
   `apps/web` (Next.js App Router + React + TypeScript, deploys to Vercel).
 - **Shared contract**: `SongState` is the single source of truth. Pydantic in
-  `apps/api/llm_band/domain/song_state.py`; mirrored as TypeScript in `apps/web/lib/types.ts`
+  `apps/api/music_assistant/domain/song_state.py`; mirrored as TypeScript in `apps/web/lib/types.ts`
   (keep in sync; prefer generating TS from the JSON schema in CI).
 - **API surface**: `POST /compose` starts a run and **streams Server-Sent Events**
   (director done → roster; each agent pass → negotiation feed; convergence → done).

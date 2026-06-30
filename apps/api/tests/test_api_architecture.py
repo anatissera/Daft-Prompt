@@ -7,9 +7,9 @@ import importlib.util
 import json
 from pathlib import Path
 
-from llm_band.domain.song_state import Header, RosterItem
-from llm_band.infrastructure.storage.local_store import LocalArtifactStore
-from llm_band.interfaces.api_models import AgentPassEvent, DirectorEvent, sse_data
+from music_assistant.domain.song_state import Header, RosterItem
+from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
+from music_assistant.interfaces.api_models import AgentPassEvent, DirectorEvent, sse_data
 
 
 def test_sse_data_serializes_one_data_event_with_aliases():
@@ -65,20 +65,20 @@ def test_local_artifact_store_rejects_traversal(tmp_path):
 
 
 def test_legacy_root_architecture_modules_are_removed():
-    assert importlib.util.find_spec("llm_band.schema") is None
-    assert importlib.util.find_spec("llm_band.api_models") is None
-    assert importlib.util.find_spec("llm_band.artifacts") is None
-    assert importlib.util.find_spec("llm_band.composition") is None
-    assert importlib.util.find_spec("llm_band.rendering") is None
-    assert importlib.util.find_spec("llm_band.reference_analysis") is None
+    assert importlib.util.find_spec("music_assistant.schema") is None
+    assert importlib.util.find_spec("music_assistant.api_models") is None
+    assert importlib.util.find_spec("music_assistant.artifacts") is None
+    assert importlib.util.find_spec("music_assistant.composition") is None
+    assert importlib.util.find_spec("music_assistant.rendering") is None
+    assert importlib.util.find_spec("music_assistant.reference_analysis") is None
 
 
 def test_clean_architecture_dependency_direction():
-    root = Path(__file__).resolve().parents[1] / "llm_band"
+    root = Path(__file__).resolve().parents[1] / "music_assistant"
     rules = {
-        "domain": ("llm_band.infrastructure", "llm_band.interfaces", "llm_band.application"),
-        "application": ("llm_band.infrastructure", "llm_band.interfaces", "fastapi"),
-        "infrastructure": ("llm_band.interfaces", "fastapi"),
+        "domain": ("music_assistant.infrastructure", "music_assistant.interfaces", "music_assistant.application"),
+        "application": ("music_assistant.infrastructure", "music_assistant.interfaces", "fastapi"),
+        "infrastructure": ("music_assistant.interfaces", "fastapi"),
     }
     violations = []
     for layer, forbidden_prefixes in rules.items():
