@@ -25,8 +25,7 @@ from langgraph.types import Send
 
 from .agents.arbiter import run_arbiter
 from .agents.instrument import NewRequest, RequestResolution, compose_part, run_instrument_turn
-from .config import get_settings
-from .domain.song_state import CompositionGroup, Header, NegotiationRequest, Part, RosterItem, SongState
+from .domain.song_state import Header, NegotiationRequest, Part, RosterItem, SongState
 from .state import BandState, InstrumentsState, merge_parts, merge_requests, merge_summaries, take_latest
 
 
