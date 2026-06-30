@@ -111,6 +111,71 @@ We also add one end-to-end run via `run_director` + `run_instruments` with a stu
 
 Each step is its own PR so we can revert independently if a wiring change degrades output quality.
 
+## Phase 2 — Efficiency
+
+A separate observation that lives on the same branch: a full song takes ~100k tokens and ~5 minutes today.
+The skills layer alone already chips at this (fewer repair rounds, less hallucinated noise), but two graph-level changes target the dominant costs directly.
+
+### What's already efficient (do not redo)
+
+The negotiation loop in `apps/api/llm_band/graph.py` already early-exits on zero pending requests (`_check_convergence` returns "arbiter" when nothing is pending) and already restricts each round >0 fan-out to instruments that have a pending request addressed to them.
+So "skip idle instruments" and "stop when converged" are not on this list — measuring before "fixing" them would just waste a PR.
+
+### Drum agent → `drum_pattern` verbatim
+
+When the roster contains a drum instrument (`is_drum=True`), bypass the LLM and emit `drum_pattern(style, time_signature, num_bars)` directly into `parts[drum_id]`.
+Style is derived from `header.genre` via `DRUM_PATTERN_ALIASES`, with a free-form override allowed in the director's roster entry (e.g. `role: "drums — boom_bap"`).
+This drops one full LLM turn per round the drums would have been involved in — including the round-0 compose pass — at the cost of losing per-song variation in drum patterns.
+We accept that for v1; later we can let an LLM call decide between named patterns rather than generating notes.
+
+Wiring lives in `compose_part` / `run_instrument_turn`: if `roster_item.is_drum`, short-circuit before building the structured prompt and return a `Part` whose notes come from `drum_pattern`.
+`notes_summary` is hardcoded ("`{style}` pattern, {num_bars} bars") so peer instruments still get useful context.
+
+### Diff-based revision in negotiation rounds
+
+The current output token cost is dominated by every `run_instrument_turn` re-emitting the entire `list[Note]` for the part — typically ~100 notes × 5 fields × 8 instruments × multiple rounds.
+For round 0 we keep the full-output contract (there's nothing to diff against), but from round 1 on we switch the structured-output schema to a diff:
+
+```python
+class NoteEdit(BaseModel):
+    op: Literal["add", "replace", "remove"]
+    bar: int
+    start_beat: float                  # used by replace/remove to locate the note
+    note: Optional[Note] = None         # required for add/replace
+
+class InstrumentRevisionOutput(BaseModel):
+    edits: list[NoteEdit]
+    notes_summary: str
+    request_resolutions: list[RequestResolution]
+    new_requests: list[NewRequest]
+```
+
+A small `apply_edits(part, edits)` helper in `llm_band/skills/edits.py` (or `agents/`, whichever fits) materializes the new `Part`.
+Edits that fail to locate a target (`replace`/`remove` with no match) are dropped with a logged warning and surface through `validate_song`'s existing severity model — same never-crash contract as `compose_part`.
+
+The repair loop stays unchanged but now also flags edit-application failures so the next iteration can correct them.
+
+### Expected impact
+
+Rough estimate based on a typical 8-instrument, 3-round run:
+- Drum verbatim removes 1 instrument × ~3 turns = ~3 LLM turns end-to-end (≈ a third of round-0 wall time gone, since round 0 is the only one that fans out to everyone).
+- Diff revisions cut per-revision output tokens by ~80–95% when the revision touches only a handful of notes (the common case after round 0).
+
+Net target: ~40k tokens and ~2–3 minutes per song, no quality loss as long as the edit-application + validation loop keeps the diffs honest.
+
+### Tests
+
+- `tests/skills/test_edits.py` covers `apply_edits` (add/replace/remove, ambiguous matches, no-op edits).
+- `tests/test_drum_shortcut.py` asserts `compose_part` on an `is_drum=True` roster item returns notes equal to `drum_pattern` for the matching style without invoking the LLM (use a fake LLM that records calls and assert `call_count == 0` on the drum part).
+- `tests/test_negotiation.py` gets one new case: a round-1 turn that returns a diff is applied correctly and the resulting `Part` matches what an equivalent full-replace would have produced.
+
+### Rollout (added to the original 5 steps)
+
+6. Drum verbatim shortcut + tests (independent of skill wiring; lowest risk).
+7. Edit schema + `apply_edits` helper + unit tests.
+8. Wire `run_instrument_turn` to emit `InstrumentRevisionOutput` for `round > 0`; keep `compose_part` on the full-output contract.
+9. Measure: instrument an existing canned demo run for token count and wall time before/after each of steps 6–8, log to `docs/`, and decide whether to roll diffs back if quality regresses on the canned eval.
+
 ## Open questions
 
 Should `suggest_chord_progression` be a deterministic table lookup, or a tiny secondary LLM call constrained to chord-symbol output?
