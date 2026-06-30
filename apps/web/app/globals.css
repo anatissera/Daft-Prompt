@@ -1127,6 +1127,54 @@ code, pre, .mono { font-family: var(--font-mono); }
   letter-spacing: 0.04em;
 }
 
+/* harmonic-fit quality readout (HARMONY spec value + breakdown panel) */
+.song-deck-specs li strong[data-fit="strong"] { color: #6fcf8e; }
+.song-deck-specs li strong[data-fit="fair"] { color: var(--gold-bright, #f3c45a); }
+.song-deck-specs li strong[data-fit="weak"] { color: #e08a6a; }
+
+.harmony-fit-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 8px 4px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.harmony-fit-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 40px;
+  align-items: center;
+  gap: 10px;
+}
+.harmony-fit-id {
+  font-family: var(--font-tech);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.harmony-fit-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(243, 196, 90, 0.12);
+  overflow: hidden;
+}
+.harmony-fit-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--gold-bright, #f3c45a);
+}
+.harmony-fit-bar-fill[data-fit="strong"] { background: #6fcf8e; }
+.harmony-fit-bar-fill[data-fit="fair"] { background: var(--gold-bright, #f3c45a); }
+.harmony-fit-bar-fill[data-fit="weak"] { background: #e08a6a; }
+.harmony-fit-pct {
+  font-family: var(--font-tech);
+  font-size: 11px;
+  color: var(--silver-spec);
+  text-align: right;
+}
+
 /* RosterView when embedded inside song-deck — agent cards */
 .song-deck > .embedded-panel {
   margin: 0 18px;
