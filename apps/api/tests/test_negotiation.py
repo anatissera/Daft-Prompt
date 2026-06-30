@@ -8,10 +8,16 @@ import pytest
 from langgraph.errors import GraphRecursionError
 
 from llm_band.agents.arbiter import ArbiterOutput, ArbiterResolution
-from llm_band.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
+from llm_band.agents.instrument import (
+    InstrumentRevisionOutput,
+    InstrumentTurnOutput,
+    NewRequest,
+    RequestResolution,
+)
 from llm_band.graph import _build_negotiation_graph, iter_negotiation_events, run_negotiation
 from llm_band.domain.song_state import Header, Note, RosterItem, SongState
 from llm_band.infrastructure.llm import LLMQuotaExceeded
+from llm_band.skills.edits import NoteEdit
 
 HEADER = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
 BASS = RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove")
@@ -29,20 +35,26 @@ def _human_text(messages) -> str:
 
 
 class ScriptedInstrumentLLM:
-    """Each call advances through a scripted list of InstrumentTurnOutput, keyed
-    by call order (round 0: bass then lead; later rounds dispatched by `to`)."""
+    """Each call advances through a scripted list, keyed by call order (round 0:
+    bass then lead; later rounds dispatched by `to`). Round 0 turns expect
+    InstrumentTurnOutput; revision turns expect InstrumentRevisionOutput — the
+    scripted entry must match the schema the agent requests."""
 
     def __init__(self, script):
         self.script = list(script)
         self.calls = 0
+        self._schema = None
 
     def with_structured_output(self, schema):
-        assert schema is InstrumentTurnOutput
+        self._schema = schema
         return self
 
     def invoke(self, _messages):
         out = self.script[min(self.calls, len(self.script) - 1)]
         self.calls += 1
+        assert isinstance(out, self._schema), (
+            f"scripted output {type(out).__name__} does not match requested schema {self._schema.__name__}"
+        )
         return out
 
 
@@ -57,8 +69,13 @@ def test_negotiation_creates_routes_and_resolves_requests_through_shared_state()
             notes=[Note(bar=1, start_beat=0.0, pitch=60, dur=1.0)],
             notes_summary="hook on the downbeat",
         ),
-        InstrumentTurnOutput(  # round 1: lead (only addressee gets a turn)
-            notes=[Note(bar=1, start_beat=0.5, pitch=60, dur=0.5)],
+        InstrumentRevisionOutput(  # round 1: lead (only addressee gets a turn) — diff
+            edits=[
+                # move the bar-1 note from beat 0.0 to 0.5 (remove + add)
+                NoteEdit(op="remove", bar=1, start_beat=0.0),
+                NoteEdit(op="add", bar=1, start_beat=0.5,
+                         note=Note(bar=1, start_beat=0.5, pitch=60, dur=0.5)),
+            ],
             notes_summary="moved off beat 0 of bar 1 for bass",
             request_resolutions=[RequestResolution(request_id="req_0_bass_0", accepted=True, resolution="left space open")],
         ),
@@ -92,18 +109,29 @@ def test_zero_new_requests_exits_early_without_a_second_round():
 def test_round_cap_forces_arbiter_convergence_with_no_pending_left():
     class PingPongLLM:
         """Always raises a fresh request back at whoever it's negotiating with —
-        would never converge on its own without the round cap."""
+        would never converge on its own without the round cap. Returns the
+        schema the agent asks for (full output round 0, diff round > 0)."""
+
+        def __init__(self):
+            self._schema = None
 
         def with_structured_output(self, schema):
+            self._schema = schema
             return self
 
         def invoke(self, messages):
             text = _human_text(messages)
             target = "lead" if "lead" not in text else "bass"
+            new_requests = [NewRequest(to=target, bars=[0], request="ping", rationale="pong")]
+            if self._schema is InstrumentRevisionOutput:
+                return InstrumentRevisionOutput(
+                    edits=[], notes_summary="still negotiating",
+                    new_requests=new_requests,
+                )
             return InstrumentTurnOutput(
                 notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)],
                 notes_summary="still negotiating",
-                new_requests=[NewRequest(to=target, bars=[0], request="ping", rationale="pong")],
+                new_requests=new_requests,
             )
 
     class ArbiterLLM:
@@ -136,16 +164,26 @@ def test_recursion_limit_is_a_real_backstop_independent_of_round_cap():
     recursion_limit must still stop a runaway negotiation."""
 
     class NeverConvergesLLM:
+        def __init__(self):
+            self._schema = None
+
         def with_structured_output(self, schema):
+            self._schema = schema
             return self
 
         def invoke(self, messages):
             text = _human_text(messages)
             target = "lead" if "lead" not in text else "bass"
+            new_requests = [NewRequest(to=target, bars=[0], request="ping", rationale="pong")]
+            if self._schema is InstrumentRevisionOutput:
+                return InstrumentRevisionOutput(
+                    edits=[], notes_summary="never settles",
+                    new_requests=new_requests,
+                )
             return InstrumentTurnOutput(
                 notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)],
                 notes_summary="never settles",
-                new_requests=[NewRequest(to=target, bars=[0], request="ping", rationale="pong")],
+                new_requests=new_requests,
             )
 
     # max_rounds set absurdly high so the round cap never trips within a tiny
