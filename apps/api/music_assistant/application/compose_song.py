@@ -12,6 +12,18 @@ from music_assistant.domain.song_state import SongState
 log = logging.getLogger(__name__)
 
 
+class ComposeConfigurationError(RuntimeError):
+    """Raised when a compose is requested but no LLM provider is configured. We surface
+    this explicitly instead of silently returning the canned demo song, which made it
+    look like the requested style had been composed when it hadn't."""
+
+    code = "llm_not_configured"
+    user_message = (
+        "LLM provider is not configured. Set LLM_PROVIDER and the matching provider "
+        "API key before composing."
+    )
+
+
 class ComposeSong:
     def __init__(
         self,
@@ -27,30 +39,19 @@ class ComposeSong:
         self.canned = canned
 
     def compose(self, style: str) -> tuple[SongState, str]:
-        if self.llm_configured():
-            return self.negotiator(style), "director"
-        return self.canned(style), "canned"
+        if not self.llm_configured():
+            raise ComposeConfigurationError()
+        return self.negotiator(style), "director"
 
     def stream(self, style: str) -> Iterator[tuple[dict[str, Any], SongState | None, str]]:
-        if self.llm_configured():
-            source = "director"
-            song = None
-            for event, song_snapshot in self.event_streamer(style):
-                if song_snapshot is not None:
-                    song = song_snapshot
-                yield event, song, source
-            yield {}, song, source
-            return
-
-        song = self.canned(style)
-        source = "canned"
-        yield _director_event(song, source), song, source
-        yield {
-            "type": "convergence",
-            "round": song.round,
-            "converged": True,
-            "resolved_requests": [],
-        }, song, source
+        if not self.llm_configured():
+            raise ComposeConfigurationError()
+        source = "director"
+        song = None
+        for event, song_snapshot in self.event_streamer(style):
+            if song_snapshot is not None:
+                song = song_snapshot
+            yield event, song, source
         yield {}, song, source
 
 
