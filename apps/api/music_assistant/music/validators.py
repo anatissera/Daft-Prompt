@@ -3,9 +3,10 @@
 Returns structured issues so an agent's repair loop (later phases) can be told
 exactly what to fix. Severity:
 - "error"   — musically/structurally invalid (out of range, overflows bar, bad index).
-- "warning" — allowed but notable (out-of-key note = possible intentional chromaticism).
+- "warning" — allowed but notable (a note that fits neither the active chord nor the
+              key = possible intentional chromaticism, possible clash).
 
-Drums (is_drum) are exempt from pitch-range and key checks: they use the GM
+Drums (is_drum) are exempt from pitch-range and harmony checks: they use the GM
 percussion map, not melodic pitch.
 """
 
@@ -15,7 +16,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-from .theory import beats_per_bar, in_key
+from .theory import active_chord_at, beats_per_bar, chord_pitch_classes, in_key
 from ..domain.song_state import SongState
 
 _EPS = 1e-6
@@ -113,13 +114,56 @@ def validate_song(song: SongState) -> list[ValidationIssue]:
                     instrument_id=part_id, severity="error", code="pitch_out_of_range", bar=n.bar,
                     message=f"pitch {n.pitch} outside {roster.instrument} range [{lo}, {hi}]"))
 
-            # key membership (warning only)
-            if not in_key(n.pitch, song.header.key):
+            # harmony membership (warning only). Chord-aware: a note that is a tone of
+            # the bar's active chord is fine even when it's outside the key (e.g. the
+            # G# of an E7 secondary dominant in E minor), and a diatonic note is fine as
+            # melodic tension/passing material. Only a note that fits NEITHER the active
+            # chord NOR the key is flagged as a possible clash — we never enforce it
+            # (warning), so intentional chromaticism and expressivity are preserved.
+            active = active_chord_at(n.bar, song.header.chord_progression)
+            chord_pcs = chord_pitch_classes(active) if active else frozenset()
+            is_chord_tone = bool(chord_pcs) and (n.pitch % 12) in chord_pcs
+            if not is_chord_tone and not in_key(n.pitch, song.header.key):
+                where = f"{song.header.key}" + (f" or chord {active}" if active else "")
                 issues.append(ValidationIssue(
                     instrument_id=part_id, severity="warning", code="out_of_key", bar=n.bar,
-                    message=f"pitch {n.pitch} not in {song.header.key} (chromaticism?)"))
+                    message=f"pitch {n.pitch} fits neither {where} (chromaticism?)"))
 
     return issues
+
+
+def harmonic_fit(song: SongState) -> dict[str, float]:
+    """Objective harmony metric: fraction of a part's *evaluable* sounding notes that
+    are tones of the active chord. A note is evaluable only when an active chord is
+    known for its bar; drums and notes in chordless bars are ignored. Returns one entry
+    per non-drum instrument plus "_overall". Empty parts / no evaluable notes → 1.0
+    (nothing to fault). Useful for A/B-comparing compose runs without listening."""
+    roster_by_id = {r.id: r for r in song.roster}
+    progression = song.header.chord_progression
+    per_instrument: dict[str, float] = {}
+    total_eval = 0
+    total_hits = 0
+    for part_id, part in song.parts.items():
+        roster = roster_by_id.get(part_id)
+        if roster is None or roster.is_drum:
+            continue
+        evaluable = 0
+        hits = 0
+        for n in part.notes:
+            if n.pitch is None:
+                continue
+            chord = active_chord_at(n.bar, progression)
+            chord_pcs = chord_pitch_classes(chord) if chord else frozenset()
+            if not chord_pcs:
+                continue
+            evaluable += 1
+            if (n.pitch % 12) in chord_pcs:
+                hits += 1
+        per_instrument[part_id] = (hits / evaluable) if evaluable else 1.0
+        total_eval += evaluable
+        total_hits += hits
+    per_instrument["_overall"] = (total_hits / total_eval) if total_eval else 1.0
+    return per_instrument
 
 
 def errors_only(issues: list[ValidationIssue]) -> list[ValidationIssue]:
