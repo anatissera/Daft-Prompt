@@ -15,7 +15,7 @@ from llm_band.agents.director import (
     run_director,
 )
 from llm_band.config import Settings
-from llm_band.domain.song_state import CompositionGroup, Header, RosterItem, Section, SongState
+from llm_band.domain.song_state import ChordSpan, CompositionGroup, Header, RosterItem, Section, SongState
 from llm_band.infrastructure.gemini.llm import make_llm
 
 
@@ -137,3 +137,63 @@ def test_song_state_has_composition_groups_defaulting_to_empty():
         header=Header(genre="funk", key="D minor", tempo_bpm=100, num_bars=8),
     )
     assert song.composition_groups == []
+
+
+def _full_output() -> DirectorOutput:
+    return DirectorOutput(
+        genre="funk",
+        key="D minor",
+        tempo_bpm=110,
+        time_sig_numerator=4,
+        time_sig_denominator=4,
+        num_bars=16,
+        sections=[
+            ArrangementSection(name="Intro", start_bar=0, end_bar=4, energy="low"),
+            ArrangementSection(name="Verse", start_bar=4, end_bar=12, energy="medium"),
+            ArrangementSection(name="Chorus", start_bar=12, end_bar=16, energy="high"),
+        ],
+        chord_progression=[ChordSpan(bar=i, chord="Dm7") for i in range(16)],
+        instruments=[
+            ArrangementInstrument(
+                id="drums", instrument="Acoustic Drums", midi_program=0,
+                midi_low=0, midi_high=127, role="groove", playing_style="Four on the floor kick.", is_drum=True,
+            ),
+            ArrangementInstrument(
+                id="bass", instrument="Electric Bass", midi_program=34,
+                midi_low=28, midi_high=55, role="melodic bass", playing_style="Anchor beat 1.",
+            ),
+            ArrangementInstrument(
+                id="epiano", instrument="Rhodes", midi_program=5,
+                midi_low=48, midi_high=72, role="harmony", playing_style="Chord stabs on 2 and 4.",
+            ),
+        ],
+        composition_groups=[
+            CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"], max_negotiation_rounds=1),
+            CompositionGroup(name="harmony", instrument_ids=["epiano"], max_negotiation_rounds=0),
+        ],
+    )
+
+
+def test_director_output_accepts_chord_progression():
+    out = _full_output()
+    assert len(out.chord_progression) == 16
+    assert out.chord_progression[0].chord == "Dm7"
+
+
+def test_director_output_accepts_composition_groups():
+    out = _full_output()
+    assert len(out.composition_groups) == 2
+    assert out.composition_groups[0].name == "rhythm"
+    assert out.composition_groups[0].instrument_ids == ["drums", "bass"]
+
+
+def test_arrangement_instrument_has_playing_style():
+    out = _full_output()
+    assert out.instruments[0].playing_style == "Four on the floor kick."
+
+
+def test_arrangement_section_has_energy():
+    out = _full_output()
+    assert out.sections[0].energy == "low"
+    assert out.sections[1].energy == "medium"
+    assert out.sections[2].energy == "high"

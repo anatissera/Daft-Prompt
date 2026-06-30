@@ -1,27 +1,31 @@
 """Director agent — reasons an arrangement (header + roster) from a style string.
 
-This is the first LLM node. It does NOT compose notes (that's the instrument agents
-in Phase 4); it decides key/tempo/meter/form and the *reasoned* instrumentation
-(not a hardcoded genre->instrument table). Output is constrained by structured
-output so it maps cleanly onto `SongState.header` + `SongState.roster`.
+This is the first LLM node. It does NOT compose notes (that's the instrument agents);
+it decides key/tempo/meter/form, chord progression, per-instrument playing style, and
+the ordered composition groups that control layering order.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from ..domain.song_state import ChordSpan, Header, RosterItem, Section, SongState
+from ..domain.song_state import (
+    ChordSpan,
+    CompositionGroup,
+    Header,
+    RosterItem,
+    Section,
+    SongState,
+)
 
 MIN_ROSTER = 3
 MAX_ROSTER = 8
 MIN_BARS = 4
 MAX_BARS = 32
 
-
-# ---- Director output schema (what the LLM must return) --------------------
 
 class ArrangementInstrument(BaseModel):
     id: str = Field(description="short unique id, e.g. 'bass', 'lead_synth'")
@@ -30,6 +34,13 @@ class ArrangementInstrument(BaseModel):
     midi_low: int = Field(0, ge=0, le=127)
     midi_high: int = Field(127, ge=0, le=127)
     role: str = Field(description="this instrument's musical role in the arrangement")
+    playing_style: str = Field(
+        description=(
+            "1-2 sentences of idiomatic technique for this instrument in this genre. "
+            "Example: 'Anchor beat 1. Ghost notes on snare between 2 and 4. "
+            "Hi-hat strictly 16ths, open on the and-of-4 in the last bar of each phrase.'"
+        )
+    )
     is_drum: bool = False
 
 
@@ -37,6 +48,7 @@ class ArrangementSection(BaseModel):
     name: str
     start_bar: int = Field(ge=0)
     end_bar: int = Field(ge=0)
+    energy: Literal["low", "medium", "high"] = "medium"
 
 
 class DirectorOutput(BaseModel):
@@ -46,9 +58,21 @@ class DirectorOutput(BaseModel):
     time_sig_numerator: int = Field(4, gt=0)
     time_sig_denominator: int = Field(4, gt=0)
     num_bars: int = Field(gt=0, description=f"between {MIN_BARS} and {MAX_BARS} bars")
-    sections: list[ArrangementSection] = Field(default_factory=list)
+    sections: list[ArrangementSection] = Field(
+        description="3-6 named sections covering all bars without overlap"
+    )
+    chord_progression: list[ChordSpan] = Field(
+        description="one ChordSpan per bar covering all bars (bar 0..num_bars-1)"
+    )
     instruments: list[ArrangementInstrument] = Field(
         description=f"between {MIN_ROSTER} and {MAX_ROSTER} instruments"
+    )
+    composition_groups: list[CompositionGroup] = Field(
+        description=(
+            "ordered batches for layered composition. Each instrument_id must appear "
+            "in exactly one group. Put rhythm foundation first, harmony second, "
+            "melody/texture last."
+        )
     )
 
 
