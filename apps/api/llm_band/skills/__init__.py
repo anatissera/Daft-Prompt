@@ -9,12 +9,16 @@ Agent wiring (`@tool` decoration, `bind_tools`) lives at the agent layer; this
 package stays free of LangChain imports.
 """
 
+from .edits import EditFailure, NoteEdit, apply_edits
 from .harmony import fit_to_range, scale_degrees, transpose, voice_lead
 from .melody import melodic_contour
 from .progression import suggest_chord_progression, suggest_form
 from .rhythm import drum_pattern, quantize_rhythm
 
 __all__ = [
+    "EditFailure",
+    "NoteEdit",
+    "apply_edits",
     "fit_to_range",
     "scale_degrees",
     "transpose",
