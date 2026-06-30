@@ -78,6 +78,9 @@ export interface ComposeResponse {
     midi: string;
     musicxml: string;
   };
+  /** Per-instrument + "_overall" fraction (0-1) of sounding notes that are tones of
+   *  the active chord. Absent on older responses. */
+  harmonic_fit?: Record<string, number>;
 }
 
 export type ReferenceSourceKind = "upload" | "direct_url" | "youtube" | "metadata" | "local";
