@@ -109,7 +109,7 @@ Otherwise set off_topic=false and, given a style description, produce a complete
 
 4. INSTRUMENTATION: {MIN_ROSTER}-{MAX_ROSTER} instruments. For each instrument:
    - A General MIDI program number and a sensible MIDI pitch range for that instrument in that register (e.g. bass: 28-55, not 0-127).
-   - Its musical role.
+   - Its musical role. All percussion must be a single drum-kit roster item with is_drum=true — do NOT create separate entries for kick, snare, hi-hat, cymbals, or toms; those are MIDI pitches inside the one kit.
    - A playing_style: 1-2 sentences of idiomatic technique a real musician of this instrument in this genre would immediately recognise. Be specific about rhythm, articulation, and register. Examples:
      * Funk bass: "Anchor beat 1 firmly. Use ghost notes between the 2 and 4. Slap on the upbeat 16th just before beat 3 in bar-ending phrases."
      * Funk guitar: "Short 16th-note chord stabs on beats 2 and 4 with percussive muting between hits. Wah on fill bars. Stay in the mid register."
@@ -167,6 +167,61 @@ def _remap_groups(
     ]
 
 
+_DRUM_KIT_ID = "drums"
+
+
+def _collapse_drum_components(
+    items: list[ArrangementInstrument], groups: list[CompositionGroup]
+) -> tuple[list[ArrangementInstrument], list[CompositionGroup]]:
+    """The director sometimes emits separate kick/snare/hi-hat roster items; each then
+    becomes its own instrument agent composing a fragment of one kit. Collapse every
+    is_drum item into a single canonical "drums" kit, and remap composition groups so
+    the kit appears in exactly one group (the first that referenced any drum component),
+    de-duplicating ids. A roster with 0 or 1 drum items is returned unchanged."""
+    drum_ids = [item.id for item in items if item.is_drum]
+    if len(drum_ids) <= 1:
+        return items, groups
+
+    kit = ArrangementInstrument(
+        id=_DRUM_KIT_ID,
+        instrument="drum_kit",
+        midi_program=0,
+        midi_low=35,
+        midi_high=81,
+        role="full percussion kit",
+        playing_style="One coherent kit: kick on the downbeats, snare on the backbeat, "
+        "steady hi-hat subdivision with fills into section changes.",
+        is_drum=True,
+    )
+    collapsed: list[ArrangementInstrument] = []
+    inserted = False
+    for item in items:
+        if item.is_drum:
+            if not inserted:
+                collapsed.append(kit)
+                inserted = True
+            continue
+        collapsed.append(item)
+
+    drum_id_set = set(drum_ids)
+    new_groups: list[CompositionGroup] = []
+    kit_assigned = False
+    for group in groups:
+        new_ids: list[str] = []
+        for iid in group.instrument_ids:
+            mapped = _DRUM_KIT_ID if iid in drum_id_set else iid
+            if mapped == _DRUM_KIT_ID:
+                if kit_assigned or _DRUM_KIT_ID in new_ids:
+                    continue  # kit already placed (here or in an earlier group)
+                new_ids.append(_DRUM_KIT_ID)
+            elif mapped not in new_ids:
+                new_ids.append(mapped)
+        if _DRUM_KIT_ID in new_ids:
+            kit_assigned = True
+        new_groups.append(group.model_copy(update={"instrument_ids": new_ids}))
+    return collapsed, new_groups
+
+
 def _clamp_roster(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
     return items[:MAX_ROSTER]
 
@@ -207,8 +262,9 @@ def _validate_groups(
 
 def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
     clamped_instruments, id_map = _repair_roster_ids(_clamp_roster(out.instruments))
-    num_bars = _clamp_num_bars(out.num_bars)
     groups = _remap_groups(out.composition_groups, id_map)
+    clamped_instruments, groups = _collapse_drum_components(clamped_instruments, groups)
+    num_bars = _clamp_num_bars(out.num_bars)
     _validate_groups(groups, clamped_instruments)
     header = Header(
         genre=out.genre,
