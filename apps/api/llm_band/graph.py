@@ -187,11 +187,11 @@ def _build_instruments_subgraph(llm=None):
             payload["peer_summaries"], payload["batch_peer_ids"],
             payload["pending"], payload["existing_part"], llm=llm,
         )
-        batch_ids = set(payload["batch_peer_ids"]) | {payload["roster_item"].id}
         updates = _resolutions_to_updates(payload["pending"], resolutions)
         all_new = _new_requests_to_pending(payload["roster_item"].id, payload["round"], new_requests)
-        # Scope: only intra-batch requests are dispatched; cross-batch ones survive
-        # to be resolved by the arbiter at the end.
+        # All new requests are kept here. Dispatch scoping (only intra-batch requests
+        # are dispatched within a batch) happens in _dispatch_instruments; cross-batch
+        # requests survive and are resolved by the arbiter at the end.
         updates += all_new  # keep all (arbiter handles orphans)
         new_summary = (
             {payload["roster_item"].id: part.notes_summary} if part.notes_summary else {}
@@ -303,11 +303,11 @@ def _initial_band_state(request: str) -> dict:
 
 def run_negotiation(style: str, llm=None, max_rounds: Optional[int] = None) -> SongState:
     """Compose + negotiate via the batch sequencer."""
-    settings_rounds = max_rounds if max_rounds is not None else get_settings().max_rounds
+    rounds_for_limit = max_rounds if max_rounds is not None else 3
     app = _build_negotiation_graph(llm=llm, max_rounds=max_rounds)
     result = app.invoke(
         _initial_band_state(style),
-        config={"recursion_limit": 4 * settings_rounds * 8 + 20},
+        config={"recursion_limit": 4 * rounds_for_limit * 8 + 20},
     )
     return SongState(
         request=style,
@@ -325,14 +325,14 @@ def iter_negotiation_events(
     style: str, llm=None, max_rounds: Optional[int] = None
 ) -> Iterator[tuple[dict, Optional[SongState]]]:
     """Same run as `run_negotiation` but streaming events."""
-    settings_rounds = max_rounds if max_rounds is not None else get_settings().max_rounds
+    rounds_for_limit = max_rounds if max_rounds is not None else 3
     app = _build_negotiation_graph(llm=llm, max_rounds=max_rounds)
     state: dict = _initial_band_state(style)
     song: Optional[SongState] = None
 
     stream = app.stream(
         state,
-        config={"recursion_limit": 4 * settings_rounds * 8 + 20},
+        config={"recursion_limit": 4 * rounds_for_limit * 8 + 20},
         stream_mode="updates",
         subgraphs=True,
     )

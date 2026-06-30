@@ -4,17 +4,13 @@ All LLMs mocked — no API key needed."""
 
 from __future__ import annotations
 
-import pytest
-from langgraph.errors import GraphRecursionError
-
 from llm_band.agents.arbiter import ArbiterOutput, ArbiterResolution
 from llm_band.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
 from llm_band.agents.director import DirectorOutput, ArrangementInstrument, ArrangementSection, CompositionGroup as DCompositionGroup
-from llm_band.graph import _build_negotiation_graph, run_negotiation
+from llm_band.graph import run_negotiation
 from llm_band.domain.song_state import (
     ChordSpan, CompositionGroup, Header, Note, RosterItem, SongState,
 )
-from llm_band.infrastructure.llm import LLMQuotaExceeded
 
 HEADER = Header(genre="funk", key="D minor", tempo_bpm=110, num_bars=4)
 DRUMS = RosterItem(id="drums", instrument="kit", role="beat", is_drum=True)
