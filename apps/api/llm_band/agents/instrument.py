@@ -1,13 +1,9 @@
 """Instrument agent — composes one part.
 
-Phase 4: a single pass, no negotiation. Phase 5 adds `run_instrument_turn`, used
-in each negotiation round to revise a part, resolve pending requests addressed to
-this instrument, and optionally raise new ones.
-
-Constrained by the immutable header, this instrument's role/range, and peers'
-compact `notes_summary` strings, never their full note lists (token cost). Reuses
-`Note` directly as the structured-output schema so there is one schema for the
-LLM contract and the canonical SongState (avoid schema drift).
+Phase 4: single pass via `compose_part` (non-negotiation graph).
+Phase 5: full negotiation via `run_instrument_turn`, called once per round per
+         addressed instrument. The `batch_peer_ids` parameter scopes negotiation
+         requests to instruments within the same composition group.
 """
 
 from __future__ import annotations
@@ -21,7 +17,16 @@ from ..config import get_settings
 from ..infrastructure.llm import LLMError
 from ..music.theory import beats_per_bar
 from ..music.validators import ValidationIssue, errors_only, validate_song
-from ..domain.song_state import Header, NegotiationRequest, Note, Part, RosterItem, SongState
+from ..domain.song_state import (
+    ChordSpan,
+    Header,
+    NegotiationRequest,
+    Note,
+    Part,
+    RosterItem,
+    Section,
+    SongState,
+)
 
 MAX_REPAIRS = 2
 STRUCTURED_OUTPUT_RETRIES = 1
@@ -33,6 +38,23 @@ class InstrumentOutput(BaseModel):
         description="1-2 sentence compact summary peers can read instead of the full note list"
     )
     self_notes: str = Field(default="", description="optional notes to self for later revision")
+
+
+def _chord_map_text(chord_progression: list[ChordSpan]) -> str:
+    if not chord_progression:
+        return "(no chord map provided)"
+    lines = [f"  bar {cs.bar}: {cs.chord}" for cs in sorted(chord_progression, key=lambda x: x.bar)]
+    return "Chord map:\n" + "\n".join(lines)
+
+
+def _section_map_text(sections: list[Section]) -> str:
+    if not sections:
+        return "(no section map provided)"
+    lines = [
+        f"  {s.name:<14} bars {s.start_bar}-{s.end_bar}  energy: {s.energy}"
+        for s in sections
+    ]
+    return "Song form:\n" + "\n".join(lines)
 
 
 def _peer_context(roster: list[RosterItem], self_id: str, peer_summaries: dict[str, str]) -> str:
@@ -51,19 +73,26 @@ def _system_prompt(header: Header, roster_item: RosterItem) -> str:
         if roster_item.is_drum
         else ""
     )
+    playing_style_block = (
+        f"\nPlaying style: {roster_item.playing_style}" if roster_item.playing_style else ""
+    )
     return (
         f"/no_think You are the {roster_item.instrument} player ({roster_item.role}) in a "
-        f"{header.genre} ensemble. Hard constraints:\n"
+        f"{header.genre} ensemble.\n\n"
+        f"Hard constraints:\n"
         f"- key: {header.key}, tempo: {header.tempo_bpm} BPM, "
         f"time signature {header.time_signature[0]}/{header.time_signature[1]} "
         f"({bpb} beats/bar)\n"
         f"- song length: {header.num_bars} bars (bar indices 0..{header.num_bars - 1})\n"
-        f"- your MIDI pitch range: {roster_item.midi_range[0]}-{roster_item.midi_range[1]}{drum_note}\n"
+        f"- your MIDI pitch range: {roster_item.midi_range[0]}-{roster_item.midi_range[1]}{drum_note}\n\n"
+        f"{_section_map_text(header.sections)}\n\n"
+        f"{_chord_map_text(header.chord_progression)}"
+        f"{playing_style_block}\n\n"
         "Compose your full part for the whole song: a list of notes with absolute bar "
         "+ start_beat (0-indexed within the bar), MIDI pitch (null = rest), duration in "
-        "beats, and velocity (0-127). Stay within your range and the bar/beat bounds. "
-        "Also return a short notes_summary other musicians can read instead of your full "
-        "note list. "
+        "beats, and velocity (0-127). Shape your dynamics to the section energy levels "
+        "(low = quieter/sparser, high = louder/fuller). Stay within your pitch range and "
+        "bar/beat bounds. Also return a short notes_summary other musicians can read. "
         "Respond directly with the structured output only. Do not think out loud or write any reasoning."
     )
 
@@ -73,6 +102,22 @@ def _repair_prompt(issues: list[ValidationIssue]) -> str:
     return (
         "Your part had validation errors — return a complete, corrected part "
         f"(not a diff) that fixes:\n{bullets}"
+    )
+
+
+def _negotiation_etiquette(batch_peer_ids: list[str]) -> str:
+    scope = (
+        f" You may only raise requests to instruments in your current composition group: "
+        f"{', '.join(batch_peer_ids)}. Do not address instruments outside this group."
+        if batch_peer_ids
+        else ""
+    )
+    return (
+        "\nYou may also ask another instrument for a specific accommodation (e.g. "
+        "leave space in a bar for a fill, change a note to fit a chord). Phrase each "
+        "as: which instrument (by roster id), which bar(s), what you're asking, and why. "
+        "Only raise a request if it meaningfully improves the arrangement — don't "
+        "manufacture requests for their own sake." + scope
     )
 
 
@@ -134,16 +179,13 @@ def compose_part(
 ) -> Part:
     """Compose one instrument's part, with a bounded repair loop on validation failure.
 
-    Never raises: an issue still unresolved after `MAX_REPAIRS` retries ships as-is —
-    `validate_song` on the full song surfaces it in `song.errors` rather than crashing
-    the run.
+    Used by the non-negotiation graph (Phase 4 / `run_instruments`).
     """
     run = get_current_run_tree()
     if run is not None:
         run.name = roster_item.instrument
     if llm is None:
         from llm_band.infrastructure.gemini.llm import make_llm
-
         llm = make_llm("instrument")
     structured = llm.with_structured_output(InstrumentOutput)
 
@@ -202,43 +244,33 @@ def _pending_context(pending: list[NegotiationRequest]) -> str:
     return "Pending requests addressed to you — accept (and patch your part) or decline each:\n" + "\n".join(lines)
 
 
-def _negotiation_etiquette() -> str:
-    return (
-        "\nYou may also ask another instrument for a specific accommodation (e.g. "
-        "leave space in a bar for a fill, change a note to fit a chord). Phrase each "
-        "as: which instrument (by roster id), which bar(s), what you're asking, and why. "
-        "Only raise a request if it meaningfully improves the arrangement — don't "
-        "manufacture requests for their own sake."
-    )
-
-
 @traceable(run_type="chain", name="instrument:turn")
 def run_instrument_turn(
     header: Header,
     roster_item: RosterItem,
     roster: list[RosterItem],
     peer_summaries: dict[str, str],
+    batch_peer_ids: list[str],
     pending: list[NegotiationRequest],
     existing_part: Optional[Part],
     llm=None,
 ) -> tuple[Part, list[RequestResolution], list[NewRequest]]:
-    """One negotiation-round turn: revise (or, on round 0, compose) this instrument's
+    """One negotiation-round turn: revise (or compose on round 0) this instrument's
     part, resolve requests addressed to it, and optionally raise new ones.
 
-    Same never-crash contract as `compose_part` — repair failures ship as-is and
-    surface later via `validate_song`.
+    `batch_peer_ids` lists the other roster ids in this composition group — the
+    negotiation etiquette block tells the model to only raise requests to those ids.
     """
     run = get_current_run_tree()
     if run is not None:
         run.name = roster_item.instrument
     if llm is None:
         from llm_band.infrastructure.gemini.llm import make_llm
-
         llm = make_llm("instrument")
     structured = llm.with_structured_output(InstrumentTurnOutput)
 
     messages = [
-        ("system", _system_prompt(header, roster_item) + _negotiation_etiquette()),
+        ("system", _system_prompt(header, roster_item) + _negotiation_etiquette(batch_peer_ids)),
         ("human", f"Other instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
     ]
     if existing_part is not None:

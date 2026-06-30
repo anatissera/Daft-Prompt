@@ -11,11 +11,18 @@ class Section(BaseModel):
     name: str
     start_bar: int
     end_bar: int
+    energy: Literal["low", "medium", "high"] = "medium"
 
 
 class ChordSpan(BaseModel):
     bar: int
     chord: str
+
+
+class CompositionGroup(BaseModel):
+    name: str
+    instrument_ids: list[str]
+    max_negotiation_rounds: int = Field(1, ge=0, le=2)
 
 
 class Header(BaseModel):
@@ -36,6 +43,7 @@ class RosterItem(BaseModel):
     midi_program: int = 0
     midi_range: tuple[int, int] = (0, 127)
     role: str = ""
+    playing_style: str = ""
     is_drum: bool = False
 
 
@@ -75,6 +83,7 @@ class SongState(BaseModel):
     roster: list[RosterItem] = Field(default_factory=list)
     parts: dict[str, Part] = Field(default_factory=dict)
     negotiation_requests: list[NegotiationRequest] = Field(default_factory=list)
+    composition_groups: list[CompositionGroup] = Field(default_factory=list)
     round: int = 0
     converged: bool = False
     errors: list[str] = Field(default_factory=list)
