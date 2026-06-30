@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from llm_band.domain.errors import OffTopicRequest
 from llm_band.domain.song_state import SongState
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ class ComposeSong:
         if self.llm_configured():
             try:
                 song = self.director(style)
+            except OffTopicRequest:  # not a failure — the director refused; let it surface
+                raise
             except Exception as exc:  # noqa: BLE001 — fall back to canned on director-level LLM failure
                 log.warning("director failed (%s); falling back to canned arrangement", exc)
                 return self.canned(style), "canned"

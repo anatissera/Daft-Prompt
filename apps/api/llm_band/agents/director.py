@@ -13,7 +13,13 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from ..domain.errors import OffTopicRequest
 from ..domain.song_state import ChordSpan, Header, RosterItem, Section, SongState
+
+_DEFAULT_REFUSAL = (
+    "I only handle music tasks: compose a short sketch, analyze an audio file you upload, "
+    "or answer questions about a reference you already shared. Try \"compose a slow blues\"."
+)
 
 MIN_ROSTER = 3
 MAX_ROSTER = 8
@@ -40,20 +46,36 @@ class ArrangementSection(BaseModel):
 
 
 class DirectorOutput(BaseModel):
-    genre: str
-    key: str = Field(description="e.g. 'F# minor', 'C major'")
-    tempo_bpm: float = Field(gt=0)
+    off_topic: bool = Field(
+        False,
+        description="true when the request is NOT a music-composition task (chit-chat, "
+        "trivia, coding, lyrics-only, recommendations, etc.)",
+    )
+    refusal: str = Field(
+        "",
+        description="when off_topic, a short friendly message (in the user's language) "
+        "stating you only handle music tasks and listing what you can do",
+    )
+    genre: str = ""
+    key: str = Field("", description="e.g. 'F# minor', 'C major'")
+    tempo_bpm: float = Field(120.0, gt=0)
     time_sig_numerator: int = Field(4, gt=0)
     time_sig_denominator: int = Field(4, gt=0)
-    num_bars: int = Field(gt=0, description=f"between {MIN_BARS} and {MAX_BARS} bars")
+    num_bars: int = Field(MIN_BARS, gt=0, description=f"between {MIN_BARS} and {MAX_BARS} bars")
     sections: list[ArrangementSection] = Field(default_factory=list)
     instruments: list[ArrangementInstrument] = Field(
-        description=f"between {MIN_ROSTER} and {MAX_ROSTER} instruments"
+        default_factory=list, description=f"between {MIN_ROSTER} and {MAX_ROSTER} instruments"
     )
 
 
 _SYSTEM = (
-    "/no_think You are the musical director of an ensemble. Given a style description, decide "
+    "/no_think You are the musical director of an ensemble. You ONLY handle music-composition "
+    "tasks. If the request is not asking you to compose a music sketch (e.g. chit-chat, trivia, "
+    "coding, weather, recommendations, or writing lyrics/text only), set off_topic=true and put a "
+    "short friendly message in `refusal` (in the user's language) saying you only handle music "
+    "tasks and listing what you can do: compose a sketch, analyze an uploaded audio file, or answer "
+    "questions about a reference already shared. In that case leave the arrangement fields empty.\n"
+    "Otherwise set off_topic=false and, given the style description, decide "
     "the key, tempo, time signature, number of bars, a section/form map, and the "
     f"instrumentation — choose {MIN_ROSTER}-{MAX_ROSTER} instruments and {MIN_BARS}-{MAX_BARS} bars that genuinely "
     "fit the style (do not use a fixed genre table). For each "
@@ -144,4 +166,6 @@ def run_director(style: str, llm=None) -> SongState:
         llm = make_llm("director")
     structured = llm.with_structured_output(DirectorOutput)
     out: DirectorOutput = structured.invoke(_prompt(style))
+    if out.off_topic:
+        raise OffTopicRequest(out.refusal.strip() or _DEFAULT_REFUSAL)
     return arrangement_to_song(style, out)

@@ -11,6 +11,7 @@ import {
   createCompositionMessage,
   createTextMessage,
 } from "@/lib/chatActionAdapter.mjs";
+import { deriveSessionTitle } from "@/lib/sessionTitle.mjs";
 
 type Intent = "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
 
@@ -64,21 +65,11 @@ export default function Home() {
   const sessionTitledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  async function maybeTitleSession(firstUserMessage: string) {
+  function maybeTitleSession(firstUserMessage: string) {
     if (sessionTitledRef.current) return;
     sessionTitledRef.current = true;
-    try {
-      const res = await fetch("/api/title", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: firstUserMessage }),
-      });
-      if (!res.ok) return;
-      const data = (await res.json()) as { title?: string | null };
-      if (data?.title) setSessionTitle(data.title);
-    } catch {
-      // Title is best-effort; leave "Untitled session" on failure.
-    }
+    const title = deriveSessionTitle(firstUserMessage);
+    if (title) setSessionTitle(title);
   }
 
   const busy = activeWork !== null;
@@ -150,8 +141,8 @@ export default function Home() {
       const data = (await res.json()) as ChatResponse;
       const meta = formatMeta(data, performance.now() - startedAt);
       const idx = nextMessageIndex();
-      // Fire-and-forget: title the session from the first user message.
-      void maybeTitleSession(message);
+      // Title the session from the first user message (client-side, no LLM).
+      maybeTitleSession(message);
       if (data.compose && data.compose.artifacts) {
         const composeResponse = {
           job_id: "chat",
