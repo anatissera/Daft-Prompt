@@ -91,6 +91,7 @@ class _TurnPayload(TypedDict):
     roster_item: RosterItem
     roster: list[RosterItem]
     peer_summaries: dict[str, str]
+    batch_peer_ids: list[str]
     pending: list[NegotiationRequest]
     existing_part: Optional[Part]
     round: int
@@ -137,12 +138,14 @@ def _build_instruments_subgraph(llm=None):
 
     def _dispatch_instruments(state: InstrumentsState) -> list[Send]:
         if state["round"] == 0:
+            all_ids = [r.id for r in state["roster"]]
             return [
                 Send(
                     "instrument_turn",
                     {
                         "header": state["header"], "roster_item": r,
                         "roster": state["roster"], "peer_summaries": {},
+                        "batch_peer_ids": [rid for rid in all_ids if rid != r.id],
                         "pending": [], "existing_part": None, "round": 0,
                     },
                 )
@@ -156,6 +159,7 @@ def _build_instruments_subgraph(llm=None):
         pending_by_to: dict[str, list[NegotiationRequest]] = {}
         for r in pending:
             pending_by_to.setdefault(r.to, []).append(r)
+        batch_ids = list(pending_by_to.keys())
         return [
             Send(
                 "instrument_turn",
@@ -163,6 +167,7 @@ def _build_instruments_subgraph(llm=None):
                     "header": state["header"], "roster_item": roster_by_id[to_id],
                     "roster": state["roster"],
                     "peer_summaries": {k: v for k, v in peer_summaries.items() if k != to_id},
+                    "batch_peer_ids": [bid for bid in batch_ids if bid != to_id],
                     "pending": reqs, "existing_part": state["parts"].get(to_id),
                     "round": state["round"],
                 },
@@ -174,7 +179,8 @@ def _build_instruments_subgraph(llm=None):
     def _instrument_turn_node(payload: _TurnPayload) -> dict:
         part, resolutions, new_requests = run_instrument_turn(
             payload["header"], payload["roster_item"], payload["roster"],
-            payload["peer_summaries"], payload["pending"], payload["existing_part"], llm=llm,
+            payload["peer_summaries"], payload["batch_peer_ids"],
+            payload["pending"], payload["existing_part"], llm=llm,
         )
         updates = _resolutions_to_updates(payload["pending"], resolutions)
         updates += _new_requests_to_pending(
