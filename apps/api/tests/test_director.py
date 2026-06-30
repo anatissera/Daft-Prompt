@@ -15,6 +15,7 @@ from llm_band.agents.director import (
     run_director,
 )
 from llm_band.config import Settings
+from llm_band.domain.song_state import CompositionGroup, Header, RosterItem, Section, SongState
 from llm_band.infrastructure.gemini.llm import make_llm
 
 
@@ -100,3 +101,39 @@ def test_director_clamps_bar_count_and_sections():
 def test_make_llm_requires_configuration():
     with pytest.raises(RuntimeError):
         make_llm("director", settings=Settings(llm_provider=None))
+
+
+def test_section_has_energy_field_defaulting_to_medium():
+    s = Section(name="verse", start_bar=0, end_bar=8)
+    assert s.energy == "medium"
+
+
+def test_section_accepts_valid_energy_literals():
+    assert Section(name="intro", start_bar=0, end_bar=2, energy="low").energy == "low"
+    assert Section(name="chorus", start_bar=8, end_bar=12, energy="high").energy == "high"
+
+
+def test_roster_item_has_playing_style_defaulting_to_empty():
+    item = RosterItem(id="bass", instrument="electric_bass")
+    assert item.playing_style == ""
+
+
+def test_composition_group_fields():
+    g = CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"], max_negotiation_rounds=1)
+    assert g.name == "rhythm"
+    assert g.instrument_ids == ["drums", "bass"]
+    assert g.max_negotiation_rounds == 1
+
+
+def test_composition_group_max_negotiation_rounds_clamps_to_range():
+    # pydantic should reject values outside ge=0, le=2
+    with pytest.raises(Exception):
+        CompositionGroup(name="x", instrument_ids=[], max_negotiation_rounds=5)
+
+
+def test_song_state_has_composition_groups_defaulting_to_empty():
+    song = SongState(
+        request="test",
+        header=Header(genre="funk", key="D minor", tempo_bpm=100, num_bars=8),
+    )
+    assert song.composition_groups == []
