@@ -52,6 +52,18 @@ def validate_song(song: SongState) -> list[ValidationIssue]:
                 message=f"part '{part_id}' has no matching roster entry"))
             continue
 
+        # empty part: a rostered instrument that produced no sounding notes is almost
+        # certainly a failed generation (the model describes a part in notes_summary but
+        # returns an empty / all-rests note list — observed with the drum agent). Flag it
+        # as an error so the repair loop asks the instrument to actually compose. Applies
+        # to drums too, since they sound via the GM percussion map like any other part.
+        if not any(n.pitch is not None for n in part.notes):
+            issues.append(ValidationIssue(
+                instrument_id=part_id, severity="error", code="empty_part",
+                message=f"'{part_id}' produced no sounding notes — compose an actual part "
+                        f"(a non-empty list of notes with real pitches)"))
+            continue
+
         lo, hi = roster.midi_range
         for n in part.notes:
             # bar index
