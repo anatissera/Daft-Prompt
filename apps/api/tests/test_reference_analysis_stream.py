@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-import llm_band.interfaces.api as api
-from llm_band.domain.audio_profile import (
+import music_assistant.interfaces.api as api
+from music_assistant.domain.audio_profile import (
     AudioProfile,
     ChordCandidate,
     ChordEstimate,

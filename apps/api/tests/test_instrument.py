@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from llm_band.agents.instrument import (
+from music_assistant.agents.instrument import (
     MAX_REPAIRS,
     InstrumentOutput,
     InstrumentTurnOutput,
@@ -16,8 +16,8 @@ from llm_band.agents.instrument import (
     compose_part,
     run_instrument_turn,
 )
-from llm_band.domain.song_state import ChordSpan, Header, Note, RosterItem, Section
-from llm_band.infrastructure.llm import LLMQuotaExceeded
+from music_assistant.domain.song_state import ChordSpan, Header, Note, RosterItem, Section
+from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
 
 class _FakeStructured:
@@ -175,8 +175,8 @@ def test_negotiation_etiquette_no_scope_hint_when_no_peers():
 
 
 def test_system_prompt_includes_chord_map_and_section_map():
-    from llm_band.agents.instrument import _system_prompt
-    from llm_band.domain.song_state import Header, RosterItem, ChordSpan, Section
+    from music_assistant.agents.instrument import _system_prompt
+    from music_assistant.domain.song_state import Header, RosterItem, ChordSpan, Section
     header = Header(
         genre="funk", key="D minor", tempo_bpm=110, num_bars=8,
         chord_progression=[ChordSpan(bar=i, chord="Dm7") for i in range(8)],
@@ -194,8 +194,8 @@ def test_system_prompt_includes_chord_map_and_section_map():
 
 
 def test_run_instrument_turn_accepts_batch_peer_ids():
-    from llm_band.agents.instrument import InstrumentTurnOutput, run_instrument_turn
-    from llm_band.domain.song_state import Header, Note, RosterItem
+    from music_assistant.agents.instrument import InstrumentTurnOutput, run_instrument_turn
+    from music_assistant.domain.song_state import Header, Note, RosterItem
 
     class TurnLLM:
         def with_structured_output(self, schema):

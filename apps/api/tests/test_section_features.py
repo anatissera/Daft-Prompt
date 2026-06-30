@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from llm_band.domain.audio_profile import ChordCandidate, ChordSpan
-from llm_band.infrastructure.mir.section_features import detect_sections_from_bar_signals
+from music_assistant.domain.audio_profile import ChordCandidate, ChordSpan
+from music_assistant.infrastructure.mir.section_features import detect_sections_from_bar_signals
 
 
 def _span(bar: int, label: str = "Am", confidence: float = 0.7) -> ChordSpan:

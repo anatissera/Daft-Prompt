@@ -16,7 +16,7 @@ RUN apt-get update \
 RUN python -m pip install --upgrade pip
 
 COPY pyproject.toml ./
-COPY llm_band ./llm_band
+COPY music_assistant ./music_assistant
 
 RUN pip install -e .
 
@@ -24,4 +24,4 @@ RUN mkdir -p /app/outputs /app/uploads /app/.cache/torch
 
 EXPOSE 8000
 
-CMD ["uvicorn", "llm_band.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "music_assistant.api:app", "--host", "0.0.0.0", "--port", "8000"]

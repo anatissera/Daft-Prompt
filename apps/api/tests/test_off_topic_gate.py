@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import pytest
 
-from llm_band.agents.director import DirectorOutput, run_director
-from llm_band.application.answer_music_question import AnswerMusicQuestion
-from llm_band.application.chat_music import ChatMusic, ChatRequest
-from llm_band.domain.audio_profile import ExplanationAnswer, ReferenceProfile
-from llm_band.domain.errors import OffTopicRequest
-from llm_band.domain.song_state import SongState
-from llm_band.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
+from music_assistant.agents.director import DirectorOutput, run_director
+from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.application.chat_music import ChatMusic, ChatRequest
+from music_assistant.domain.audio_profile import ExplanationAnswer, ReferenceProfile
+from music_assistant.domain.errors import OffTopicRequest
+from music_assistant.domain.song_state import SongState
+from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 
 from tests.test_director import FakeLLM, _output
 

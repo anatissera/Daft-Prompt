@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from llm_band.domain.song_state import SongState
+from music_assistant.domain.song_state import SongState
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

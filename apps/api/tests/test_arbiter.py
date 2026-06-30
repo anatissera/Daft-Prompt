@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from llm_band.agents.arbiter import ArbiterOutput, ArbiterResolution, run_arbiter
-from llm_band.domain.song_state import NegotiationRequest
+from music_assistant.agents.arbiter import ArbiterOutput, ArbiterResolution, run_arbiter
+from music_assistant.domain.song_state import NegotiationRequest
 
 
 def _req(rid: str) -> NegotiationRequest:

@@ -25,7 +25,7 @@ LLMinem is a monorepo with a Python backend and a Next.js frontend.
 ```text
 apps/
   api/                    # FastAPI, LangGraph, music/audio processing
-    llm_band/
+    music_assistant/
       domain/             # SongState, ReferenceProfile, AudioProfile
       application/        # compose/analyze/answer/chat use cases
       ports/              # LLM, storage, audio analysis, transcription, stems
