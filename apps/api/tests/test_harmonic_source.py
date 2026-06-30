@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from llm_band.infrastructure.mir.harmonic_source import build_harmonic_source
-from llm_band.ports.stem_separator import SeparatedStem
+from music_assistant.infrastructure.mir.harmonic_source import build_harmonic_source
+from music_assistant.ports.stem_separator import SeparatedStem
 
 
 def _stem(name: str, role: str, path: str) -> SeparatedStem:

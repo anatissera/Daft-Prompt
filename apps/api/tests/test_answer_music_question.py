@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from llm_band.application.answer_music_question import AnswerMusicQuestion
-from llm_band.domain.audio_profile import (
+from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.domain.audio_profile import (
     AnalysisNote,
     AudioProfile,
     ChordCandidate,

@@ -3,10 +3,10 @@ state reducer (LLM mocked — no API key needed)."""
 
 from __future__ import annotations
 
-from llm_band.agents.instrument import InstrumentOutput
-from llm_band.graph import run_instruments
-from llm_band.music.validators import errors_only, validate_song
-from llm_band.domain.song_state import Header, Note, RosterItem, SongState
+from music_assistant.agents.instrument import InstrumentOutput
+from music_assistant.graph import run_instruments
+from music_assistant.music.validators import errors_only, validate_song
+from music_assistant.domain.song_state import Header, Note, RosterItem, SongState
 
 
 class _FakeStructured:

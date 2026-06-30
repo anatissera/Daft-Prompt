@@ -4,11 +4,11 @@ All LLMs mocked — no API key needed."""
 
 from __future__ import annotations
 
-from llm_band.agents.arbiter import ArbiterOutput, ArbiterResolution
-from llm_band.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
-from llm_band.agents.director import DirectorOutput, ArrangementInstrument, ArrangementSection, CompositionGroup as DCompositionGroup
-from llm_band.graph import run_negotiation
-from llm_band.domain.song_state import (
+from music_assistant.agents.arbiter import ArbiterOutput, ArbiterResolution
+from music_assistant.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
+from music_assistant.agents.director import DirectorOutput, ArrangementInstrument, ArrangementSection, CompositionGroup as DCompositionGroup
+from music_assistant.graph import run_negotiation
+from music_assistant.domain.song_state import (
     ChordSpan, CompositionGroup, Header, Note, RosterItem, SongState,
 )
 
@@ -51,7 +51,7 @@ class DirectorLLM:
         self._output = director_output
 
     def with_structured_output(self, schema):
-        from llm_band.agents.director import DirectorOutput as DO
+        from music_assistant.agents.director import DirectorOutput as DO
         if schema is DO:
             return self
         raise AssertionError(f"DirectorLLM called with unexpected schema: {schema}")
@@ -83,8 +83,8 @@ class CombinedLLM:
         self._arbiter_calls = 0
 
     def with_structured_output(self, schema):
-        from llm_band.agents.director import DirectorOutput as DO
-        from llm_band.agents.arbiter import ArbiterOutput as AO
+        from music_assistant.agents.director import DirectorOutput as DO
+        from music_assistant.agents.arbiter import ArbiterOutput as AO
         if schema is DO:
             return self._director
         if schema is ArbiterOutput:
@@ -120,7 +120,7 @@ def test_batches_execute_in_order_and_peer_summaries_propagate():
         calls = 0
 
         def with_structured_output(self, schema):
-            from llm_band.agents.director import DirectorOutput as DO
+            from music_assistant.agents.director import DirectorOutput as DO
             if schema is DO:
                 return DirectorLLM(_make_director_output([DRUMS, BASS, EPIANO], GROUPS))
             assert schema is InstrumentTurnOutput
@@ -174,8 +174,8 @@ def test_cross_batch_requests_are_not_dispatched_within_batch():
 
     class TrackingLLM:
         def with_structured_output(self, schema):
-            from llm_band.agents.director import DirectorOutput as DO
-            from llm_band.agents.arbiter import ArbiterOutput as AO
+            from music_assistant.agents.director import DirectorOutput as DO
+            from music_assistant.agents.arbiter import ArbiterOutput as AO
             if schema is DO:
                 return DirectorLLM(director_out)
             if schema is AO:
@@ -215,7 +215,7 @@ def test_zero_new_requests_exits_batch_early():
 def test_per_instrument_llm_failure_is_isolated_so_compose_finishes():
     """When one instrument's LLM call fails, the others' parts are preserved and the
     failing instrument ships an empty-part placeholder so the batch run still finishes."""
-    from llm_band.infrastructure.llm import LLMQuotaExceeded
+    from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
     director_out = _make_director_output([DRUMS, BASS], [
         CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"], max_negotiation_rounds=0),
@@ -223,8 +223,8 @@ def test_per_instrument_llm_failure_is_isolated_so_compose_finishes():
 
     class FlakyInstrumentLLM:
         def with_structured_output(self, schema):
-            from llm_band.agents.director import DirectorOutput as DO
-            from llm_band.agents.arbiter import ArbiterOutput as AO
+            from music_assistant.agents.director import DirectorOutput as DO
+            from music_assistant.agents.arbiter import ArbiterOutput as AO
             if schema is DO:
                 return DirectorLLM(director_out)
             if schema is AO:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from llm_band.agents.director import (
+from music_assistant.agents.director import (
     MAX_ROSTER,
     MAX_BARS,
     MIN_BARS,
@@ -15,9 +15,9 @@ from llm_band.agents.director import (
     arrangement_to_song,
     run_director,
 )
-from llm_band.config import Settings
-from llm_band.domain.song_state import ChordSpan, CompositionGroup, Header, RosterItem, Section, SongState
-from llm_band.infrastructure.gemini.llm import make_llm
+from music_assistant.config import Settings
+from music_assistant.domain.song_state import ChordSpan, CompositionGroup, Header, RosterItem, Section, SongState
+from music_assistant.infrastructure.gemini.llm import make_llm
 
 
 class _FakeStructured:

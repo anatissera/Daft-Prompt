@@ -24,15 +24,15 @@ Planned files and responsibilities:
 
 - `apps/api/Dockerfile`: backend runtime image for FastAPI and Python music/audio dependencies.
 - `docker-compose.yml`: local orchestration for backend and frontend.
-- `apps/api/llm_band/domain/audio_profile.py`: extend reference profile models with energy, chords, and confidence.
-- `apps/api/llm_band/application/analyze_reference.py`: local reference analysis use case.
-- `apps/api/llm_band/application/answer_music_question.py`: evidence-grounded answers over `ReferenceProfile`.
-- `apps/api/llm_band/application/chat_music.py`: intent routing and conversational orchestration.
-- `apps/api/llm_band/application/compose_song.py`: support optional reference-guided composition.
-- `apps/api/llm_band/ports/audio_analyzer.py`: structured MIR analyzer contract.
-- `apps/api/llm_band/infrastructure/mir/librosa_analyzer.py`: local MIR implementation for tempo/key/energy/sections/chords.
-- `apps/api/llm_band/interfaces/api_models.py`: chat, upload, analysis, and composition response models.
-- `apps/api/llm_band/interfaces/api.py`: FastAPI routes for chat, local uploads, analysis, and composition.
+- `apps/api/music_assistant/domain/audio_profile.py`: extend reference profile models with energy, chords, and confidence.
+- `apps/api/music_assistant/application/analyze_reference.py`: local reference analysis use case.
+- `apps/api/music_assistant/application/answer_music_question.py`: evidence-grounded answers over `ReferenceProfile`.
+- `apps/api/music_assistant/application/chat_music.py`: intent routing and conversational orchestration.
+- `apps/api/music_assistant/application/compose_song.py`: support optional reference-guided composition.
+- `apps/api/music_assistant/ports/audio_analyzer.py`: structured MIR analyzer contract.
+- `apps/api/music_assistant/infrastructure/mir/librosa_analyzer.py`: local MIR implementation for tempo/key/energy/sections/chords.
+- `apps/api/music_assistant/interfaces/api_models.py`: chat, upload, analysis, and composition response models.
+- `apps/api/music_assistant/interfaces/api.py`: FastAPI routes for chat, local uploads, analysis, and composition.
 - `apps/api/tests/`: tests for contracts, analysis fakes, chat routing, and reference-guided composition.
 - `apps/web/lib/types.ts`: TypeScript mirrors for chat events and reference profile.
 - `apps/web/app/page.tsx`: chat-first UI shell.
@@ -72,7 +72,7 @@ node --test lib/trackMixerLogic.test.mjs
 - Create: `docker-compose.yml`
 - Modify: `README.md`
 
-- [ ] Add a backend Dockerfile that installs Python dependencies and runs `uvicorn llm_band.api:app --host 0.0.0.0 --port 8000`.
+- [ ] Add a backend Dockerfile that installs Python dependencies and runs `uvicorn music_assistant.api:app --host 0.0.0.0 --port 8000`.
 - [ ] Keep system packages minimal at first; add MIR/rendering packages only when adapters require them.
 - [ ] Add `.dockerignore` for `.venv`, caches, outputs, and test artifacts.
 - [ ] Add root `docker-compose.yml` with `api` and `web` services.
@@ -91,8 +91,8 @@ docker compose up api
 ## Phase 2: ReferenceProfile Contract
 
 **Files:**
-- Modify: `apps/api/llm_band/domain/audio_profile.py`
-- Modify: `apps/api/llm_band/ports/audio_analyzer.py`
+- Modify: `apps/api/music_assistant/domain/audio_profile.py`
+- Modify: `apps/api/music_assistant/ports/audio_analyzer.py`
 - Modify: `apps/api/tests/test_reference_analysis_boundary.py`
 - Modify: `apps/web/lib/types.ts`
 
@@ -116,7 +116,7 @@ npm run typecheck
 
 **Files:**
 - Modify: `apps/api/pyproject.toml`
-- Modify: `apps/api/llm_band/infrastructure/mir/librosa_analyzer.py`
+- Modify: `apps/api/music_assistant/infrastructure/mir/librosa_analyzer.py`
 - Create: `apps/api/tests/test_librosa_analyzer.py`
 - Add fixture: `apps/api/tests/fixtures/audio/`
 
@@ -137,7 +137,7 @@ python -m pytest tests/test_librosa_analyzer.py tests/test_reference_analysis_bo
 ## Phase 4: Music Question Answering
 
 **Files:**
-- Modify: `apps/api/llm_band/application/answer_music_question.py`
+- Modify: `apps/api/music_assistant/application/answer_music_question.py`
 - Create: `apps/api/tests/test_answer_music_question.py`
 
 - [ ] Add a deterministic fallback explainer for tests and local no-key runs.
@@ -153,9 +153,9 @@ python -m pytest tests/test_answer_music_question.py
 ## Phase 5: Conversational Orchestration
 
 **Files:**
-- Create: `apps/api/llm_band/application/chat_music.py`
-- Modify: `apps/api/llm_band/interfaces/api_models.py`
-- Modify: `apps/api/llm_band/interfaces/api.py`
+- Create: `apps/api/music_assistant/application/chat_music.py`
+- Modify: `apps/api/music_assistant/interfaces/api_models.py`
+- Modify: `apps/api/music_assistant/interfaces/api.py`
 - Create: `apps/api/tests/test_chat_music.py`
 
 - [ ] Define chat request/response models that carry message text, optional local reference id, and optional song context.
@@ -177,10 +177,10 @@ python -m pytest tests/test_chat_music.py tests/test_api_architecture.py
 ## Phase 6: Compose From Reference
 
 **Files:**
-- Modify: `apps/api/llm_band/application/compose_song.py`
-- Modify: `apps/api/llm_band/agents/director.py`
-- Modify: `apps/api/llm_band/agents/instrument.py`
-- Modify: `apps/api/llm_band/graph.py`
+- Modify: `apps/api/music_assistant/application/compose_song.py`
+- Modify: `apps/api/music_assistant/agents/director.py`
+- Modify: `apps/api/music_assistant/agents/instrument.py`
+- Modify: `apps/api/music_assistant/graph.py`
 - Create: `apps/api/tests/test_compose_from_reference.py`
 
 - [ ] Add optional `ReferenceProfile` input to composition.

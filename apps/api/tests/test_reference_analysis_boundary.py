@@ -10,9 +10,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from llm_band.application.analyze_reference import AnalyzeReference, ResolveReference
-from llm_band.application.answer_music_question import AnswerMusicQuestion
-from llm_band.domain.audio_profile import (
+from music_assistant.application.analyze_reference import AnalyzeReference, ResolveReference
+from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.domain.audio_profile import (
     AudioProfile,
     ChordEstimate,
     EnergyPoint,
@@ -149,7 +149,7 @@ def test_unauthorized_reference_fails_before_analysis():
 
 
 def test_composition_modules_do_not_import_reference_analysis_internals():
-    root = Path(__file__).resolve().parents[1] / "llm_band"
+    root = Path(__file__).resolve().parents[1] / "music_assistant"
     checked = [
         root / "application" / "compose_song.py",
         root / "graph.py",
@@ -167,10 +167,10 @@ def test_composition_modules_do_not_import_reference_analysis_internals():
             else:
                 continue
             if any(
-                name.startswith("llm_band.ports.audio_analyzer")
-                or name.startswith("llm_band.ports.stem_separator")
-                or name.startswith("llm_band.ports.transcription")
-                or name.startswith("llm_band.infrastructure.mir")
+                name.startswith("music_assistant.ports.audio_analyzer")
+                or name.startswith("music_assistant.ports.stem_separator")
+                or name.startswith("music_assistant.ports.transcription")
+                or name.startswith("music_assistant.infrastructure.mir")
                 for name in names
             ):
                 forbidden.append((path.name, names))
