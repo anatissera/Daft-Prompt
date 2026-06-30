@@ -6,7 +6,9 @@ import { NextRequest } from "next/server";
 import { Agent } from "undici";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 1800; // 30 min cap for the Next route itself
+// Vercel Hobby caps serverless maxDuration at 300s; a real compose runs ~85s so
+// this is ample. (A value >300 makes the Vercel deploy fail to build.)
+export const maxDuration = 300;
 
 // undici's default headersTimeout (5 min) kills slow LLM composes — disable.
 // Connect timeout stays sensible so a dead backend fails fast.
