@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from llm_band.application.answer_music_question import AnswerMusicQuestion, MusicQuestionExplainer
 from llm_band.application.compose_song import ComposeSong
 from llm_band.domain.audio_profile import ExplanationAnswer, ReferenceProfile
+from llm_band.domain.errors import OffTopicRequest
 from llm_band.domain.song_state import SongState
 from llm_band.domain.usage import USAGE_TRACKER, UsageTracker
 from llm_band.ports.reference_store import ReferenceStore
@@ -27,6 +28,7 @@ Intent = Literal[
     "compose",
     "compose_from_reference",
     "clarify",
+    "off_topic",
 ]
 
 
@@ -138,7 +140,10 @@ class ChatMusic:
         if intent == "compose_from_reference":
             assert profile is not None
             style = _style_with_reference(message, profile)
-            song, source = self.compose_song.compose(style)
+            try:
+                song, source = self.compose_song.compose(style)
+            except OffTopicRequest as refusal:
+                return _off_topic_response(refusal)
             return ChatResponse(
                 intent="compose_from_reference",
                 reply=_compose_reply(song, source, reference=profile),
@@ -146,7 +151,10 @@ class ChatMusic:
                 compose=ChatComposeResult(song=song, source=source),
             )
 
-        song, source = self.compose_song.compose(message or "demo")
+        try:
+            song, source = self.compose_song.compose(message or "demo")
+        except OffTopicRequest as refusal:
+            return _off_topic_response(refusal)
         return ChatResponse(
             intent="compose",
             reply=_compose_reply(song, source),
@@ -175,6 +183,10 @@ class ChatMusic:
         if asks_about_reference:
             return "clarify"
         return "compose"
+
+
+def _off_topic_response(refusal: OffTopicRequest) -> ChatResponse:
+    return ChatResponse(intent="off_topic", reply=refusal.message)
 
 
 def _compose_reply(song: SongState, source: str, *, reference: Optional[ReferenceProfile] = None) -> str:
