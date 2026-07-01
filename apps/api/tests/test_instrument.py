@@ -174,8 +174,10 @@ def test_negotiation_etiquette_no_scope_hint_when_no_peers():
     assert "request" in text.lower()
 
 
-def test_system_prompt_includes_chord_map_and_section_map():
-    from music_assistant.agents.instrument import _system_prompt
+def test_song_system_prompt_and_instrument_intro_cover_song_and_instrument_context():
+    """Efficiency refactor split the old _system_prompt into a cacheable
+    song-level system message + a per-instrument human intro."""
+    from music_assistant.agents.instrument import _instrument_intro, _song_system_prompt
     from music_assistant.domain.song_state import Header, RosterItem, ChordSpan, Section
     header = Header(
         genre="funk", key="D minor", tempo_bpm=110, num_bars=8,
@@ -186,11 +188,15 @@ def test_system_prompt_includes_chord_map_and_section_map():
         id="bass", instrument="Electric Bass", midi_range=(28, 55),
         role="groove", playing_style="Lock to the kick.",
     )
-    text = _system_prompt(header, roster_item)
-    assert "Dm7" in text
-    assert "Verse" in text
-    assert "medium" in text
-    assert "Lock to the kick." in text
+    song = _song_system_prompt(header)
+    intro = _instrument_intro(roster_item)
+    assert "Dm7" in song
+    assert "Verse" in song
+    assert "medium" in song
+    assert "Electric Bass" in intro
+    assert "Lock to the kick." in intro
+    assert "Electric Bass" not in song
+    assert "Lock to the kick." not in song
 
 
 def test_run_instrument_turn_accepts_batch_peer_ids():
