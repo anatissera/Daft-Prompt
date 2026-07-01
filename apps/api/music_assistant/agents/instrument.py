@@ -31,7 +31,7 @@ from ..domain.song_state import (
     SongState,
 )
 
-MAX_REPAIRS = 2
+MAX_REPAIRS = 1
 STRUCTURED_OUTPUT_RETRIES = 1
 
 
@@ -44,28 +44,56 @@ class InstrumentOutput(BaseModel):
 
 
 def _chord_map_text(chord_progression: list[ChordSpan]) -> str:
+    """Compact chord map: collapse contiguous bars sharing a chord into a range,
+    render one line per range, and list each chord's tones only once at the end.
+
+    Old form was "bar N: Chord (chord tones: X, Y, Z)" per bar — for an 8-bar
+    song that is ~16 lines × 5 instruments × N rounds of prefill. The bar-range
+    form is typically 3-5 lines plus a compact tone appendix, which cuts the
+    prompt by 60-80% without losing information the model actually needs.
+    """
     if not chord_progression:
         return "(no chord map provided)"
-    lines = []
-    for cs in sorted(chord_progression, key=lambda x: x.bar):
-        tones = chord_tone_names(cs.chord)
-        suffix = f"  (chord tones: {', '.join(tones)})" if tones else ""
-        lines.append(f"  bar {cs.bar}: {cs.chord}{suffix}")
+    ordered = sorted(chord_progression, key=lambda x: x.bar)
+    ranges: list[tuple[int, int, str]] = []
+    start, prev_chord = ordered[0].bar, ordered[0].chord
+    prev_bar = start
+    for cs in ordered[1:]:
+        if cs.chord == prev_chord and cs.bar == prev_bar + 1:
+            prev_bar = cs.bar
+            continue
+        ranges.append((start, prev_bar, prev_chord))
+        start, prev_chord, prev_bar = cs.bar, cs.chord, cs.bar
+    ranges.append((start, prev_bar, prev_chord))
+
+    map_lines = [
+        f"  bars {a}-{b}: {c}" if a != b else f"  bar {a}: {c}"
+        for a, b, c in ranges
+    ]
+    seen: dict[str, tuple[str, ...]] = {}
+    for _, _, chord in ranges:
+        if chord in seen:
+            continue
+        tones = chord_tone_names(chord)
+        if tones:
+            seen[chord] = tuple(tones)
+    tone_appendix = (
+        "\n  chord tones: "
+        + "; ".join(f"{ch}=[{','.join(ts)}]" for ch, ts in seen.items())
+    ) if seen else ""
     return (
-        "Chord map — land sustained/structural notes on the listed chord tones; "
-        "passing tones between them are fine, but avoid resting on notes outside both "
-        "the chord and the key:\n" + "\n".join(lines)
+        "Chord map (land sustained notes on chord tones; passing tones OK):\n"
+        + "\n".join(map_lines)
+        + tone_appendix
     )
 
 
 def _section_map_text(sections: list[Section]) -> str:
+    """Sections as a single line: `verse[0-3, mid] | chorus[4-7, high]`."""
     if not sections:
         return "(no section map provided)"
-    lines = [
-        f"  {s.name:<14} bars {s.start_bar}-{s.end_bar}  energy: {s.energy}"
-        for s in sections
-    ]
-    return "Song form:\n" + "\n".join(lines)
+    parts = [f"{s.name}[{s.start_bar}-{s.end_bar}, {s.energy}]" for s in sections]
+    return "Sections: " + " | ".join(parts)
 
 
 def _peer_context(roster: list[RosterItem], self_id: str, peer_summaries: dict[str, str]) -> str:
@@ -77,34 +105,43 @@ def _peer_context(roster: list[RosterItem], self_id: str, peer_summaries: dict[s
     return "\n".join(lines) or "(no other instruments)"
 
 
-def _system_prompt(header: Header, roster_item: RosterItem) -> str:
+def _song_system_prompt(header: Header) -> str:
+    """Song-level system prompt — identical across every instrument and every
+    round of a compose. Structured this way so Gemini 2.5's implicit cache and
+    llama-server's prompt cache hit on the shared prefix instead of paying full
+    prefill on every LLM call. Instrument-specific content moves to the first
+    human turn so it does not perturb the cached system_instruction.
+    """
     bpb = beats_per_bar(header.time_signature)
+    return (
+        f"/no_think You are one player in a {header.genre} ensemble.\n"
+        f"Key {header.key}, {header.tempo_bpm} BPM, "
+        f"{header.time_signature[0]}/{header.time_signature[1]} ({bpb} beats/bar), "
+        f"{header.num_bars} bars (0..{header.num_bars - 1}).\n"
+        f"{_section_map_text(header.sections)}\n"
+        f"{_chord_map_text(header.chord_progression)}\n\n"
+        "Output your part as notes (bar, start_beat 0-indexed in bar, MIDI pitch "
+        "null=rest, dur in beats, velocity 0-127). Match section energy for dynamics. "
+        "Stay in your range and bar bounds. Add a short notes_summary. Structured "
+        "output only — no prose."
+    )
+
+
+def _instrument_intro(roster_item: RosterItem) -> str:
+    """Per-instrument context — lives in the first human turn (see
+    `_song_system_prompt`) so it doesn't invalidate the shared system-prompt cache."""
     drum_note = (
-        " (percussion kit — pitch is a GM drum key, not a melodic pitch; range/key checks don't apply)"
+        " (percussion — pitch is a GM drum key; range/key checks don't apply)"
         if roster_item.is_drum
         else ""
     )
-    playing_style_block = (
+    style_line = (
         f"\nPlaying style: {roster_item.playing_style}" if roster_item.playing_style else ""
     )
     return (
-        f"/no_think You are the {roster_item.instrument} player ({roster_item.role}) in a "
-        f"{header.genre} ensemble.\n\n"
-        f"Hard constraints:\n"
-        f"- key: {header.key}, tempo: {header.tempo_bpm} BPM, "
-        f"time signature {header.time_signature[0]}/{header.time_signature[1]} "
-        f"({bpb} beats/bar)\n"
-        f"- song length: {header.num_bars} bars (bar indices 0..{header.num_bars - 1})\n"
-        f"- your MIDI pitch range: {roster_item.midi_range[0]}-{roster_item.midi_range[1]}{drum_note}\n\n"
-        f"{_section_map_text(header.sections)}\n\n"
-        f"{_chord_map_text(header.chord_progression)}"
-        f"{playing_style_block}\n\n"
-        "Compose your full part for the whole song: a list of notes with absolute bar "
-        "+ start_beat (0-indexed within the bar), MIDI pitch (null = rest), duration in "
-        "beats, and velocity (0-127). Shape your dynamics to the section energy levels "
-        "(low = quieter/sparser, high = louder/fuller). Stay within your pitch range and "
-        "bar/beat bounds. Also return a short notes_summary other musicians can read. "
-        "Respond directly with the structured output only. Do not think out loud or write any reasoning."
+        f"You play {roster_item.instrument} ({roster_item.role}). "
+        f"Range MIDI {roster_item.midi_range[0]}-{roster_item.midi_range[1]}{drum_note}."
+        f"{style_line}"
     )
 
 
@@ -124,11 +161,9 @@ def _negotiation_etiquette(batch_peer_ids: list[str]) -> str:
         else ""
     )
     return (
-        "\nYou may also ask another instrument for a specific accommodation (e.g. "
-        "leave space in a bar for a fill, change a note to fit a chord). Phrase each "
-        "as: which instrument (by roster id), which bar(s), what you're asking, and why. "
-        "Only raise a request if it meaningfully improves the arrangement — don't "
-        "manufacture requests for their own sake." + scope
+        "\nYou may also ask a peer for a specific accommodation (leave space, change a "
+        "note). Format: to (id), bars, request, why. Only raise if it meaningfully helps."
+        + scope
     )
 
 
@@ -243,8 +278,9 @@ def compose_part(
     structured = llm.with_structured_output(InstrumentOutput)
 
     messages = [
-        ("system", _system_prompt(header, roster_item)),
-        ("human", f"Other instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
+        ("system", _song_system_prompt(header)),
+        ("human", _instrument_intro(roster_item)
+                    + f"\n\nOther instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
     ]
     out = _invoke_structured(structured, messages, "InstrumentOutput")
     if out is None:
@@ -417,8 +453,9 @@ def _compose_turn_full(
     """Fresh compose / round-0 turn: full-note-list structured output."""
     structured = llm.with_structured_output(InstrumentTurnOutput)
     messages = [
-        ("system", _system_prompt(header, roster_item) + _negotiation_etiquette(batch_peer_ids)),
-        ("human", f"Other instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
+        ("system", _song_system_prompt(header)),
+        ("human", _instrument_intro(roster_item) + _negotiation_etiquette(batch_peer_ids)
+                    + f"\n\nOther instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
         ("human", _pending_context(pending)),
     ]
     out = _invoke_structured(structured, messages, "InstrumentTurnOutput")
@@ -464,10 +501,10 @@ def _compose_turn_revision(
     """
     structured = llm.with_structured_output(InstrumentRevisionOutput)
     messages = [
-        ("system", _system_prompt(header, roster_item)
-                    + _revision_etiquette()
-                    + _negotiation_etiquette(batch_peer_ids)),
-        ("human", f"Other instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
+        ("system", _song_system_prompt(header)),
+        ("human", _instrument_intro(roster_item)
+                    + _revision_etiquette() + _negotiation_etiquette(batch_peer_ids)
+                    + f"\n\nOther instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
         ("human", f"Your current part:\n{_compact_part_text(existing_part)}"),
         ("human", _pending_context(pending)),
     ]
