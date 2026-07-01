@@ -17,6 +17,9 @@ from ..config import get_settings
 from ..infrastructure.llm import LLMError
 from ..music.theory import beats_per_bar, chord_tone_names
 from ..music.validators import ValidationIssue, errors_only, validate_song
+from ..skills._tables import DRUM_PATTERNS, DRUM_PATTERN_ALIASES
+from ..skills.edits import EditFailure, NoteEdit, apply_edits
+from ..skills.rhythm import drum_pattern
 from ..domain.song_state import (
     ChordSpan,
     Header,
@@ -143,6 +146,42 @@ def _to_part(roster_item: RosterItem, out: InstrumentOutput) -> Part:
     )
 
 
+def _resolve_drum_style(header: Header, roster_item: RosterItem) -> str:
+    """Pick a `drum_pattern` style key from the roster item's role and the
+    header's genre. Role wins (so the director can override per-song with
+    "drums — boom_bap"); otherwise the genre is matched directly, then aliased,
+    then defaulted to `rock_basic`.
+    """
+    playing_style = (roster_item.playing_style or "").lower()
+    haystacks = [roster_item.role.lower(), playing_style, header.genre.lower()]
+    for hay in haystacks:
+        for name in DRUM_PATTERNS:
+            if name in hay:
+                return name
+        for alias, target in DRUM_PATTERN_ALIASES.items():
+            if alias in hay:
+                return target
+    return "rock_basic"
+
+
+def _drum_part(header: Header, roster_item: RosterItem) -> Part:
+    """Build a drum part verbatim from `drum_pattern` — no LLM call.
+
+    Bypasses one full LLM turn per round the drums would have participated in.
+    `notes_summary` names the pattern so peer instruments still get useful
+    context; `self_notes` records the skill origin so a later revision pass can
+    tell a skill-derived part apart from an LLM-generated one.
+    """
+    style = _resolve_drum_style(header, roster_item)
+    notes = drum_pattern(style, header.time_signature, header.num_bars)
+    return Part(
+        instrument_id=roster_item.id,
+        notes=notes,
+        notes_summary=f"{style} pattern, {header.num_bars} bars",
+        self_notes=f"skill:drum_pattern[{style}]",
+    )
+
+
 def _fallback_part(roster_item: RosterItem, reason: str = "model did not return structured output") -> Part:
     return Part(
         instrument_id=roster_item.id,
@@ -188,10 +227,16 @@ def compose_part(
     """Compose one instrument's part, with a bounded repair loop on validation failure.
 
     Used by the non-negotiation graph (Phase 4 / `run_instruments`).
+
+    Drum parts skip the LLM entirely and ship a deterministic `drum_pattern` —
+    note-by-note drum generation buys no quality over a curated pattern table
+    and costs a full turn per round.
     """
     run = get_current_run_tree()
     if run is not None:
         run.name = roster_item.instrument
+    if roster_item.is_drum:
+        return _drum_part(header, roster_item)
     if llm is None:
         from music_assistant.infrastructure.gemini.llm import make_llm
         llm = make_llm("instrument")
@@ -242,6 +287,63 @@ class InstrumentTurnOutput(InstrumentOutput):
     new_requests: list[NewRequest] = Field(default_factory=list)
 
 
+class InstrumentRevisionOutput(BaseModel):
+    """Diff-based output used by negotiation rounds > 0 for efficiency.
+
+    Round > 0 turns currently re-emit the entire ~100-note part every revision;
+    switching to a small edit list (add/replace/remove) is the dominant output-
+    token win. The agent reads its current part in a compact one-line-per-note
+    text form as input, then emits only the deltas.
+    """
+
+    edits: list[NoteEdit] = Field(
+        default_factory=list,
+        description="add/replace/remove edits against your current part; each anchors to (bar, start_beat)",
+    )
+    notes_summary: str = Field(description="updated 1-2 sentence summary peers can read")
+    self_notes: str = Field(default="", description="optional notes to self for later revision")
+    request_resolutions: list[RequestResolution] = Field(default_factory=list)
+    new_requests: list[NewRequest] = Field(default_factory=list)
+
+
+def _compact_part_text(part: Part) -> str:
+    """One line per note — the cheapest legible form the agent can address by
+    `(bar, start_beat)` when emitting edits. Cheaper as input than re-emitting
+    the same notes through structured output."""
+    if not part.notes:
+        return "(empty part)"
+    lines = []
+    for n in part.notes:
+        pitch = "rest" if n.pitch is None else n.pitch
+        lines.append(
+            f"bar={n.bar} beat={n.start_beat:g} pitch={pitch} dur={n.dur:g} vel={n.velocity}"
+        )
+    return "\n".join(lines)
+
+
+def _edit_failure_prompt(failures: list[EditFailure]) -> str:
+    bullets = "\n".join(
+        f"- {f.edit.op} bar={f.edit.bar} beat={f.edit.start_beat:g}: {f.reason}"
+        for f in failures
+    )
+    return (
+        "Some of your edits could not be applied:\n"
+        f"{bullets}\n"
+        "Return a corrected list of edits (not a diff of the diff) that achieves "
+        "the same musical intent."
+    )
+
+
+def _revision_etiquette() -> str:
+    return (
+        "\nYou are revising an existing part. Output only the edits needed — "
+        "add to insert a new note at (bar, start_beat), replace to overwrite an "
+        "existing note at (bar, start_beat), remove to delete it. Leave notes "
+        "you want unchanged out of the edits list entirely. Anchor each edit by "
+        "the (bar, start_beat) shown in the current part."
+    )
+
+
 def _pending_context(pending: list[NegotiationRequest]) -> str:
     if not pending:
         return "(no pending requests addressed to you)"
@@ -268,23 +370,57 @@ def run_instrument_turn(
 
     `batch_peer_ids` lists the other roster ids in this composition group — the
     negotiation etiquette block tells the model to only raise requests to those ids.
+
+    Drums skip the LLM entirely (see `compose_part`) and do not participate in
+    negotiation — pending requests addressed to the drums are declined so the
+    arbiter sees them resolved rather than stuck pending.
+
+    Round-0 turns (no `existing_part`) use `InstrumentTurnOutput` — the full
+    note list. Round >0 turns switch to `InstrumentRevisionOutput`, emitting a
+    diff against the current part. See `_compose_turn_revision`.
     """
     run = get_current_run_tree()
     if run is not None:
         run.name = roster_item.instrument
+    if roster_item.is_drum:
+        part = _drum_part(header, roster_item)
+        declined = [
+            RequestResolution(
+                request_id=r.id, accepted=False,
+                resolution="drums use a deterministic pattern this round",
+            )
+            for r in pending
+        ]
+        return part, declined, []
     if llm is None:
         from music_assistant.infrastructure.gemini.llm import make_llm
         llm = make_llm("instrument")
-    structured = llm.with_structured_output(InstrumentTurnOutput)
 
+    if existing_part is None:
+        return _compose_turn_full(
+            header, roster_item, roster, peer_summaries, batch_peer_ids, pending, llm,
+        )
+    return _compose_turn_revision(
+        header, roster_item, roster, peer_summaries, batch_peer_ids, pending, existing_part, llm,
+    )
+
+
+def _compose_turn_full(
+    header: Header,
+    roster_item: RosterItem,
+    roster: list[RosterItem],
+    peer_summaries: dict[str, str],
+    batch_peer_ids: list[str],
+    pending: list[NegotiationRequest],
+    llm,
+) -> tuple[Part, list[RequestResolution], list[NewRequest]]:
+    """Fresh compose / round-0 turn: full-note-list structured output."""
+    structured = llm.with_structured_output(InstrumentTurnOutput)
     messages = [
         ("system", _system_prompt(header, roster_item) + _negotiation_etiquette(batch_peer_ids)),
         ("human", f"Other instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
+        ("human", _pending_context(pending)),
     ]
-    if existing_part is not None:
-        messages.append(("ai", f"My current part: {existing_part.notes_summary}"))
-    messages.append(("human", _pending_context(pending)))
-
     out = _invoke_structured(structured, messages, "InstrumentTurnOutput")
     if out is None:
         return _fallback_part(roster_item), [], []
@@ -302,5 +438,66 @@ def run_instrument_turn(
         if out is None:
             return _fallback_part(roster_item), [], []
         part = _to_part(roster_item, out)
+
+    return part, out.request_resolutions, out.new_requests
+
+
+def _compose_turn_revision(
+    header: Header,
+    roster_item: RosterItem,
+    roster: list[RosterItem],
+    peer_summaries: dict[str, str],
+    batch_peer_ids: list[str],
+    pending: list[NegotiationRequest],
+    existing_part: Part,
+    llm,
+) -> tuple[Part, list[RequestResolution], list[NewRequest]]:
+    """Diff-based revision: LLM returns a small `list[NoteEdit]` instead of the
+    full ~100-note part, cutting output tokens by 80-95% on the common case
+    where only a handful of notes change.
+
+    Repair loop covers both edit-application failures (unmatched targets,
+    occupied slots) and downstream validation issues — corrective edits are
+    reapplied to the *original* part each iteration rather than stacked on the
+    previous broken diff, so the model doesn't have to reason about what its
+    own bad output already did.
+    """
+    structured = llm.with_structured_output(InstrumentRevisionOutput)
+    messages = [
+        ("system", _system_prompt(header, roster_item)
+                    + _revision_etiquette()
+                    + _negotiation_etiquette(batch_peer_ids)),
+        ("human", f"Other instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
+        ("human", f"Your current part:\n{_compact_part_text(existing_part)}"),
+        ("human", _pending_context(pending)),
+    ]
+
+    out = _invoke_structured(structured, messages, "InstrumentRevisionOutput")
+    if out is None:
+        return existing_part.model_copy(), [], []
+    part, failures = apply_edits(existing_part, out.edits, num_bars=header.num_bars)
+    part = part.model_copy(update={
+        "notes_summary": out.notes_summary or existing_part.notes_summary,
+        "self_notes": out.self_notes,
+    })
+
+    for _ in range(MAX_REPAIRS):
+        issues = _validate_part(header, roster_item, part)
+        if not failures and not issues:
+            break
+        followups = []
+        if failures:
+            followups.append(("human", _edit_failure_prompt(failures)))
+        if issues:
+            followups.append(("human", _repair_prompt(issues)))
+        messages = messages + [("ai", f"My edits: {out.notes_summary}")] + followups
+        out = _invoke_structured(structured, messages, "InstrumentRevisionOutput")
+        if out is None:
+            return part, [], []
+        part, failures = apply_edits(existing_part, out.edits, num_bars=header.num_bars)
+        part = part.model_copy(update={
+            "notes_summary": out.notes_summary or existing_part.notes_summary,
+            "self_notes": out.self_notes,
+        })
 
     return part, out.request_resolutions, out.new_requests
