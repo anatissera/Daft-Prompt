@@ -4,6 +4,8 @@ services:
       context: ./apps/api
     ports:
       - "8000:8000"
+    environment:
+      REFERENCE_STEM_CACHE_ENABLED: "true"
     volumes:
       - ./apps/api/outputs:/app/outputs
       - ./apps/api/uploads:/app/uploads

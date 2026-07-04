@@ -11,7 +11,11 @@ raising.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
+import json
+import logging
 from pathlib import Path
+import time
 
 from music_assistant.domain.audio_profile import (
     AnalysisNote,
@@ -34,7 +38,15 @@ from music_assistant.infrastructure.mir.demucs_separator import DemucsSeparator
 from music_assistant.infrastructure.mir.harmonic_source import build_harmonic_source
 from music_assistant.infrastructure.mir.key_features import estimate_key, estimate_tuning_deviation
 from music_assistant.infrastructure.mir.librosa_analyzer import _clamp, _prepare_librosa_import
-from music_assistant.infrastructure.mir.section_features import detect_sections_from_bar_signals
+from music_assistant.infrastructure.mir.multimodal_features import (
+    MultimodalBarFeatures,
+    extract_multimodal_features,
+)
+from music_assistant.infrastructure.mir.section_features import (
+    detect_multimodal_sections,
+    detect_multimodal_sections_with_audit,
+    detect_sections_from_bar_signals,
+)
 from music_assistant.infrastructure.mir.structure_features import detect_structure
 from music_assistant.infrastructure.mir.tempo_grid import estimate_tempo_grid
 
@@ -48,7 +60,8 @@ LOW_USEFULNESS_THRESHOLD = 0.5
 # shift the bar grid; below it, the downbeat is ambiguous and we keep offset 0.
 BAR_PHASE_MIN_CONFIDENCE = 0.15
 AMBIGUOUS_PHASE_GRID_PENALTY = 0.85
-ProgressCallback = Callable[[str, str], None]
+ProgressCallback = Callable[..., None]
+logger = logging.getLogger(__name__)
 
 
 class DeepHarmonicAnalyzer:
@@ -65,10 +78,14 @@ class DeepHarmonicAnalyzer:
         bass_root_provider: Callable | None = estimate_bass_roots,
         structure_detector: Callable = detect_structure,
         section_detector: Callable | None = detect_sections_from_bar_signals,
+        multimodal_feature_provider: Callable | None = extract_multimodal_features,
+        multimodal_section_detector: Callable | None = detect_multimodal_sections,
         energy_provider: Callable | None = per_bar_energy,
         stem_activity_provider: Callable | None = per_stem_activity_by_bar,
         tuning_deviation_provider: Callable[[str], float | None] | None = estimate_tuning_deviation,
         duration_provider: Callable[[Path], float] | None = None,
+        clock: Callable[[], float] = time.perf_counter,
+        audit_writer: Callable[[Path, dict], None] | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.separator = separator or DemucsSeparator(output_root=self.output_root)
@@ -80,10 +97,14 @@ class DeepHarmonicAnalyzer:
         self.bass_root_provider = bass_root_provider
         self.structure_detector = structure_detector
         self.section_detector = section_detector
+        self.multimodal_feature_provider = multimodal_feature_provider
+        self.multimodal_section_detector = multimodal_section_detector
         self.energy_provider = energy_provider
         self.stem_activity_provider = stem_activity_provider
         self.tuning_deviation_provider = tuning_deviation_provider
         self.duration_provider = duration_provider or _audio_duration
+        self.clock = clock
+        self.audit_writer = audit_writer or _write_json
 
     def analyze(
         self,
@@ -108,8 +129,16 @@ class DeepHarmonicAnalyzer:
         analysis_dir.mkdir(parents=True, exist_ok=True)
 
         notes: list[AnalysisNote] = []
-        _emit(progress, "separating_stems", "Separating stems for harmonic analysis.")
-        stems = self.separator.separate(source)
+        with _timed_stage(
+            progress,
+            self.clock,
+            "separating_stems",
+            "Separating stems for harmonic analysis.",
+        ) as stage_details:
+            stems = self.separator.separate(source)
+            stage_details["cache_hit"] = bool(
+                getattr(self.separator, "last_cache_hit", False)
+            )
         if {stem.name for stem in stems} == {"mix"}:
             notes.append(
                 AnalysisNote(
@@ -119,30 +148,45 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
-        _emit(progress, "building_harmonic_source", "Building the harmonic source.")
-        harmonic = self.harmonic_source_builder(stems, analysis_dir / "harmonic.wav")
+        with _timed_stage(
+            progress,
+            self.clock,
+            "building_harmonic_source",
+            "Building the harmonic source.",
+        ):
+            harmonic = self.harmonic_source_builder(stems, analysis_dir / "harmonic.wav")
         notes.extend(harmonic.notes)
 
-        _emit(progress, "estimating_tempo_grid", "Estimating tempo, beats, and bars.")
-        drum_path = next((stem.path for stem in stems if stem.name == "drums"), None)
-        grid = self.tempo_estimator(str(audio_path), drum_path=drum_path)
-        bar_times = _apply_bar_phase(self.bar_phase_provider, harmonic.path, grid, notes)
+        with _timed_stage(
+            progress,
+            self.clock,
+            "estimating_tempo_grid",
+            "Estimating tempo, beats, and bars.",
+        ):
+            drum_path = next((stem.path for stem in stems if stem.name == "drums"), None)
+            grid = self.tempo_estimator(str(audio_path), drum_path=drum_path)
+            bar_times = _apply_bar_phase(self.bar_phase_provider, harmonic.path, grid, notes)
 
-        _emit(progress, "estimating_key", "Estimating likely key candidates.")
-        tuning_deviation = _safe_tuning_deviation(self.tuning_deviation_provider, harmonic.path)
-        if tuning_deviation is not None and abs(tuning_deviation) >= SIGNIFICANT_TUNING_DEVIATION:
-            notes.append(
-                AnalysisNote(
-                    code="possible_detuning",
-                    message=(
-                        "Labels assume A=440; recording may be slightly detuned."
-                    ),
-                    severity="info",
+        with _timed_stage(
+            progress,
+            self.clock,
+            "estimating_key",
+            "Estimating likely key candidates.",
+        ):
+            tuning_deviation = _safe_tuning_deviation(self.tuning_deviation_provider, harmonic.path)
+            if tuning_deviation is not None and abs(tuning_deviation) >= SIGNIFICANT_TUNING_DEVIATION:
+                notes.append(
+                    AnalysisNote(
+                        code="possible_detuning",
+                        message=(
+                            "Labels assume A=440; recording may be slightly detuned."
+                        ),
+                        severity="info",
+                    )
                 )
+            key_profile = self.key_estimator(
+                harmonic.path, confidence_adjustment=harmonic.confidence_adjustment
             )
-        key_profile = self.key_estimator(
-            harmonic.path, confidence_adjustment=harmonic.confidence_adjustment
-        )
         if key_profile.primary and key_profile.relative_key_ambiguity:
             alternatives = [
                 candidate.key for candidate in key_profile.candidates[1:4]
@@ -163,17 +207,22 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
-        _emit(progress, "estimating_chords", "Estimating probable triads by bar.")
-        bass_path = next((stem.path for stem in stems if stem.name == "bass"), None)
-        bass_roots = _safe_bass_roots(
-            self.bass_root_provider, bass_path, bar_times, duration
-        )
-        chord_spans = self.chord_estimator(
-            harmonic.path, bar_times, duration, bass_roots=bass_roots or None
-        )
-        chord_spans = apply_key_context(
-            chord_spans, key_profile.primary.key if key_profile.primary else None
-        )
+        with _timed_stage(
+            progress,
+            self.clock,
+            "estimating_chords",
+            "Estimating probable triads by bar.",
+        ):
+            bass_path = next((stem.path for stem in stems if stem.name == "bass"), None)
+            bass_roots = _safe_bass_roots(
+                self.bass_root_provider, bass_path, bar_times, duration
+            )
+            chord_spans = self.chord_estimator(
+                harmonic.path, bar_times, duration, bass_roots=bass_roots or None
+            )
+            chord_spans = apply_key_context(
+                chord_spans, key_profile.primary.key if key_profile.primary else None
+            )
 
         grid_confidence = grid.tempo.bar_grid_confidence
         if grid_confidence < WEAK_BAR_GRID_CONFIDENCE and chord_spans:
@@ -188,42 +237,81 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
-        # Structure is resolved in three ordered tiers, weakest evidence last:
-        #   1. structure_detector: exact repeated chord-phrase signatures (A/B/C),
-        #      with its own internal _fallback_sections_if_degenerate collapse for
-        #      the degenerate "one giant section + tiny tail" case.
-        #   2. section_detector: if (1) is weak (<0.4), approximate boundaries from
-        #      bar-aligned energy/stem-activity novelty (arrangement, not harmony).
-        #   3. notes: whichever wins, flag it as approximate/unclear when still weak.
-        _emit(progress, "detecting_structure", "Detecting repeated progressions and A/B/C structure.")
-        structure, progressions = self.structure_detector(chord_spans)
-        if structure.confidence < 0.4 and self.section_detector is not None:
-            energy_by_bar = _safe_bar_energy(
-                self.energy_provider, str(audio_path), bar_times, duration
+        with _timed_stage(
+            progress,
+            self.clock,
+            "extracting_stem_features",
+            "Extracting bar-aligned stem features.",
+        ):
+            multimodal_features = _safe_multimodal_features(
+                self.multimodal_feature_provider, stems, bar_times, duration
             )
-            stem_activity_by_bar = _safe_stem_activity(
-                self.stem_activity_provider, stems, bar_times, duration
-            )
-            approximate_structure = self.section_detector(
-                chord_spans,
-                energy_by_bar=energy_by_bar or None,
-                stem_activity_by_bar=stem_activity_by_bar or None,
-            )
-            if (
-                approximate_structure.sections
-                and approximate_structure.confidence > structure.confidence
-            ):
-                structure = approximate_structure
-                notes.append(
-                    AnalysisNote(
-                        code="approximate_sections",
-                        message=(
-                            "Sections are approximate; boundaries use bar-aligned "
-                            "novelty signals rather than exact harmonic repetition."
-                        ),
-                        severity="info",
+
+        with _timed_stage(
+            progress,
+            self.clock,
+            "detecting_structure",
+            "Detecting repeated progressions and A/B/C structure.",
+        ):
+            boundary_audit: list[dict] = []
+            structure_source = "harmonic"
+            structure, progressions = self.structure_detector(chord_spans)
+            if self.multimodal_section_detector is not None and multimodal_features.by_stem:
+                if self.multimodal_section_detector is detect_multimodal_sections:
+                    multimodal_structure, boundary_audit = detect_multimodal_sections_with_audit(
+                        chord_spans, multimodal_features
                     )
+                else:
+                    multimodal_structure = self.multimodal_section_detector(
+                        chord_spans, multimodal_features
+                    )
+                if (
+                    len(multimodal_structure.sections) > 1
+                    and multimodal_structure.confidence >= 0.4
+                ):
+                    structure = multimodal_structure
+                    structure_source = "multimodal"
+                    notes.append(
+                        AnalysisNote(
+                            code="multimodal_sections",
+                            message=(
+                                "Sections use sustained vocal, rhythmic, bass, and "
+                                "arrangement changes aligned to bars."
+                            ),
+                            severity="info",
+                        )
+                    )
+            if (
+                structure.confidence < 0.4
+                and self.section_detector is not None
+            ):
+                energy_by_bar = _safe_bar_energy(
+                    self.energy_provider, str(audio_path), bar_times, duration
                 )
+                stem_activity_by_bar = _safe_stem_activity(
+                    self.stem_activity_provider, stems, bar_times, duration
+                )
+                approximate_structure = self.section_detector(
+                    chord_spans,
+                    energy_by_bar=energy_by_bar or None,
+                    stem_activity_by_bar=stem_activity_by_bar or None,
+                )
+                if (
+                    approximate_structure.sections
+                    and approximate_structure.confidence > structure.confidence
+                ):
+                    structure = approximate_structure
+                    structure_source = "fallback"
+                    notes.append(
+                        AnalysisNote(
+                            code="approximate_sections",
+                            message=(
+                                "Sections are approximate; boundaries use bar-aligned "
+                                "novelty signals rather than exact harmonic repetition."
+                            ),
+                            severity="info",
+                        )
+                    )
         if structure.sections and structure.confidence < 0.4:
             notes.append(
                 AnalysisNote(
@@ -260,6 +348,40 @@ class DeepHarmonicAnalyzer:
             harmonic_rhythm_label=_harmonic_rhythm_label(chord_spans),
             confidence=_harmony_confidence(key_profile, chord_spans, grid_confidence),
         )
+        audit_path = analysis_dir / "section_audit.json"
+        try:
+            self.audit_writer(
+                audit_path,
+                _section_audit_payload(
+                    source=source,
+                    duration=duration,
+                    grid=grid,
+                    key_profile=key_profile,
+                    harmony=harmony,
+                    boundary_audit=boundary_audit,
+                    structure=structure,
+                    structure_source=structure_source,
+                ),
+            )
+            logger.info(
+                "section audit written for %s at %s",
+                source.reference_id,
+                audit_path,
+            )
+        except Exception as exc:
+            logger.warning(
+                "could not write section audit for %s at %s: %s",
+                source.reference_id,
+                audit_path,
+                exc,
+            )
+            notes.append(
+                AnalysisNote(
+                    code="section_audit_unavailable",
+                    message="Section decision audit could not be written.",
+                    severity="warning",
+                )
+            )
 
         audio = AudioProfile(
             duration_seconds=duration,
@@ -286,9 +408,33 @@ class DeepHarmonicAnalyzer:
         )
 
 
-def _emit(progress: ProgressCallback | None, stage: str, message: str) -> None:
+def _write_json(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+@contextmanager
+def _timed_stage(
+    progress: ProgressCallback | None,
+    clock: Callable[[], float],
+    stage: str,
+    message: str,
+):
+    details: dict[str, bool] = {}
+    started = clock()
     if progress is not None:
-        progress(stage, message)
+        progress(stage, message, status="started")
+    try:
+        yield details
+    finally:
+        elapsed = round(max(0.0, clock() - started), 3)
+        if progress is not None:
+            progress(
+                stage,
+                message,
+                status="completed",
+                elapsed_seconds=elapsed,
+                cache_hit=details.get("cache_hit"),
+            )
 
 
 def _safe_tuning_deviation(
@@ -381,6 +527,24 @@ def _safe_stem_activity(
         return []
 
 
+def _safe_multimodal_features(
+    provider: Callable | None, stems, bar_times, duration: float
+) -> MultimodalBarFeatures:
+    if provider is None or not bar_times:
+        return MultimodalBarFeatures()
+    stem_paths = {
+        stem.name: stem.path
+        for stem in stems
+        if stem.name in {"drums", "bass", "vocals", "other"}
+    }
+    if not stem_paths:
+        return MultimodalBarFeatures()
+    try:
+        return provider(stem_paths, bar_times, duration)
+    except Exception:
+        return MultimodalBarFeatures()
+
+
 def _legacy_chord_estimates(chord_spans) -> list[ChordEstimate]:
     estimates: list[ChordEstimate] = []
     for span in chord_spans:
@@ -418,6 +582,61 @@ def _stem_profile(stem) -> StemProfile:
         available=stem.name in {"drums", "bass", "vocals", "other"},
         confidence=stem.confidence,
     )
+
+
+def _section_audit_payload(
+    *,
+    source: ReferenceSource,
+    duration: float,
+    grid,
+    key_profile,
+    harmony: HarmonicProfile,
+    boundary_audit: list[dict],
+    structure,
+    structure_source: str,
+) -> dict:
+    main_progression = (
+        harmony.progressions[0].chords
+        if harmony.progressions and harmony.progressions[0].chords
+        else []
+    )
+    return {
+        "metadata": {
+            "reference_id": source.reference_id,
+            "label": source.label,
+            "duration_seconds": round(duration, 3),
+            "tempo_bpm": grid.tempo.primary_bpm,
+            "bar_count": len(grid.bar_times),
+            "bar_grid_confidence": grid.tempo.bar_grid_confidence,
+        },
+        "harmony": {
+            "key_candidates": [
+                {
+                    "key": candidate.key,
+                    "mode": candidate.mode,
+                    "confidence": candidate.confidence,
+                }
+                for candidate in key_profile.candidates[:4]
+            ],
+            "key_confidence": key_profile.confidence,
+            "main_progression": main_progression,
+            "harmony_confidence": harmony.confidence,
+        },
+        "boundary_candidates": boundary_audit,
+        "final_sections": [
+            {
+                "label": section.label,
+                "start_bar": section.start_bar,
+                "end_bar": section.end_bar,
+                "start_seconds": section.start_seconds,
+                "end_seconds": section.end_seconds,
+                "confidence": section.confidence,
+                "main_progression": section.main_progression,
+                "source": structure_source,
+            }
+            for section in structure.sections
+        ],
+    }
 
 
 def _harmonic_rhythm_label(chord_spans) -> str:

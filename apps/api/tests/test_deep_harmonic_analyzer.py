@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from music_assistant.domain.audio_profile import (
 )
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from music_assistant.infrastructure.mir.harmonic_source import HarmonicSource
+from music_assistant.infrastructure.mir.multimodal_features import MultimodalBarFeatures
 from music_assistant.infrastructure.mir.tempo_grid import TempoGrid
 from music_assistant.ports.stem_separator import SeparatedStem
 
@@ -123,6 +125,7 @@ def _analyzer(
         stem_activity_provider=lambda stem_paths, bar_times, duration: [
             {name: 0.5 for name in stem_paths} for _ in bar_times
         ],
+        multimodal_feature_provider=None,
         duration_provider=lambda path: 8.0,
     )
 
@@ -335,6 +338,115 @@ def test_orchestrator_feeds_energy_and_stem_signals_into_section_detector(tmp_pa
     assert captured["energy_by_bar"] == [0.2, 0.2, 0.9, 0.9]
     assert captured["stem_activity_by_bar"] and "drums" in captured["stem_activity_by_bar"][0]
     assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
+
+
+def test_orchestrator_prefers_multimodal_sections_when_harmonic_structure_is_weak(tmp_path):
+    captured: dict = {}
+    expected = StructureProfile(
+        sections=[
+            StructuralSection(
+                label="A", start_bar=1, end_bar=2, start_seconds=0.0, end_seconds=4.0, confidence=0.7
+            ),
+            StructuralSection(
+                label="B", start_bar=3, end_bar=4, start_seconds=4.0, end_seconds=8.0, confidence=0.7
+            ),
+        ],
+        confidence=0.7,
+    )
+
+    def feature_provider(stem_paths, bar_times, duration):
+        captured["stem_paths"] = stem_paths
+        captured["bar_times"] = bar_times
+        return MultimodalBarFeatures(
+            by_stem={"drums": [pytest.importorskip("numpy").array([0.2])] * 4}
+        )
+
+    def detector(spans, features):
+        captured["features"] = features
+        return expected
+
+    analyzer = _analyzer(tmp_path, structure_confidence=0.25)
+    analyzer.multimodal_feature_provider = feature_provider
+    analyzer.multimodal_section_detector = detector
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    assert set(captured["stem_paths"]) == {"drums", "bass", "vocals", "other"}
+    assert captured["bar_times"] == [0.0, 2.0, 4.0, 6.0]
+    assert profile.audio.structure == expected
+
+
+def test_orchestrator_writes_section_audit_json(tmp_path):
+    spans = [_chord_span(bar, "Am" if bar <= 8 else "C") for bar in range(1, 17)]
+    grid = TempoGrid(
+        tempo=TempoProfile(primary_bpm=120.0, confidence=0.8, beat_grid_confidence=0.85, bar_grid_confidence=0.8),
+        meter=MeterProfile(),
+        beat_times=[index * 0.5 for index in range(64)],
+        bar_times=[float((bar - 1) * 2) for bar in range(1, 17)],
+    )
+    analyzer = _analyzer(tmp_path, structure_confidence=0.25)
+    analyzer.tempo_estimator = lambda mix_path, drum_path=None: grid
+    analyzer.chord_estimator = lambda path, bar_times, duration, **kwargs: spans
+    quiet = [pytest.importorskip("numpy").array([0.1, 0.1])] * 8
+    loud = [pytest.importorskip("numpy").array([0.9, 0.9])] * 8
+    analyzer.multimodal_feature_provider = lambda stems, bars, duration: MultimodalBarFeatures(
+        by_stem={"vocals": quiet + loud, "drums": quiet + loud}
+    )
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    audit_path = tmp_path / "analysis" / "ref_test" / "section_audit.json"
+    assert audit_path.exists()
+    audit = json.loads(audit_path.read_text())
+    assert audit["metadata"]["reference_id"] == "ref_test"
+    assert audit["metadata"]["bar_count"] == 16
+    assert audit["harmony"]["key_candidates"][0]["key"] == "A minor"
+    assert audit["harmony"]["main_progression"] == ["Am", "F", "C", "G"]
+    assert any(candidate["decision"] == "accepted" for candidate in audit["boundary_candidates"])
+    assert any(candidate["decision"] == "rejected" for candidate in audit["boundary_candidates"])
+    assert all("reason" in candidate for candidate in audit["boundary_candidates"])
+    assert audit["final_sections"][0]["source"] == "multimodal"
+    assert [section.label for section in profile.audio.structure.sections] == ["A", "B"]
+
+
+def test_orchestrator_succeeds_when_section_audit_write_fails(tmp_path):
+    analyzer = _analyzer(tmp_path)
+    analyzer.audit_writer = lambda path, payload: (_ for _ in ()).throw(OSError("disk full"))
+
+    profile = analyzer.analyze(_source(tmp_path))
+
+    assert profile.audio is not None
+    assert any(note.code == "section_audit_unavailable" for note in profile.audio.analysis_notes)
+
+
+def test_orchestrator_emits_started_and_completed_stage_timings(tmp_path):
+    ticks = iter(float(value) for value in range(20))
+    events: list[tuple[str, dict]] = []
+    analyzer = _analyzer(tmp_path)
+    analyzer.clock = lambda: next(ticks)
+    analyzer.multimodal_feature_provider = lambda stems, bars, duration: MultimodalBarFeatures()
+
+    analyzer.analyze(
+        _source(tmp_path),
+        progress=lambda stage, message, **details: events.append((stage, details)),
+    )
+
+    expected_stages = [
+        "separating_stems",
+        "building_harmonic_source",
+        "estimating_tempo_grid",
+        "estimating_key",
+        "estimating_chords",
+        "extracting_stem_features",
+        "detecting_structure",
+    ]
+    assert [stage for stage, details in events if details["status"] == "started"] == expected_stages
+    assert [stage for stage, details in events if details["status"] == "completed"] == expected_stages
+    assert all(
+        details["elapsed_seconds"] == 1.0
+        for _stage, details in events
+        if details["status"] == "completed"
+    )
 
 
 def test_non_local_source_is_rejected(tmp_path):
