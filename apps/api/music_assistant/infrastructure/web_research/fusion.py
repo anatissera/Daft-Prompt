@@ -166,6 +166,8 @@ def _build_conflicts(claims: list[EvidenceClaim]) -> list[EvidenceConflict]:
     for section, section_claims in chord_claims_by_section.items():
         if _distinct_chord_values(section_claims) <= 1:
             continue
+        if _same_source_extended_repeat(section_claims):
+            continue
         has_capo_hint = any("capo" in " ".join(claim.notes).lower() for claim in section_claims)
         conflicts.append(
             EvidenceConflict(
@@ -237,7 +239,7 @@ def _aggregate_label(claims: list[EvidenceClaim]) -> str:
     if not claims:
         return "missing"
     average = sum(claim.confidence for claim in claims) / len(claims)
-    if len(claims) > 1:
+    if len({claim.source_name for claim in claims}) > 1:
         average = min(0.95, average + 0.05)
     return _confidence_word(average)
 
@@ -266,6 +268,52 @@ def _distinct_chord_values(claims: list[EvidenceClaim]) -> int:
 
 def _normalize_chord_progression(value: str) -> str:
     return re.sub(r"[^a-g0-9#bmmajindimsusaugadd/]+", " ", value.lower()).strip()
+
+
+def _same_source_extended_repeat(claims: list[EvidenceClaim]) -> bool:
+    sources = {claim.source_name for claim in claims}
+    if len(sources) != 1:
+        return False
+    cores = {_progression_core_signature(claim.normalized_value or claim.value) for claim in claims}
+    cores.discard("")
+    return len(cores) == 1
+
+
+def _progression_core_signature(value: str) -> str:
+    bars = _bar_segments(value)
+    repeat = _find_repeating_cell(tuple(bars))
+    if repeat is not None:
+        cell, _, _ = repeat
+        return " | ".join(_normalize_bar(bar) for bar in cell)
+    return " | ".join(_normalize_bar(bar) for bar in bars[:8])
+
+
+def _bar_segments(value: str) -> list[str]:
+    return [
+        " ".join(segment.strip().split())
+        for segment in value.split("|")
+        if segment.strip()
+    ]
+
+
+def _find_repeating_cell(bars: tuple[str, ...]) -> tuple[tuple[str, ...], int, tuple[str, ...]] | None:
+    for cell_size in [1, 2, 4, 8]:
+        if len(bars) < cell_size * 2:
+            continue
+        cell = bars[:cell_size]
+        repeat_count = 1
+        cursor = cell_size
+        while tuple(bars[cursor: cursor + cell_size]) == cell:
+            repeat_count += 1
+            cursor += cell_size
+        covered = repeat_count * cell_size
+        if repeat_count >= 2 and covered >= min(len(bars), cell_size * 2):
+            return cell, repeat_count, bars[covered:]
+    return None
+
+
+def _normalize_bar(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-g0-9#bmmajindimsusaugadd()/]+", " ", value.lower())).strip()
 
 
 def _group_claims(pages: list[ResearchPage]) -> dict[str, list[tuple[str, float]]]:

@@ -139,3 +139,95 @@ def test_answer_music_question_uses_knowledge_tools_before_audio_fallback():
     assert answer.reference_id == "ref_space"
     assert "probably Bm7 - E9 - Amaj7" in answer.answer
     assert any("chord_progression" in item for item in answer.evidence)
+
+
+def test_answer_music_question_combines_key_and_chords_from_knowledge():
+    answer = AnswerMusicQuestion().execute(
+        "What key is it in and what chords are in the chorus?",
+        reference_with_knowledge(),
+    )
+
+    assert "key is likely A minor" in answer.answer
+    assert "probably Bm7 - E9 - Amaj7" in answer.answer
+    assert any("key:A minor" in item for item in answer.evidence)
+    assert any("chord_progression:chorus" in item for item in answer.evidence)
+
+
+def test_query_tools_map_chorus_to_refrain_section_aliases():
+    profile = knowledge_profile()
+    profile.evidence_claims = [claim for claim in profile.evidence_claims if claim.section_name != "chorus"]
+    refrain = claim("refrain_chords", "chord_progression", "Ebm7 - Fm7 - Bbm7", section="refrão", confidence=0.7)
+    profile.evidence_claims.append(refrain)
+
+    chords = ProfileQueryTools().chords(profile, section_name="chorus")
+
+    assert "Ebm7 - Fm7 - Bbm7" in chords.answer
+    assert any("chord_progression:refrão" in item for item in chords.evidence)
+
+
+def test_query_tools_summarize_repeated_two_bar_chorus_patterns():
+    profile = knowledge_profile()
+    profile.conflicts = []
+    profile.evidence_claims = [
+        claim("key", "key", "Db", confidence=0.62),
+        claim(
+            "chorus_chords",
+            "chord_progression",
+            "Ebm7(9) | Fm7(9) Bbm7(9) | Ebm7(9) | Fm7(9) Bbm7(9) | Ab7",
+            section="chorus",
+            confidence=0.64,
+            source="CifraClub",
+        ),
+        claim(
+            "chorus_extended",
+            "chord_progression",
+            (
+                "Ebm7(9) | Fm7(9) Bbm7(9) | Ebm7(9) | Fm7(9) Bbm7(9) | "
+                "Ebm7(9) | Fm7(9) Bbm7(9) | Ebm7(9) | Fm7(9) Bbm7(9)"
+            ),
+            section="chorus",
+            confidence=0.64,
+            source="CifraClub",
+        ),
+    ]
+
+    answer = AnswerMusicQuestion().execute(
+        "What key is it in and what chords are in the chorus?",
+        reference_with_knowledge().model_copy(update={"knowledge": profile}),
+    )
+
+    assert "key is likely Db" in answer.answer
+    assert "repeated 2-bar pattern" in answer.answer
+    assert "Ebm7(9) | Fm7(9) Bbm7(9)" in answer.answer
+    assert "repeated 2 times" in answer.answer
+    assert "Ab7 turnaround" in answer.answer
+    assert "extended chorus repeat" in answer.answer
+    assert len(answer.answer) < 360
+    assert all(len(item) <= 180 for item in answer.evidence)
+
+
+def test_query_tools_summarize_one_bar_vamps_and_literal_fallbacks():
+    profile = knowledge_profile()
+    profile.evidence_claims = [
+        claim("vamp", "chord_progression", "Am7 | Am7 | Am7 | Am7", section="verse", confidence=0.7),
+    ]
+
+    vamp = ProfileQueryTools().chords(profile, section_name="verse")
+
+    assert "1-bar vamp" in vamp.answer
+    assert "repeated 4 times" in vamp.answer
+
+    profile.evidence_claims = [
+        claim(
+            "through_composed",
+            "chord_progression",
+            "Am7 | D9 | Gmaj7 | Cmaj7 | F#m7b5 | B7 | Em7 | A7 | Dm7 | G7",
+            section="verse",
+            confidence=0.7,
+        ),
+    ]
+
+    literal = ProfileQueryTools().chords(profile, section_name="verse")
+
+    assert "starts Am7 | D9 | Gmaj7 | Cmaj7 | F#m7b5 | B7 | Em7 | A7" in literal.answer
+    assert "continues beyond that" in literal.answer
