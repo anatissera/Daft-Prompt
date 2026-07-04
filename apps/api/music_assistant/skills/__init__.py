@@ -1,11 +1,31 @@
-"""Deterministic composition skills used by the instrument agent for efficiency.
+"""Deterministic composition skills the LLM agents can call.
 
-Only the primitives needed by the current efficiency work live here — `drum_pattern`
-(so drum parts skip the LLM entirely) and `apply_edits` (so revision-round turns
-ship a diff instead of a full note list). Pure functions, no LLM, no I/O.
+Pure functions over music21 + `music_assistant.music` helpers. No SongState reads, no
+LLM calls, no I/O — every skill maps explicit inputs to explicit musical output
+(MIDI pitches, ChordSpans, Notes), which keeps them trivially testable and lets
+the same primitive serve director, instrument, and arbiter agents.
+
+Agent wiring (`@tool` decoration, `bind_tools`) lives at the agent layer; this
+package stays free of LangChain imports.
 """
 
 from .edits import EditFailure, NoteEdit, apply_edits
-from .rhythm import drum_pattern
+from .harmony import fit_to_range, scale_degrees, transpose, voice_lead
+from .melody import melodic_contour
+from .progression import suggest_chord_progression, suggest_form
+from .rhythm import drum_pattern, quantize_rhythm
 
-__all__ = ["EditFailure", "NoteEdit", "apply_edits", "drum_pattern"]
+__all__ = [
+    "EditFailure",
+    "NoteEdit",
+    "apply_edits",
+    "fit_to_range",
+    "scale_degrees",
+    "transpose",
+    "voice_lead",
+    "melodic_contour",
+    "suggest_chord_progression",
+    "suggest_form",
+    "drum_pattern",
+    "quantize_rhythm",
+]
