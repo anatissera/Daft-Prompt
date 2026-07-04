@@ -302,12 +302,39 @@ def test_single_drum_kit_is_left_unchanged():
 
 
 def test_director_prompt_contains_key_musical_concepts():
-    messages = _prompt("funk like Jamiroquai")
+    messages = _prompt("funk like Jamiroquai", [])
     system_text = next(m for role, m in messages if role == "system")
-    human_text = next(m for role, m in messages if role == "human")
+    human_texts = [m for role, m in messages if role == "human"]
     # verify the prompt requests the new fields
     assert "chord progression" in system_text.lower()
     assert "playing_style" in system_text or "playing style" in system_text.lower()
     assert "composition_group" in system_text or "composition group" in system_text.lower()
     assert "energy" in system_text.lower()
-    assert "Jamiroquai" in human_text
+    assert any("Jamiroquai" in t for t in human_texts)
+
+
+def test_director_prompt_includes_style_card_when_examples_present():
+    from music_assistant.corpus.retrieve import LakhExample
+
+    examples = [
+        LakhExample(
+            track_id="TR001",
+            genre="reggaeton",
+            key="A minor",
+            tempo=92.0,
+            progression=["Am", "F", "C", "G"],
+            density_by_role={"bass": 4.0, "drums": 8.0},
+            roles=["bass", "drums", "synth_lead"],
+        )
+    ]
+    messages = _prompt("reggaeton perreo", examples)
+    joined = "\n".join(m for role, m in messages if role == "human")
+    assert "Canonical examples" in joined
+    assert "Am" in joined and "F" in joined
+    assert "reggaeton perreo" in joined  # user prompt still there
+
+
+def test_director_prompt_omits_style_card_when_no_examples():
+    messages = _prompt("funk", [])
+    joined = "\n".join(m for role, m in messages if role == "human")
+    assert "Canonical examples" not in joined

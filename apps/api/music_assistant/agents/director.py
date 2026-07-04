@@ -13,6 +13,7 @@ from typing import Literal, Optional
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
+from ..corpus.retrieve import LakhExample, retrieve_style_examples
 from ..domain.errors import OffTopicRequest
 from ..domain.song_state import (
     ChordSpan,
@@ -120,8 +121,35 @@ Otherwise set off_topic=false and, given a style description, produce a complete
 Do not use a fixed genre-to-instrument mapping. Reason about what genuinely fits the requested style."""
 
 
-def _prompt(style: str) -> list[tuple[str, str]]:
-    return [("system", _SYSTEM), ("human", f"Style: {style}")]
+def _style_card(examples: list[LakhExample]) -> str:
+    """Compact formatting of retrieved corpus exemplars for injection into the
+    Director prompt. Guidance only — the Director still emits its own final
+    arrangement. When `examples` is empty (no corpus present), returns "" so
+    the prompt is unchanged from today's behaviour."""
+    if not examples:
+        return ""
+    lines = ["Canonical examples for this style (guidance, not override):"]
+    for i, ex in enumerate(examples, 1):
+        prog = " | ".join(ex.progression) if ex.progression else "(none)"
+        roles = ", ".join(ex.roles) if ex.roles else "(unknown)"
+        lines.append(
+            f"  {i}. key={ex.key}, tempo={ex.tempo:.0f}, progression: {prog}, "
+            f"instrumentation: {roles}"
+        )
+    lines.append(
+        "Use these as reference for progression idiom and instrumentation. "
+        "Do not copy verbatim; adapt to the requested style."
+    )
+    return "\n".join(lines)
+
+
+def _prompt(style: str, examples: list[LakhExample]) -> list[tuple[str, str]]:
+    messages: list[tuple[str, str]] = [("system", _SYSTEM)]
+    card = _style_card(examples)
+    if card:
+        messages.append(("human", card))
+    messages.append(("human", f"Style: {style}"))
+    return messages
 
 
 _ID_SAFE_RE = re.compile(r"[^a-z0-9]+")
@@ -305,7 +333,11 @@ def run_director(style: str, llm=None) -> SongState:
 
         llm = make_llm("director")
     structured = llm.with_structured_output(DirectorOutput)
-    out: DirectorOutput = structured.invoke(_prompt(style))
+    try:
+        examples = retrieve_style_examples(style, energy="medium", n=3)
+    except Exception:
+        examples = []
+    out: DirectorOutput = structured.invoke(_prompt(style, examples))
     if out.off_topic:
         raise OffTopicRequest(out.refusal.strip() or _DEFAULT_REFUSAL)
     return arrangement_to_song(style, out)
