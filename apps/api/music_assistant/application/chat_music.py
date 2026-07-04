@@ -53,6 +53,7 @@ class ChatToolDecision(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     reference_id: Optional[str] = None
+    reference_ids: list[str] = Field(default_factory=list)
 
 
 class ChatArtifacts(BaseModel):
@@ -136,9 +137,12 @@ class ChatMusic:
             if request.reference_id
             else None
         )
+        profiles = _profiles_from_request(request, self.reference_store)
+        if profile is None and profiles:
+            profile = profiles[0]
 
         if self.chat_model is not None:
-            return self._handle_with_llm_tools(request, message, profile)
+            return self._handle_with_llm_tools(request, message, profile, profiles)
 
         intent = self._classify(message, has_reference=profile is not None)
         return self._execute_deterministic_intent(intent, message, profile)
@@ -148,6 +152,7 @@ class ChatMusic:
         request: ChatRequest,
         message: str,
         profile: ReferenceProfile | None,
+        profiles: list[ReferenceProfile],
     ) -> ChatResponse:
         decision = self.chat_model.with_structured_output(ChatToolDecision).invoke(
             _chat_decision_messages(message, profile)
@@ -196,6 +201,8 @@ class ChatMusic:
                 answer=answer,
             )
         if decision.action == "compose_from_reference":
+            if len(profiles) > 1:
+                return self._compose_from_references(decision.composition_request or message, profiles)
             if profile is None:
                 return ChatResponse(
                     intent="clarify",
@@ -248,6 +255,29 @@ class ChatMusic:
         return ChatResponse(
             intent="compose",
             reply=_compose_reply(song, source),
+            compose=ChatComposeResult(song=song, source=source),
+        )
+
+    def _compose_from_references(self, message: str, profiles: list[ReferenceProfile]) -> ChatResponse:
+        knowledge_profiles = [profile.knowledge for profile in profiles if profile.knowledge is not None]
+        if len(knowledge_profiles) != len(profiles):
+            return ChatResponse(
+                intent="clarify",
+                reply="All selected references need song knowledge profiles before I can mix traits.",
+                clarification="Research or analyze the missing references first.",
+            )
+        built = BuildCompositionBrief().execute(message, knowledge_profiles)
+        if built.clarification:
+            return ChatResponse(intent="clarify", reply=built.clarification, clarification=built.clarification)
+        assert built.brief is not None
+        try:
+            song, source = self.compose_song.compose(built.brief)
+        except OffTopicRequest as refusal:
+            return _off_topic_response(refusal)
+        return ChatResponse(
+            intent="compose_from_reference",
+            reply=_compose_reply(song, source, reference=profiles[0]),
+            reference_id=profiles[0].reference_id,
             compose=ChatComposeResult(song=song, source=source),
         )
 
@@ -345,6 +375,18 @@ def _style_with_reference(message: str, profile: ReferenceProfile) -> str:
     if not traits:
         return f"{prefix} inspired by reference {profile.source.label}"
     return f"{prefix} inspired by reference {profile.source.label}: " + ", ".join(traits)
+
+
+def _profiles_from_request(request: ChatRequest, store: ReferenceStore) -> list[ReferenceProfile]:
+    ids = list(request.reference_ids)
+    if request.reference_id and request.reference_id not in ids:
+        ids.insert(0, request.reference_id)
+    profiles: list[ReferenceProfile] = []
+    for reference_id in ids:
+        profile = store.get(reference_id)
+        if profile is not None:
+            profiles.append(profile)
+    return profiles
 
 
 def _chat_decision_messages(message: str, profile: ReferenceProfile | None) -> list[dict[str, str]]:

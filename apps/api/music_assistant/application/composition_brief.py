@@ -25,6 +25,9 @@ class BuildCompositionBrief:
                     "Which traits should I transfer from each reference: drums, harmony, form, energy, or timbre?"
                 )
             )
+        tempo_conflict = _requested_tempo_conflict(normalized, profiles)
+        if tempo_conflict:
+            return BriefBuildResult(clarification=tempo_conflict)
 
         brief = CompositionBrief(
             brief_id=_brief_id(cleaned, profiles),
@@ -46,6 +49,8 @@ class BuildCompositionBrief:
             brief.transfer_policy[profile.profile_id] = dimensions
             if "rhythmic_guidance" in dimensions:
                 grooves = _claim_values(profile, {"groove", "instrumentation"}, words={"drum", "groove", "kick", "hat"})
+                if _has_low_confidence_requested_trait(profile, {"groove", "instrumentation"}):
+                    brief.uncertainty_notes.append(f"Requested drum/groove traits from {profile.identity.title} have low confidence.")
                 if grooves:
                     brief.rhythmic_guidance[profile.profile_id] = grooves
                 else:
@@ -89,6 +94,8 @@ def _requested_dimensions(normalized: str) -> list[str]:
     dimensions: list[str] = []
     if any(word in normalized for word in ["drum", "groove", "rhythm", "beat"]):
         dimensions.append("rhythmic_guidance")
+    if "tempo" in normalized or "bpm" in normalized:
+        dimensions.append("tempo")
     if any(word in normalized for word in ["harmony", "chord", "progression", "key"]):
         dimensions.append("harmonic_guidance")
     if any(word in normalized for word in ["form", "section", "structure", "energy"]):
@@ -122,6 +129,29 @@ def _ambiguous_multi_reference(normalized: str, profiles: list[SongKnowledgeProf
     return any(profile.conflicts for profile in profiles) or "like these" in normalized or "like both" in normalized
 
 
+def _requested_tempo_conflict(normalized: str, profiles: list[SongKnowledgeProfile]) -> str | None:
+    if len(profiles) < 2 or ("tempo" not in normalized and "bpm" not in normalized):
+        return None
+    tempos: list[tuple[str, float]] = []
+    for profile in profiles:
+        for claim in profile.evidence_claims:
+            if claim.claim_type != "tempo":
+                continue
+            match = re.search(r"(\d+(?:\.\d+)?)", claim.value)
+            if match:
+                tempos.append((profile.identity.title, float(match.group(1))))
+            break
+    if len(tempos) >= 2 and max(value for _, value in tempos) - min(value for _, value in tempos) > 8:
+        labels = ", ".join(f"{title}={tempo:g} BPM" for title, tempo in tempos)
+        return f"The requested tempo conflicts across references ({labels}). Which tempo should I use?"
+    return None
+
+
+def _has_low_confidence_requested_trait(profile: SongKnowledgeProfile, claim_types: set[str]) -> bool:
+    claims = [claim for claim in profile.evidence_claims if claim.claim_type in claim_types]
+    return bool(claims) and max(claim.confidence for claim in claims) < 0.5
+
+
 def _claim_values(
     profile: SongKnowledgeProfile,
     claim_types: set[str],
@@ -131,6 +161,8 @@ def _claim_values(
     values: list[str] = []
     for claim in profile.evidence_claims:
         if claim.claim_type not in claim_types:
+            continue
+        if claim.confidence < 0.5:
             continue
         if words and not any(word in claim.value.lower() for word in words):
             continue
