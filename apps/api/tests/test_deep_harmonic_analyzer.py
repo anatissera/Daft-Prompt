@@ -71,6 +71,7 @@ def _analyzer(
     tuning_deviation=None,
     section_structure=None,
     chord_confidence=0.8,
+    stem_listening=None,
 ) -> DeepHarmonicAnalyzer:
     stems = stems if stems is not None else _full_stems()
     chord_spans = [
@@ -126,6 +127,11 @@ def _analyzer(
             {name: 0.5 for name in stem_paths} for _ in bar_times
         ],
         multimodal_feature_provider=None,
+        stem_listening_provider=(
+            (lambda stem_paths, bar_times, beat_times, duration: stem_listening)
+            if stem_listening is not None
+            else None
+        ),
         duration_provider=lambda path: 8.0,
     )
 
@@ -461,3 +467,36 @@ def test_non_local_source_is_rejected(tmp_path):
 
     with pytest.raises(ValueError, match="local audio path"):
         analyzer.analyze(remote)
+
+
+def test_stem_listening_profiles_attach_to_stem_profiles(tmp_path):
+    from music_assistant.domain.audio_profile import RhythmProfile, StemDynamics, TimbreProfile
+    from music_assistant.infrastructure.mir.listening_features import StemListening
+
+    listening = {
+        "drums": StemListening(
+            timbre=TimbreProfile(brightness="bright", noisiness="noisy", interpretation="crisp kit"),
+            rhythm=RhythmProfile(feel="swung", swing_ratio=1.9, density="busy", interpretation="swung, busy"),
+            dynamics=StemDynamics(interpretation="steady", confidence=0.5),
+        )
+    }
+    profile = _analyzer(tmp_path, stem_listening=listening).analyze(_source(tmp_path))
+
+    drums = next(s for s in profile.audio.stems if s.name == "drums")
+    assert drums.timbre is not None and drums.timbre.brightness == "bright"
+    assert drums.rhythm is not None and drums.rhythm.feel == "swung"
+    assert drums.dynamics is not None and drums.dynamics.interpretation == "steady"
+    bass = next(s for s in profile.audio.stems if s.name == "bass")
+    assert bass.timbre is None  # untouched stems stay lean
+
+
+def test_empty_stem_listening_adds_an_analysis_note(tmp_path):
+    profile = _analyzer(tmp_path, stem_listening={}).analyze(_source(tmp_path))
+    codes = {note.code for note in profile.audio.analysis_notes}
+    assert "stem_listening_unavailable" in codes
+
+
+def test_disabled_stem_listening_stays_silent(tmp_path):
+    profile = _analyzer(tmp_path).analyze(_source(tmp_path))
+    codes = {note.code for note in profile.audio.analysis_notes}
+    assert "stem_listening_unavailable" not in codes

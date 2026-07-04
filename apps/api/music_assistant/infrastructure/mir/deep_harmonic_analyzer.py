@@ -38,6 +38,7 @@ from music_assistant.infrastructure.mir.demucs_separator import DemucsSeparator
 from music_assistant.infrastructure.mir.harmonic_source import build_harmonic_source
 from music_assistant.infrastructure.mir.key_features import estimate_key, estimate_tuning_deviation
 from music_assistant.infrastructure.mir.librosa_analyzer import _clamp, _prepare_librosa_import
+from music_assistant.infrastructure.mir.listening_features import analyze_stem_listening
 from music_assistant.infrastructure.mir.multimodal_features import (
     MultimodalBarFeatures,
     extract_multimodal_features,
@@ -80,6 +81,7 @@ class DeepHarmonicAnalyzer:
         section_detector: Callable | None = detect_sections_from_bar_signals,
         multimodal_feature_provider: Callable | None = extract_multimodal_features,
         multimodal_section_detector: Callable | None = detect_multimodal_sections,
+        stem_listening_provider: Callable | None = analyze_stem_listening,
         energy_provider: Callable | None = per_bar_energy,
         stem_activity_provider: Callable | None = per_stem_activity_by_bar,
         tuning_deviation_provider: Callable[[str], float | None] | None = estimate_tuning_deviation,
@@ -99,6 +101,7 @@ class DeepHarmonicAnalyzer:
         self.section_detector = section_detector
         self.multimodal_feature_provider = multimodal_feature_provider
         self.multimodal_section_detector = multimodal_section_detector
+        self.stem_listening_provider = stem_listening_provider
         self.energy_provider = energy_provider
         self.stem_activity_provider = stem_activity_provider
         self.tuning_deviation_provider = tuning_deviation_provider
@@ -246,6 +249,20 @@ class DeepHarmonicAnalyzer:
             multimodal_features = _safe_multimodal_features(
                 self.multimodal_feature_provider, stems, bar_times, duration
             )
+            stem_listening = _safe_stem_listening(
+                self.stem_listening_provider, stems, bar_times, grid.beat_times, duration
+            )
+            if self.stem_listening_provider is not None and stems and not stem_listening:
+                notes.append(
+                    AnalysisNote(
+                        code="stem_listening_unavailable",
+                        message=(
+                            "Per-stem timbre, groove, and dynamics could not be "
+                            "extracted for this recording."
+                        ),
+                        severity="info",
+                    )
+                )
 
         with _timed_stage(
             progress,
@@ -393,7 +410,7 @@ class DeepHarmonicAnalyzer:
             overall_confidence=harmony.confidence,
             chord_estimates=_legacy_chord_estimates(chord_spans),
             sections=_legacy_sections(structure),
-            stems=[_stem_profile(stem) for stem in stems],
+            stems=[_stem_profile(stem, stem_listening.get(stem.name)) for stem in stems],
             tempo=grid.tempo,
             meter=grid.meter,
             harmony=harmony,
@@ -574,14 +591,35 @@ def _legacy_sections(structure) -> list[SectionProfile]:
     ]
 
 
-def _stem_profile(stem) -> StemProfile:
+def _stem_profile(stem, listening=None) -> StemProfile:
     return StemProfile(
         name=stem.name,
         role=stem.role,
         artifact_uri=stem.path,
         available=stem.name in {"drums", "bass", "vocals", "other"},
         confidence=stem.confidence,
+        timbre=listening.timbre if listening else None,
+        rhythm=listening.rhythm if listening else None,
+        dynamics=listening.dynamics if listening else None,
     )
+
+
+def _safe_stem_listening(
+    provider: Callable | None, stems, bar_times, beat_times, duration: float
+) -> dict:
+    if provider is None or not bar_times:
+        return {}
+    stem_paths = {
+        stem.name: stem.path
+        for stem in stems
+        if stem.name in {"drums", "bass", "vocals", "other"}
+    }
+    if not stem_paths:
+        return {}
+    try:
+        return provider(stem_paths, bar_times, beat_times, duration)
+    except Exception:
+        return {}
 
 
 def _section_audit_payload(
