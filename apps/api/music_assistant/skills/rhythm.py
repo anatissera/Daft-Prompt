@@ -1,5 +1,9 @@
-"""Deterministic drum-pattern generator used by the drum shortcut in the
-instrument agent — bypasses the LLM entirely for percussion parts.
+"""Rhythm skills: grid quantization and drum pattern generation.
+
+`drum_pattern` returns ready-to-use `Note` objects on General MIDI drum keys, so
+the drum agent can ship a known-good pattern verbatim instead of generating
+percussion notes one by one. `quantize_rhythm` is a cleanup pass over agent-
+generated rhythms that snaps onsets and durations to a beat grid.
 """
 
 from __future__ import annotations
@@ -7,6 +11,33 @@ from __future__ import annotations
 from ..domain.song_state import Note
 from ..music.theory import beats_per_bar
 from . import _tables
+
+
+def quantize_rhythm(
+    onsets: list[tuple[float, float]],
+    grid: float,
+    bar_beats: float,
+) -> list[tuple[float, float]]:
+    """Snap `(start_beat, duration)` pairs to multiples of `grid` beats.
+
+    Onsets are clamped to `[0, bar_beats)`; durations are clamped to at least
+    one grid step and at most the remaining bar so quantized notes never
+    overflow. Invalid grid (`<= 0`) returns the input unchanged.
+    """
+    if grid <= 0:
+        return list(onsets)
+    out: list[tuple[float, float]] = []
+    for start, dur in onsets:
+        snapped_start = round(start / grid) * grid
+        if snapped_start < 0:
+            snapped_start = 0.0
+        if snapped_start >= bar_beats:
+            snapped_start = bar_beats - grid
+        snapped_dur = max(grid, round(dur / grid) * grid)
+        if snapped_start + snapped_dur > bar_beats:
+            snapped_dur = bar_beats - snapped_start
+        out.append((round(snapped_start, 6), round(snapped_dur, 6)))
+    return out
 
 
 def drum_pattern(
@@ -17,9 +48,11 @@ def drum_pattern(
 ) -> list[Note]:
     """Tile a hand-curated drum pattern across `num_bars`.
 
-    Style resolution: direct table match → alias map → fallback to `rock_basic`.
-    Hits that would fall past the bar's beat count on an odd meter are dropped
-    so the pattern degrades gracefully instead of corrupting the bar.
+    Resolves `style` against the pattern table directly first, then against an
+    alias map (so "house" → "four_on_floor"); falls back to "rock_basic" if
+    nothing matches, since that pattern fits the widest set of contexts. Hits
+    whose `start_beat` would land past the bar's beat count are dropped so the
+    pattern degrades gracefully on odd meters rather than corrupting the bar.
     """
     if num_bars <= 0:
         return []
@@ -44,3 +77,6 @@ def drum_pattern(
                 dur=clipped_dur, velocity=velocity,
             ))
     return notes
+
+
+__all__ = ["quantize_rhythm", "drum_pattern"]
