@@ -14,6 +14,12 @@ from langsmith import get_current_run_tree, traceable
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
+from ..corpus.retrieve import (
+    GroovePattern,
+    LakhExample,
+    retrieve_groove,
+    retrieve_style_examples,
+)
 from ..infrastructure.llm import LLMError
 from ..music.theory import beats_per_bar, chord_tone_names
 from ..music.validators import ValidationIssue, errors_only, validate_song
@@ -65,6 +71,45 @@ def _section_map_text(sections: list[Section]) -> str:
     return "Song form:\n" + "\n".join(lines)
 
 
+def _groove_reference_text(groove: Optional[GroovePattern]) -> str:
+    """Format a retrieved drum groove as a compact per-channel grid the model
+    can adapt (not copy). Empty string when nothing was retrieved so the prompt
+    stays unchanged in fallback."""
+    if not groove or not groove.pattern_by_channel:
+        return ""
+    lines = [
+        f"Reference groove for this style ({groove.style}, ~{groove.bpm:.0f} bpm, "
+        f"{groove.type}) — adapt in feel and idiom, do not copy verbatim:"
+    ]
+    for channel, grid in groove.pattern_by_channel.items():
+        # collapse very long grids so many bars still fit on one line
+        display = grid if len(grid) <= 64 else (grid[:64] + "...")
+        lines.append(f"  {channel:<12} {display}")
+    return "\n".join(lines)
+
+
+def _melodic_reference_text(
+    example: Optional[LakhExample], roster_item: RosterItem
+) -> str:
+    """Format a role-matched few-shot from a corpus track. Compact by design:
+    progression + role hint + typical density, not raw notes. Empty when there is
+    no example or the instrument's role has no matching corpus entry."""
+    if example is None or not example.progression:
+        return ""
+    role_hint = ""
+    for role in example.roles:
+        if role in roster_item.instrument.lower() or role in roster_item.role.lower():
+            density = example.density_by_role.get(role)
+            if density is not None:
+                role_hint = f" Peers in this style average ~{density:.1f} notes/bar for {role}."
+            break
+    prog = " | ".join(example.progression[:8])
+    return (
+        f"How this style typically sits (from a same-genre reference track "
+        f"in {example.key}, ~{example.tempo:.0f} bpm): progression {prog}.{role_hint}"
+    )
+
+
 def _peer_context(roster: list[RosterItem], self_id: str, peer_summaries: dict[str, str]) -> str:
     lines = [
         f"- {r.id} ({r.instrument}, {r.role}): {peer_summaries.get(r.id, 'not composed yet')}"
@@ -84,6 +129,7 @@ def _system_prompt(header: Header, roster_item: RosterItem) -> str:
     playing_style_block = (
         f"\nPlaying style: {roster_item.playing_style}" if roster_item.playing_style else ""
     )
+    reference_block = _style_reference_block(header, roster_item)
     return (
         f"/no_think You are the {roster_item.instrument} player ({roster_item.role}) in a "
         f"{header.genre} ensemble.\n\n"
@@ -95,7 +141,8 @@ def _system_prompt(header: Header, roster_item: RosterItem) -> str:
         f"- your MIDI pitch range: {roster_item.midi_range[0]}-{roster_item.midi_range[1]}{drum_note}\n\n"
         f"{_section_map_text(header.sections)}\n\n"
         f"{_chord_map_text(header.chord_progression)}"
-        f"{playing_style_block}\n\n"
+        f"{playing_style_block}"
+        f"{reference_block}\n\n"
         "Compose your full part for the whole song: a list of notes with absolute bar "
         "+ start_beat (0-indexed within the bar), MIDI pitch (null = rest), duration in "
         "beats, and velocity (0-127). Shape your dynamics to the section energy levels "
@@ -103,6 +150,22 @@ def _system_prompt(header: Header, roster_item: RosterItem) -> str:
         "bar/beat bounds. Also return a short notes_summary other musicians can read. "
         "Respond directly with the structured output only. Do not think out loud or write any reasoning."
     )
+
+
+def _style_reference_block(header: Header, roster_item: RosterItem) -> str:
+    """Retrieve a per-instrument style reference (drum groove or melodic hint)
+    and format it into a prompt block. Fails silent on any retrieval error so a
+    corpus outage never blocks composition."""
+    try:
+        if roster_item.is_drum:
+            groove = retrieve_groove(header.genre, header.tempo_bpm, energy="medium")
+            text = _groove_reference_text(groove)
+        else:
+            examples = retrieve_style_examples(header.genre, energy="medium", n=1)
+            text = _melodic_reference_text(examples[0] if examples else None, roster_item)
+    except Exception:
+        return ""
+    return f"\n\n{text}" if text else ""
 
 
 def _repair_prompt(issues: list[ValidationIssue]) -> str:
