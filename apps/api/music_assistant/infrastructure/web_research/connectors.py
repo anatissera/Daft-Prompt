@@ -7,7 +7,7 @@ import re
 from urllib.parse import quote_plus
 
 from music_assistant.domain.audio_profile import EvidenceClaim
-from music_assistant.infrastructure.web_research.fetch import UrlLibPageFetcher
+from music_assistant.infrastructure.web_research.fetch import CurlPageFetcher, FallbackPageFetcher, UrlLibPageFetcher
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_source_connector import (
     ConnectorFailure,
@@ -140,7 +140,11 @@ class SongsterrConnector:
     source_name = "Songsterr"
 
     def __init__(self, *, fetcher: PageFetcher | None = None) -> None:
-        self.fetcher = fetcher or UrlLibPageFetcher()
+        self.fetcher = fetcher or FallbackPageFetcher(
+            primary=UrlLibPageFetcher(),
+            fallback=CurlPageFetcher(),
+            retry_when="HTTP Error 103",
+        )
 
     def collect(self, query: ResolvedSongQuery) -> ConnectorResult:
         url = query.source_url or _songsterr_url(query)
@@ -148,7 +152,7 @@ class SongsterrConnector:
         if failure is not None:
             return failure
 
-        claims = _instrument_tab_claims(html_text, self.source_name, url, confidence=0.55)
+        claims = _songsterr_claims(html_text, self.source_name, url)
         metadata = _page_title(html_text)
         if metadata:
             claims.append(_claim("metadata", f"Songsterr page title: {metadata}", self.source_name, url, 0.5, metadata))
@@ -350,6 +354,79 @@ def _instrument_tab_claims(html_text: str, source_name: str, url: str, *, confid
     if "chords" in haystack or "_chords" in haystack or "-chords" in haystack:
         claims.append(_claim("tab", f"Chords tab available from {source_name}", source_name, url, confidence, "chords"))
     return claims
+
+
+def _songsterr_claims(html_text: str, source_name: str, url: str) -> list[EvidenceClaim]:
+    claims: list[EvidenceClaim] = []
+    result_links = _songsterr_result_links(html_text)
+    if result_links:
+        instruments: list[str] = []
+        for href, label in result_links[:8]:
+            instrument = _songsterr_link_instrument(href, label)
+            if instrument and instrument not in instruments:
+                instruments.append(instrument)
+            tab_label = _songsterr_tab_label(instrument)
+            claims.append(
+                _claim(
+                    "tab",
+                    f"{tab_label} tab available from Songsterr",
+                    source_name,
+                    url,
+                    0.56,
+                    f"{label} ({href})",
+                )
+            )
+            claims.append(
+                _claim(
+                    "metadata",
+                    f"Songsterr result: {label}",
+                    source_name,
+                    url,
+                    0.48,
+                    href,
+                )
+            )
+        if instruments:
+            value = "Available Songsterr result instruments: " + ", ".join(instruments)
+            claims.append(_claim("instrumentation", value, source_name, url, 0.54, value))
+        return claims
+    return _instrument_tab_claims(html_text, source_name, url, confidence=0.55)
+
+
+def _songsterr_result_links(html_text: str) -> list[tuple[str, str]]:
+    links: list[tuple[str, str]] = []
+    for href, body in re.findall(r"<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", html_text, flags=re.IGNORECASE | re.DOTALL):
+        clean_href = html.unescape(href)
+        if not clean_href.startswith("/a/wsa/"):
+            continue
+        label = _visible_text(body)
+        if not label:
+            continue
+        links.append((clean_href, label))
+    return links
+
+
+def _songsterr_link_instrument(href: str, label: str) -> str:
+    haystack = f"{href} {label}".lower()
+    if "bass-tab" in haystack or re.search(r"\bbass\b", haystack):
+        return "bass"
+    if "drum-tab" in haystack or "drums-tab" in haystack or re.search(r"\bdrums?\b", haystack):
+        return "drums"
+    if "piano" in haystack:
+        return "piano"
+    if "guitar" in haystack:
+        return "guitar"
+    return ""
+
+
+def _songsterr_tab_label(instrument: str) -> str:
+    labels = {
+        "bass": "Bass",
+        "drums": "Drum",
+        "piano": "Piano",
+        "guitar": "Guitar",
+    }
+    return labels.get(instrument, "Generic")
 
 
 def _detect_instruments(text: str) -> list[str]:
