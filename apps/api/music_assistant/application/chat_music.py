@@ -15,6 +15,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 from music_assistant.application.answer_music_question import AnswerMusicQuestion, MusicQuestionExplainer
+from music_assistant.application.composition_brief import BuildCompositionBrief
 from music_assistant.application.compose_song import ComposeSong
 from music_assistant.domain.audio_profile import ExplanationAnswer, ReferenceProfile
 from music_assistant.domain.errors import OffTopicRequest
@@ -251,6 +252,27 @@ class ChatMusic:
         )
 
     def _compose_from_reference(self, message: str, profile: ReferenceProfile) -> ChatResponse:
+        if profile.knowledge is not None:
+            built = BuildCompositionBrief().execute(message, [profile.knowledge])
+            if built.clarification:
+                return ChatResponse(
+                    intent="clarify",
+                    reply=built.clarification,
+                    clarification=built.clarification,
+                    reference_id=profile.reference_id,
+                )
+            if built.brief is not None:
+                try:
+                    song, source = self.compose_song.compose(built.brief)
+                except OffTopicRequest as refusal:
+                    return _off_topic_response(refusal)
+                return ChatResponse(
+                    intent="compose_from_reference",
+                    reply=_compose_reply(song, source, reference=profile),
+                    reference_id=profile.reference_id,
+                    compose=ChatComposeResult(song=song, source=source),
+                )
+
         style = _style_with_reference(message, profile)
         try:
             song, source = self.compose_song.compose(style)
