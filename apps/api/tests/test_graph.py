@@ -46,12 +46,11 @@ def test_run_instruments_with_empty_roster_is_a_noop():
 
 
 def test_run_instruments_failure_in_one_part_never_crashes_the_run():
+    # Empty parts are the one error the deterministic sanitize pass cannot fix,
+    # so they exercise the never-crash contract end to end.
     class _BadStructured:
         def invoke(self, _messages):
-            return InstrumentOutput(
-                notes=[Note(bar=0, start_beat=0.0, pitch=200, dur=1.0)],  # invalid MIDI pitch
-                notes_summary="broken",
-            )
+            return InstrumentOutput(notes=[], notes_summary="broken")
 
     class BadLLM:
         def with_structured_output(self, schema):
@@ -60,4 +59,23 @@ def test_run_instruments_failure_in_one_part_never_crashes_the_run():
     song = run_instruments(_song(2), llm=BadLLM())
     assert len(song.parts) == 2  # run still completes for all instruments
     issues = errors_only(validate_song(song))
-    assert any(i.code == "pitch_oob_midi" for i in issues)  # surfaced, not swallowed
+    assert any(i.code == "empty_part" for i in issues)  # surfaced, not swallowed
+
+
+def test_run_instruments_sanitizes_invalid_pitches_instead_of_shipping_them():
+    class _OobStructured:
+        def invoke(self, _messages):
+            return InstrumentOutput(
+                notes=[Note(bar=0, start_beat=0.0, pitch=200, dur=1.0)],  # invalid MIDI pitch
+                notes_summary="broken",
+            )
+
+    class OobLLM:
+        def with_structured_output(self, schema):
+            return _OobStructured()
+
+    song = run_instruments(_song(2), llm=OobLLM())
+    issues = errors_only(validate_song(song))
+    assert not any(i.code in ("pitch_oob_midi", "pitch_out_of_range") for i in issues)
+    for part in song.parts.values():
+        assert all(n.pitch is None or 0 <= n.pitch <= 127 for n in part.notes)

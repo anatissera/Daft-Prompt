@@ -126,7 +126,13 @@ def _turn(pitch=40, summary="ok", requests=None, resolutions=None) -> Instrument
 
 
 def test_batches_execute_in_order_and_peer_summaries_propagate():
-    """The epiano (batch 2) must see drums and bass summaries in peer context."""
+    """The epiano (batch 2) must see drums and bass summaries in peer context.
+
+    Drums never call the LLM (deterministic drum_pattern) and both scripted
+    turns are valid + in range (the sanitize pass would silently fix anything
+    else without spending a repair turn), so the call order is exactly:
+    call 1 = bass (batch 1), call 2 = epiano (batch 2).
+    """
     seen_peer_summaries = {}
 
     class SpyLLM:
@@ -142,18 +148,19 @@ def test_batches_execute_in_order_and_peer_summaries_propagate():
         def invoke(self, messages):
             self.calls += 1
             human_text = "\n".join(m for role, m in messages if role == "human")
-            # record what the epiano sees
-            if "epiano" in human_text or self.calls <= 2:
-                return _turn(40, f"part_{self.calls}")
+            if self.calls == 1:
+                return _turn(40, "bass groove part_1")  # in bass range (28, 55)
             seen_peer_summaries["epiano_saw"] = human_text
-            return _turn(60, "epiano part")
+            return _turn(60, "epiano comp")  # in epiano range (48, 72)
 
     llm = SpyLLM()
     result = run_negotiation("funk", llm=llm)
 
-    # epiano should see drums and bass summaries
+    assert llm.calls == 2  # drums composed without the LLM
+    # epiano should see the bass summary and the drums' deterministic pattern
     assert "epiano_saw" in seen_peer_summaries
-    assert "part_1" in seen_peer_summaries["epiano_saw"] or "part_2" in seen_peer_summaries["epiano_saw"]
+    assert "part_1" in seen_peer_summaries["epiano_saw"]
+    assert "pattern" in seen_peer_summaries["epiano_saw"]
     assert "epiano" in result.parts
     assert "drums" in result.parts
     assert "bass" in result.parts
