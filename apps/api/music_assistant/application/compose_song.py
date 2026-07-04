@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from music_assistant.domain.audio_profile import CompositionBrief
 from music_assistant.domain.errors import OffTopicRequest
 from music_assistant.domain.song_state import SongState
 
@@ -38,21 +39,49 @@ class ComposeSong:
         self.event_streamer = event_streamer
         self.canned = canned
 
-    def compose(self, style: str) -> tuple[SongState, str]:
+    def compose(self, style: str | CompositionBrief) -> tuple[SongState, str]:
         if not self.llm_configured():
             raise ComposeConfigurationError()
-        return self.negotiator(style), "director"
+        prompt = _style_prompt(style)
+        return self.negotiator(prompt), "director"
 
-    def stream(self, style: str) -> Iterator[tuple[dict[str, Any], SongState | None, str]]:
+    def stream(self, style: str | CompositionBrief) -> Iterator[tuple[dict[str, Any], SongState | None, str]]:
         if not self.llm_configured():
             raise ComposeConfigurationError()
         source = "director"
         song = None
-        for event, song_snapshot in self.event_streamer(style):
+        prompt = _style_prompt(style)
+        for event, song_snapshot in self.event_streamer(prompt):
             if song_snapshot is not None:
                 song = song_snapshot
             yield event, song, source
         yield {}, song, source
+
+
+def prompt_from_composition_brief(brief: CompositionBrief) -> str:
+    data = brief.model_dump(mode="json")
+    return (
+        "CompositionBrief\n"
+        f"user_request: {data['user_request']}\n"
+        f"global_constraints: {data['global_constraints']}\n"
+        f"references_used: {data['references_used']}\n"
+        f"transfer_policy: {data['transfer_policy']}\n"
+        f"harmonic_guidance: {data['harmonic_guidance']}\n"
+        f"rhythmic_guidance: {data['rhythmic_guidance']}\n"
+        f"form_guidance: {data['form_guidance']}\n"
+        f"instrumentation: {data['instrumentation']}\n"
+        f"instrument_requests: {data['instrument_requests']}\n"
+        f"timbre_traits: {data['timbre_traits']}\n"
+        f"forbidden_traits: {data['forbidden_traits']}\n"
+        f"uncertainty_notes: {data['uncertainty_notes']}\n"
+        "Use the structured brief as constraints. Preserve existing SongState output."
+    )
+
+
+def _style_prompt(style: str | CompositionBrief) -> str:
+    if isinstance(style, CompositionBrief):
+        return prompt_from_composition_brief(style)
+    return style
 
 
 def _director_event(song: SongState, source: str) -> dict[str, Any]:

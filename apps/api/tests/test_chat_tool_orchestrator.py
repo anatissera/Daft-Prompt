@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
 from music_assistant.application.chat_music import ChatMusic, ChatRequest, ChatToolDecision
+from music_assistant.application.compose_song import prompt_from_composition_brief
 from music_assistant.canned import canned_song
 from music_assistant.domain.audio_profile import (
     EvidenceClaim,
@@ -38,8 +39,9 @@ class RecordingComposer:
         self.calls: list[str] = []
 
     def compose(self, style: str) -> tuple[SongState, str]:
-        self.calls.append(style)
-        return canned_song(style), "canned"
+        prompt = prompt_from_composition_brief(style) if hasattr(style, "brief_id") else style
+        self.calls.append(prompt)
+        return canned_song(prompt), "canned"
 
 
 class FakeResearcher:
@@ -145,6 +147,7 @@ def test_llm_tool_orchestrator_composes_from_reference_with_compact_tool_output(
 
     assert response.intent == "compose_from_reference"
     assert response.compose is not None
+    assert "CompositionBrief" in composer.calls[0]
     assert "make it darker" in composer.calls[0]
     compact_context = model.invoker.calls[0][1]["content"]
     assert "raw html" not in compact_context.lower()
