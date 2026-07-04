@@ -231,3 +231,59 @@ def test_query_tools_summarize_one_bar_vamps_and_literal_fallbacks():
 
     assert "starts Am7 | D9 | Gmaj7 | Cmaj7 | F#m7b5 | B7 | Em7 | A7" in literal.answer
     assert "continues beyond that" in literal.answer
+
+
+def test_query_tools_group_equal_numbered_chorus_instances():
+    profile = knowledge_profile()
+    profile.evidence_claims = [
+        claim("chorus_1", "chord_progression", "Bm | F#m7 | G | D", section="chorus 1", confidence=0.64),
+        claim("chorus_2", "chord_progression", "Bm | F#m7 | G | D", section="chorus 2", confidence=0.64),
+    ]
+
+    answer = ProfileQueryTools().chords(profile, section_name="chorus")
+
+    assert "chorus 1 and chorus 2 use the same main progression" in answer.answer
+    assert "Bm | F#m7 | G | D" in answer.answer
+    assert any("chord_progression:chorus 1" in item for item in answer.evidence)
+    assert any("chord_progression:chorus 2" in item for item in answer.evidence)
+
+
+def test_query_tools_describe_extended_numbered_chorus_instances():
+    profile = knowledge_profile()
+    profile.evidence_claims = [
+        claim("chorus_1", "chord_progression", "Bm F#m7 G D | A Bm G | Gm Em | A D G A G", section="chorus 1", confidence=0.64),
+        claim(
+            "chorus_2",
+            "chord_progression",
+            "Bm F#m7 G D | A Bm G | Gm Em | A D G A G | Em A D G A G | Em A D G A G",
+            section="chorus 2",
+            confidence=0.64,
+        ),
+    ]
+
+    answer = ProfileQueryTools().chords(profile, section_name="chorus")
+
+    assert "chorus 2 starts like chorus 1, then extends" in answer.answer
+    assert "Em A D G A G" in answer.answer
+
+
+def test_query_tools_list_different_numbered_chorus_instances_and_support_exact_instance():
+    profile = knowledge_profile()
+    profile.evidence_claims = [
+        claim("chorus_1", "chord_progression", "Bm | F#m7 | G | D", section="chorus 1", confidence=0.64),
+        claim("chorus_2", "chord_progression", "Em | A | D | G", section="chorus 2", confidence=0.64),
+    ]
+
+    grouped = ProfileQueryTools().chords(profile, section_name="chorus")
+    exact = AnswerMusicQuestion().execute(
+        "What chords are in chorus 2?",
+        reference_with_knowledge().model_copy(update={"knowledge": profile}),
+    )
+
+    assert "Chorus 1:" in grouped.answer
+    assert "Chorus 2:" in grouped.answer
+    assert "Bm | F#m7 | G | D" in grouped.answer
+    assert "Em | A | D | G" in grouped.answer
+    assert "chorus 2" in exact.answer.lower()
+    assert "Em | A | D | G" in exact.answer
+    assert "Bm | F#m7 | G | D" not in exact.answer

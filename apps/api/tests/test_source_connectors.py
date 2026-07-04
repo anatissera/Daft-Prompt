@@ -81,9 +81,56 @@ def test_cifraclub_connector_normalizes_portuguese_section_names_to_english():
     result = connector.collect(query)
 
     assert any(claim.claim_type == "section" and claim.value == "chorus" for claim in result.claims)
-    assert any(claim.claim_type == "section" and claim.value == "verse" for claim in result.claims)
+    assert any(claim.claim_type == "section" and claim.value == "verse 2" for claim in result.claims)
     assert any(claim.claim_type == "chord_progression" and claim.section_name == "chorus" for claim in result.claims)
-    assert any(claim.claim_type == "chord_progression" and claim.section_name == "verse" for claim in result.claims)
+    assert any(claim.claim_type == "chord_progression" and claim.section_name == "verse 2" for claim in result.claims)
+
+
+def test_cifraclub_connector_preserves_numbered_section_instances():
+    html = """
+    <html><body>
+      <div class="tom">Tom: Em</div>
+      <pre>
+[Dedilhado - Intro]
+<b>Em</b> <b>A</b>
+
+[Primeira Parte]
+<b>Em</b> <b>A</b> <b>D</b>
+
+[Refrão 1]
+<b>Bm</b> <b>F#m7</b> <b>G</b> <b>D</b>
+
+[Segunda Parte]
+<b>Em</b> <b>A</b> <b>D</b>
+
+[Refrão 2]
+<b>Bm</b> <b>F#m7</b> <b>G</b> <b>D</b>
+
+[Terceira Parte]
+<b>G</b> <b>D/F#</b> <b>A</b>
+
+[Dedilhado - Interlúdio]
+<b>Em</b> <b>A</b>
+      </pre>
+    </body></html>
+    """
+    connector = CifraClubConnector(fetcher=FixtureFetcher({"https://fixture.test/cifra": html}))
+    query = ResolvedSongQuery(title="Adios", artist="Gustavo Cerati", source_url="https://fixture.test/cifra")
+
+    result = connector.collect(query)
+
+    section_names = [claim.value for claim in result.claims if claim.claim_type == "section"]
+    assert section_names == [
+        "intro",
+        "verse 1",
+        "chorus 1",
+        "verse 2",
+        "chorus 2",
+        "verse 3",
+        "interlude",
+    ]
+    assert any(claim.claim_type == "chord_progression" and claim.section_name == "chorus 1" for claim in result.claims)
+    assert any(claim.claim_type == "chord_progression" and claim.section_name == "chorus 2" for claim in result.claims)
 
 
 @pytest.mark.parametrize("connector_cls", [HookTheoryConnector, CifraClubConnector])
