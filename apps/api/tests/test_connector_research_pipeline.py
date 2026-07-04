@@ -10,6 +10,7 @@ from music_assistant.ports.song_source_connector import (
     ConnectorResult,
     ResolvedSongQuery,
 )
+from music_assistant.ports.web_search import SearchResult
 
 
 class ClaimsConnector:
@@ -17,8 +18,10 @@ class ClaimsConnector:
 
     def __init__(self, claims: list[EvidenceClaim]):
         self.claims = claims
+        self.calls: list[ResolvedSongQuery] = []
 
     def collect(self, query: ResolvedSongQuery) -> ConnectorResult:
+        self.calls.append(query)
         return ConnectorResult(
             source_name=self.source_name,
             query=query,
@@ -44,6 +47,48 @@ class BlockedConnector:
                 )
             ],
         )
+
+
+class UrlSensitiveConnector:
+    source_name = "CifraClub"
+
+    def __init__(self, claims: list[EvidenceClaim]) -> None:
+        self.claims = claims
+        self.calls: list[ResolvedSongQuery] = []
+
+    def collect(self, query: ResolvedSongQuery) -> ConnectorResult:
+        self.calls.append(query)
+        if query.source_url == "https://www.cifraclub.com.br/jamiroquai/space-cowboy/":
+            return ConnectorResult(
+                source_name=self.source_name,
+                query=query,
+                fetch_status="fetched",
+                claims=self.claims,
+            )
+        return ConnectorResult(
+            source_name=self.source_name,
+            query=query,
+            fetch_status="empty",
+            failures=[
+                ConnectorFailure(
+                    source_name=self.source_name,
+                    url=query.source_url,
+                    status="empty",
+                    reason="No structured claims found in fetched page.",
+                )
+            ],
+        )
+
+
+class FakeSearch:
+    def search(self, query: str, *, limit: int = 10) -> list[SearchResult]:
+        return [
+            SearchResult(
+                url="https://www.cifraclub.com.br/jamiroquai/space-cowboy/",
+                title="Space Cowboy - Jamiroquai",
+                site="CifraClub",
+            )
+        ][:limit]
 
 
 def claim(claim_id: str, claim_type: str, value: str, *, source: str = "claims", confidence: float = 0.7) -> EvidenceClaim:
@@ -81,6 +126,33 @@ def test_connector_song_researcher_returns_reference_profile_with_rich_knowledge
     assert profile.audio.tempo_bpm == 111
     assert profile.audio.key == "A minor"
     assert profile.research_evidence[0].claim_type == "tempo"
+
+
+def test_connector_song_researcher_parses_title_by_artist_queries():
+    connector = ClaimsConnector([claim("tempo", "tempo", "111 BPM", confidence=0.8)])
+    researcher = ConnectorSongResearcher(connectors=[connector])
+
+    profile = researcher.research("Space Cowboy by Jamiroquai")
+
+    assert profile.knowledge is not None
+    assert profile.knowledge.identity.title == "Space Cowboy"
+    assert profile.knowledge.identity.artist == "Jamiroquai"
+    assert connector.calls[0].title == "Space Cowboy"
+    assert connector.calls[0].artist == "Jamiroquai"
+
+
+def test_connector_song_researcher_tries_source_search_candidates_after_empty_direct_result():
+    connector = UrlSensitiveConnector([claim("tempo", "tempo", "111 BPM", source="CifraClub", confidence=0.8)])
+    researcher = ConnectorSongResearcher(connectors=[connector], search=FakeSearch())
+
+    profile = researcher.research("Space Cowboy by Jamiroquai")
+
+    assert profile.audio is not None
+    assert profile.audio.tempo_bpm == 111
+    assert [call.source_url for call in connector.calls] == [
+        None,
+        "https://www.cifraclub.com.br/jamiroquai/space-cowboy/",
+    ]
 
 
 def test_connector_song_researcher_handles_no_claims_as_missing_data():

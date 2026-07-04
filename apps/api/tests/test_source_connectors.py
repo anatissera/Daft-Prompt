@@ -61,6 +61,31 @@ def test_cifraclub_connector_extracts_key_and_section_chords():
     assert all(claim.source_name == "CifraClub" for claim in result.claims)
 
 
+def test_cifraclub_connector_normalizes_portuguese_section_names_to_english():
+    html = """
+    <html><body>
+      <div class="tom">Tom: Db</div>
+      <pre>
+[Refrão]
+<b>Ebm7(9)</b> lyrics
+<b>Fm7(9)</b> <b>Bbm7(9)</b>
+
+[Segunda Parte]
+<b>Db7M(9)</b> lyrics
+      </pre>
+    </body></html>
+    """
+    connector = CifraClubConnector(fetcher=FixtureFetcher({"https://fixture.test/cifra": html}))
+    query = ResolvedSongQuery(title="Space Cowboy", artist="Jamiroquai", source_url="https://fixture.test/cifra")
+
+    result = connector.collect(query)
+
+    assert any(claim.claim_type == "section" and claim.value == "chorus" for claim in result.claims)
+    assert any(claim.claim_type == "section" and claim.value == "verse" for claim in result.claims)
+    assert any(claim.claim_type == "chord_progression" and claim.section_name == "chorus" for claim in result.claims)
+    assert any(claim.claim_type == "chord_progression" and claim.section_name == "verse" for claim in result.claims)
+
+
 @pytest.mark.parametrize("connector_cls", [HookTheoryConnector, CifraClubConnector])
 def test_connectors_report_blocked_fetches(connector_cls):
     connector = connector_cls(

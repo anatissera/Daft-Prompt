@@ -30,9 +30,13 @@ _PROGRESSION_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _CIFRA_KEY_RE = re.compile(r"<div[^>]*class=[\"']tom[\"'][^>]*>\s*Tom:\s*([^<]+)</div>", re.IGNORECASE)
+_CIFRA_KEY_LINK_RE = re.compile(r"title=[\"']alterar o tom da cifra[\"'][^>]*>\s*([^<]+)\s*</a>", re.IGNORECASE)
 _PRE_RE = re.compile(r"<pre[^>]*>(.*?)</pre>", re.IGNORECASE | re.DOTALL)
+_BOLD_RE = re.compile(r"<b[^>]*>(.*?)</b>", re.IGNORECASE | re.DOTALL)
 _SECTION_HEADING_RE = re.compile(r"^\s*\[([^\]]+)\]\s*$")
-_CHORD_TOKEN_RE = re.compile(r"^[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus|add)?\d*(?:/[A-G](?:#|b)?)?$")
+_CHORD_TOKEN_RE = re.compile(
+    r"^[A-G](?:#|b)?[A-Za-z0-9()/#+-]*$"
+)
 
 
 class HookTheoryConnector:
@@ -59,7 +63,8 @@ class HookTheoryConnector:
             claims.append(_claim("meter", meter, self.source_name, url, 0.68, f"Meter: {meter}"))
 
         for section_name, section_html in _SECTION_RE.findall(html_text):
-            normalized_section = section_name.strip().lower()
+            original_section = section_name.strip().lower()
+            normalized_section = _normalize_section_name(original_section)
             claims.append(
                 _claim(
                     "section",
@@ -67,7 +72,7 @@ class HookTheoryConnector:
                     self.source_name,
                     url,
                     0.65,
-                    f"Section: {normalized_section}",
+                    f"Section: {original_section}",
                     section_name=normalized_section,
                 )
             )
@@ -102,7 +107,7 @@ class CifraClubConnector:
             return failure
 
         claims: list[EvidenceClaim] = []
-        key = _first_match(_CIFRA_KEY_RE, html_text)
+        key = _first_match(_CIFRA_KEY_RE, html_text) or _first_match(_CIFRA_KEY_LINK_RE, html_text)
         if key:
             claims.append(_claim("key", key, self.source_name, url, 0.62, f"Tom: {key}"))
 
@@ -168,18 +173,23 @@ def _claims_from_cifra_pre(pre_html: str, source_name: str, url: str) -> list[Ev
     section = "unknown"
     chord_lines: list[str] = []
     for raw_line in text.splitlines():
-        line = raw_line.strip()
+        line = _visible_text(raw_line)
         if not line:
             continue
         heading = _SECTION_HEADING_RE.match(line)
         if heading:
             if chord_lines:
                 claims.append(_section_chords_claim(section, chord_lines, source_name, url))
-            section = heading.group(1).strip().lower()
-            claims.append(_claim("section", section, source_name, url, 0.58, f"Section: {section}", section_name=section))
+            original_section = heading.group(1).strip().lower()
+            section = _normalize_section_name(original_section)
+            claims.append(
+                _claim("section", section, source_name, url, 0.58, f"Section: {original_section}", section_name=section)
+            )
             chord_lines = []
             continue
-        tokens = line.split()
+        tokens = [_visible_text(token) for token in _BOLD_RE.findall(raw_line)]
+        if not tokens:
+            tokens = line.split()
         if tokens and all(_CHORD_TOKEN_RE.match(token) for token in tokens):
             chord_lines.append(" ".join(tokens))
     if chord_lines:
@@ -237,6 +247,38 @@ def _first_match(pattern: re.Pattern[str], html_text: str) -> str:
 
 def _visible_text(html_text: str) -> str:
     return re.sub(r"\s+", " ", _TAG_RE.sub(" ", html.unescape(html_text))).strip()
+
+
+def _normalize_section_name(section: str) -> str:
+    normalized = (
+        section.strip().lower()
+        .replace("ã", "a")
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+    )
+    aliases = {
+        "refrao": "chorus",
+        "refrain": "chorus",
+        "coro": "chorus",
+        "estribillo": "chorus",
+        "primeira parte": "verse",
+        "segunda parte": "verse",
+        "parte": "verse",
+        "verso": "verse",
+        "estrofa": "verse",
+        "ponte": "bridge",
+        "puente": "bridge",
+        "pre refrao": "pre-chorus",
+        "pre-refrain": "pre-chorus",
+        "pre estribillo": "pre-chorus",
+        "introducao": "intro",
+        "introduccion": "intro",
+        "final": "outro",
+    }
+    return aliases.get(normalized, normalized)
 
 
 def _hooktheory_url(query: ResolvedSongQuery) -> str:
