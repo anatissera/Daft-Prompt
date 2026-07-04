@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
+import re
 
 from pydantic import BaseModel, Field
 
@@ -48,12 +50,17 @@ class ProfileQueryTools:
     def chords(self, profile: SongKnowledgeProfile, section_name: str | None = None) -> ProfileQueryAnswer:
         claims = _claims(profile, "chord_progression")
         if section_name:
-            section_names = _section_aliases(section_name)
-            claims = [claim for claim in claims if (claim.section_name or "").lower() in section_names]
+            claims = [claim for claim in claims if _section_matches(section_name, claim.section_name)]
         if not claims:
             return ProfileQueryAnswer(
                 answer="I do not have enough evidence for those chords yet.",
                 evidence=[],
+            )
+        grouped_answer = _grouped_section_chord_answer(claims, section_name)
+        if grouped_answer is not None:
+            return ProfileQueryAnswer(
+                answer=grouped_answer,
+                evidence=[_evidence_line(claim) for claim in claims],
             )
         best = _best(claims)
         summary = _summarize_progression_claim(best)
@@ -189,11 +196,13 @@ def _best(claims: list[EvidenceClaim]) -> EvidenceClaim:
 
 
 def _section(profile: SongKnowledgeProfile, name: str):
-    names = _section_aliases(name)
-    return next((section for section in profile.sections if section.name.lower() in names), None)
+    return next((section for section in profile.sections if _section_matches(name, section.name)), None)
 
 
 def _mentioned_section(normalized_question: str) -> str | None:
+    exact = re.search(r"\b(chorus|verse|pre-chorus|bridge|intro|interlude|solo|outro)\s+(\d+)\b", normalized_question)
+    if exact:
+        return f"{exact.group(1)} {exact.group(2)}"
     for name in ["intro", "verse", "pre-chorus", "chorus", "bridge", "solo", "outro"]:
         if name in normalized_question:
             return name
@@ -201,17 +210,148 @@ def _mentioned_section(normalized_question: str) -> str | None:
 
 
 def _section_aliases(name: str) -> set[str]:
-    normalized = name.lower()
+    normalized = _normalize_section_label(name)
     aliases = {
-        "chorus": {"chorus", "refrain", "refrão", "refrao", "coro", "estribillo"},
-        "verse": {"verse", "verso", "estrofa", "parte", "primeira parte", "segunda parte"},
-        "pre-chorus": {"pre-chorus", "pre chorus", "pré-refrão", "pre refrao", "pre-estribillo"},
+        "chorus": {"chorus", "refrain", "refrao", "coro", "estribillo"},
+        "verse": {"verse", "verso", "estrofa", "parte", "primeira parte", "segunda parte", "terceira parte"},
+        "pre-chorus": {"pre-chorus", "pre chorus", "pre refrao", "pre-estribillo"},
         "bridge": {"bridge", "ponte", "puente"},
-        "intro": {"intro", "introdução", "introduccion"},
+        "intro": {"intro", "introducao", "introduccion", "dedilhado intro"},
+        "interlude": {"interlude", "interludio", "dedilhado interludio"},
         "outro": {"outro", "final"},
         "solo": {"solo"},
     }
     return aliases.get(normalized, {normalized})
+
+
+def _section_matches(requested: str, candidate: str | None) -> bool:
+    if not candidate:
+        return False
+    requested_label = _normalize_section_label(requested)
+    candidate_label = _normalize_section_label(candidate)
+    if _is_numbered_section(requested_label):
+        return requested_label == candidate_label
+    requested_groups = _section_aliases(requested_label)
+    return candidate_label in requested_groups or _section_group(candidate_label) in requested_groups
+
+
+def _normalize_section_label(value: str) -> str:
+    normalized = (
+        value.strip().lower()
+        .replace("ã", "a")
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+    )
+    return re.sub(r"\s+", " ", normalized.replace("-", " ")).strip()
+
+
+def _is_numbered_section(value: str) -> bool:
+    return bool(re.search(r"\b\d+\b", value))
+
+
+def _section_group(value: str) -> str:
+    normalized = _normalize_section_label(value)
+    normalized = re.sub(r"\s+\d+$", "", normalized)
+    for group, aliases in {
+        "chorus": {"chorus", "refrain", "refrao", "coro", "estribillo"},
+        "verse": {"verse", "verso", "estrofa", "parte", "primeira parte", "segunda parte", "terceira parte"},
+        "pre-chorus": {"pre chorus", "pre refrao", "pre estribillo"},
+        "intro": {"intro", "dedilhado intro"},
+        "interlude": {"interlude", "interludio", "dedilhado interludio"},
+        "bridge": {"bridge", "ponte", "puente"},
+        "outro": {"outro", "final"},
+        "solo": {"solo"},
+    }.items():
+        if normalized in aliases:
+            return group
+    return normalized
+
+
+def _grouped_section_chord_answer(claims: list[EvidenceClaim], section_name: str | None) -> str | None:
+    if not section_name or _is_numbered_section(section_name):
+        return None
+    by_section: dict[str, list[EvidenceClaim]] = defaultdict(list)
+    for claim in claims:
+        by_section[claim.section_name or "progression"].append(claim)
+    if len(by_section) <= 1:
+        return None
+
+    best_by_section = {
+        section: _best(section_claims)
+        for section, section_claims in by_section.items()
+    }
+    summaries = {
+        section: _summarize_progression_claim(claim)
+        for section, claim in best_by_section.items()
+    }
+    ordered_sections = sorted(summaries, key=_section_sort_key)
+    first_section = ordered_sections[0]
+    first_summary = summaries[first_section]
+    if all(summary.core == first_summary.core and summary.bars == first_summary.bars for summary in summaries.values()):
+        sections = _join_labels(ordered_sections)
+        return (
+            f"{sections} use the same main progression: "
+            f"{_progression_answer_fragment(first_summary)}, based on web evidence."
+        )
+
+    extension = _extension_relationship(summaries, ordered_sections)
+    if extension is not None:
+        base, extended = extension
+        extended_tail = _extension_tail(summaries[base].bars, summaries[extended].bars)
+        return (
+            f"{extended} starts like {base}, then extends with {' | '.join(extended_tail[:4])}, "
+            "based on web evidence."
+        )
+
+    pieces = [
+        f"{section.capitalize()}: {_progression_answer_fragment(summaries[section])}"
+        for section in ordered_sections
+    ]
+    return " ".join(pieces) + " Based on web evidence."
+
+
+def _progression_answer_fragment(summary: ProgressionSummary) -> str:
+    if summary.has_repeat:
+        return summary.text
+    if len(summary.bars) > 1:
+        return " | ".join(summary.bars[:8])
+    return summary.text
+
+
+def _join_labels(labels: list[str]) -> str:
+    formatted = [label for label in labels]
+    if len(formatted) == 2:
+        return f"{formatted[0]} and {formatted[1]}"
+    return ", ".join(formatted[:-1]) + f", and {formatted[-1]}"
+
+
+def _section_sort_key(section: str) -> tuple[str, int, str]:
+    match = re.search(r"^(.*?)(?:\s+(\d+))?$", section)
+    if not match:
+        return section, 0, section
+    return match.group(1), int(match.group(2) or 0), section
+
+
+def _extension_relationship(
+    summaries: dict[str, ProgressionSummary],
+    ordered_sections: list[str],
+) -> tuple[str, str] | None:
+    for base in ordered_sections:
+        for extended in ordered_sections:
+            if base == extended:
+                continue
+            base_bars = summaries[base].bars
+            extended_bars = summaries[extended].bars
+            if len(extended_bars) > len(base_bars) and extended_bars[: len(base_bars)] == base_bars:
+                return base, extended
+    return None
+
+
+def _extension_tail(base_bars: tuple[str, ...], extended_bars: tuple[str, ...]) -> tuple[str, ...]:
+    return extended_bars[len(base_bars):]
 
 
 def _evidence_line(claim: EvidenceClaim) -> str:

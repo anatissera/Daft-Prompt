@@ -259,13 +259,26 @@ def _normalize_section_name(section: str) -> str:
         .replace("ó", "o")
         .replace("ú", "u")
     )
+    normalized = re.sub(r"\s+", " ", normalized.replace("-", " ")).strip()
+    normalized = re.sub(r"^dedilhado\s+", "", normalized).strip()
+    numbered_patterns = [
+        (r"^(?:refrao|refrain|coro|estribillo)\s*(\d+)$", "chorus"),
+        (r"^(?:pre\s*refrao|pre\s*refrain|pre\s*estribillo)\s*(\d+)$", "pre-chorus"),
+        (r"^(?:verse|verso|estrofa)\s*(\d+)$", "verse"),
+    ]
+    for pattern, group in numbered_patterns:
+        match = re.match(pattern, normalized)
+        if match:
+            return f"{group} {match.group(1)}"
+
     aliases = {
         "refrao": "chorus",
         "refrain": "chorus",
         "coro": "chorus",
         "estribillo": "chorus",
-        "primeira parte": "verse",
-        "segunda parte": "verse",
+        "primeira parte": "verse 1",
+        "segunda parte": "verse 2",
+        "terceira parte": "verse 3",
         "parte": "verse",
         "verso": "verse",
         "estrofa": "verse",
@@ -276,6 +289,9 @@ def _normalize_section_name(section: str) -> str:
         "pre estribillo": "pre-chorus",
         "introducao": "intro",
         "introduccion": "intro",
+        "intro": "intro",
+        "interludio": "interlude",
+        "interlude": "interlude",
         "final": "outro",
     }
     return aliases.get(normalized, normalized)
