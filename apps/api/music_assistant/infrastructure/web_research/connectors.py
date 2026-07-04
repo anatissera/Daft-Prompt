@@ -118,6 +118,43 @@ class CifraClubConnector:
         return _result_or_empty(self.source_name, query, claims, url, html_text)
 
 
+class LaCuerdaConnector:
+    source_name = "LaCuerda"
+
+    def __init__(self, *, fetcher: PageFetcher | None = None) -> None:
+        self.fetcher = fetcher or UrlLibPageFetcher()
+
+    def collect(self, query: ResolvedSongQuery) -> ConnectorResult:
+        url = query.source_url or _lacuerda_url(query)
+        html_text, failure = _fetch_html(self.source_name, self.fetcher, query, url)
+        if failure is not None:
+            return failure
+
+        claims: list[EvidenceClaim] = []
+        for pre_html in _PRE_RE.findall(html_text):
+            claims.extend(_claims_from_plain_chord_pre(pre_html, self.source_name, url))
+        return _result_or_empty(self.source_name, query, claims, url, html_text)
+
+
+class SongsterrConnector:
+    source_name = "Songsterr"
+
+    def __init__(self, *, fetcher: PageFetcher | None = None) -> None:
+        self.fetcher = fetcher or UrlLibPageFetcher()
+
+    def collect(self, query: ResolvedSongQuery) -> ConnectorResult:
+        url = query.source_url or _songsterr_url(query)
+        html_text, failure = _fetch_html(self.source_name, self.fetcher, query, url)
+        if failure is not None:
+            return failure
+
+        claims = _instrument_tab_claims(html_text, self.source_name, url, confidence=0.55)
+        metadata = _page_title(html_text)
+        if metadata:
+            claims.append(_claim("metadata", f"Songsterr page title: {metadata}", self.source_name, url, 0.5, metadata))
+        return _result_or_empty(self.source_name, query, claims, url, html_text)
+
+
 def _fetch_html(
     source_name: str,
     fetcher: PageFetcher,
@@ -151,7 +188,7 @@ def _result_or_empty(
 ) -> ConnectorResult:
     if claims:
         return ConnectorResult(source_name=source_name, query=query, fetch_status="fetched", claims=claims)
-    status: FetchStatus = "js_rendered" if "<script" in html_text and "id=\"root\"" in html_text else "empty"
+    status: FetchStatus = "js_rendered" if _is_js_rendered_shell(html_text) else "empty"
     return ConnectorResult(
         source_name=source_name,
         query=query,
@@ -190,6 +227,33 @@ def _claims_from_cifra_pre(pre_html: str, source_name: str, url: str) -> list[Ev
         tokens = [_visible_text(token) for token in _BOLD_RE.findall(raw_line)]
         if not tokens:
             tokens = line.split()
+        if tokens and all(_CHORD_TOKEN_RE.match(token) for token in tokens):
+            chord_lines.append(" ".join(tokens))
+    if chord_lines:
+        claims.append(_section_chords_claim(section, chord_lines, source_name, url))
+    return claims
+
+
+def _claims_from_plain_chord_pre(pre_html: str, source_name: str, url: str) -> list[EvidenceClaim]:
+    text = html.unescape(pre_html)
+    claims: list[EvidenceClaim] = []
+    section = "unknown"
+    chord_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = _visible_text(raw_line)
+        if not line:
+            continue
+        if _looks_like_plain_section_heading(line):
+            if chord_lines:
+                claims.append(_section_chords_claim(section, chord_lines, source_name, url))
+            original_section = line.strip().lower()
+            section = _normalize_section_name(original_section)
+            claims.append(
+                _claim("section", section, source_name, url, 0.5, f"Section: {original_section}", section_name=section)
+            )
+            chord_lines = []
+            continue
+        tokens = line.split()
         if tokens and all(_CHORD_TOKEN_RE.match(token) for token in tokens):
             chord_lines.append(" ".join(tokens))
     if chord_lines:
@@ -249,6 +313,80 @@ def _visible_text(html_text: str) -> str:
     return re.sub(r"\s+", " ", _TAG_RE.sub(" ", html.unescape(html_text))).strip()
 
 
+def _looks_like_plain_section_heading(line: str) -> bool:
+    normalized = _normalize_section_name(line)
+    if normalized in {"intro", "verse", "chorus", "bridge", "pre-chorus", "interlude", "outro", "solo"}:
+        return True
+    if _normalize_section_name(line) != line.strip().lower():
+        return True
+    return bool(re.match(r"^(?:intro|verso|estrofa|estribillo|coro|refrao|puente|ponte|final)\b", line, re.IGNORECASE))
+
+
+def _page_title(html_text: str) -> str:
+    if _is_js_rendered_shell(html_text):
+        return ""
+    meta = re.search(r"<meta[^>]+property=[\"']og:title[\"'][^>]+content=[\"']([^\"']+)[\"']", html_text, re.IGNORECASE)
+    if meta:
+        return _visible_text(meta.group(1))
+    title = re.search(r"<h1[^>]*>(.*?)</h1>", html_text, re.IGNORECASE | re.DOTALL)
+    if title:
+        return _visible_text(title.group(1))
+    title = re.search(r"<title[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL)
+    return _visible_text(title.group(1)) if title else ""
+
+
+def _instrument_tab_claims(html_text: str, source_name: str, url: str, *, confidence: float) -> list[EvidenceClaim]:
+    visible = _visible_text(html_text).lower()
+    href_text = " ".join(re.findall(r"href=[\"']([^\"']+)[\"']", html_text, flags=re.IGNORECASE)).lower()
+    haystack = f"{visible} {href_text}"
+    instruments = _detect_instruments(haystack)
+    claims: list[EvidenceClaim] = []
+    if instruments:
+        value = "Available tab tracks: " + ", ".join(instruments)
+        claims.append(_claim("instrumentation", value, source_name, url, confidence, value))
+    for instrument in instruments:
+        label = "Drum" if instrument == "drums" else instrument.title()
+        claims.append(_claim("tab", f"{label} tab available from {source_name}", source_name, url, confidence, instrument))
+    if "chords" in haystack or "_chords" in haystack or "-chords" in haystack:
+        claims.append(_claim("tab", f"Chords tab available from {source_name}", source_name, url, confidence, "chords"))
+    return claims
+
+
+def _detect_instruments(text: str) -> list[str]:
+    instruments: list[str] = []
+    for needle, label in [
+        ("guitar", "guitar"),
+        ("bass", "bass"),
+        ("drum", "drums"),
+        ("piano", "piano"),
+        ("keyboard", "keys"),
+        ("vocal", "vocal"),
+        ("voice", "vocal"),
+    ]:
+        if needle in text and label not in instruments:
+            instruments.append(label)
+    return instruments
+
+
+def _is_js_rendered_shell(html_text: str) -> bool:
+    return "<script" in html_text and "id=\"root\"" in html_text
+
+
+def _normalize_instrument(value: str) -> str:
+    normalized = value.strip().lower()
+    aliases = {
+        "bass guitar": "bass",
+        "drum group": "drums",
+        "drums": "drums",
+        "guitar": "guitar",
+        "piano": "piano",
+        "keyboard": "keys",
+        "voice": "vocal",
+        "vocals": "vocal",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def _normalize_section_name(section: str) -> str:
     normalized = (
         section.strip().lower()
@@ -276,6 +414,7 @@ def _normalize_section_name(section: str) -> str:
         "refrain": "chorus",
         "coro": "chorus",
         "estribillo": "chorus",
+        "estrbillo": "chorus",
         "primeira parte": "verse 1",
         "segunda parte": "verse 2",
         "terceira parte": "verse 3",
@@ -309,3 +448,16 @@ def _cifraclub_url(query: ResolvedSongQuery) -> str:
     title = quote_plus(query.title.lower().replace(" ", "-"))
     suffix = f"{artist}/{title}" if artist else title
     return f"https://www.cifraclub.com.br/{suffix}/"
+
+
+def _lacuerda_url(query: ResolvedSongQuery) -> str:
+    return f"https://www.lacuerda.net/busca.php?query={quote_plus(_query_text(query))}"
+
+
+def _songsterr_url(query: ResolvedSongQuery) -> str:
+    slug = quote_plus(_query_text(query).lower().replace(" ", "-"))
+    return f"https://www.songsterr.com/a/wa/search?pattern={slug}"
+
+
+def _query_text(query: ResolvedSongQuery) -> str:
+    return " ".join(part for part in [query.title, query.artist] if part).strip()

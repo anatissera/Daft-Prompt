@@ -17,7 +17,7 @@ class SeededWebSearch(WebSearch):
             SearchResult(
                 url=f"https://www.hooktheory.com/theorytab/search?q={encoded}",
                 title=f"Hooktheory search for {query}",
-                site="Hooktheory",
+                site="HookTheory",
             ),
             SearchResult(
                 url=f"https://www.cifraclub.com.br/?q={encoded}",
@@ -27,7 +27,7 @@ class SeededWebSearch(WebSearch):
             SearchResult(
                 url=f"https://www.lacuerda.net/busca.php?query={encoded}",
                 title=f"La Cuerda search for {query}",
-                site="La Cuerda",
+                site="LaCuerda",
             ),
             SearchResult(
                 url=f"https://www.google.com/search?q={encoded}+chords+key+tempo",
@@ -35,14 +35,14 @@ class SeededWebSearch(WebSearch):
                 site="Search",
             ),
             SearchResult(
-                url=f"https://tabs.ultimate-guitar.com/search.php?search_type=title&value={encoded}",
-                title=f"Ultimate Guitar search for {query}",
-                site="Ultimate Guitar",
+                url=f"https://www.songsterr.com/a/wa/search?pattern={encoded}",
+                title=f"Songsterr search for {query}",
+                site="Songsterr",
             ),
             SearchResult(
                 url=f"https://www.hooktheory.com/theorytab/view/{slug}",
                 title=f"Hooktheory candidate for {query}",
-                site="Hooktheory",
+                site="HookTheory",
             ),
         ]
         return candidates[:limit]
