@@ -239,12 +239,54 @@ export interface StructureProfile {
   confidence: number;
 }
 
+export interface TimbreProfile {
+  brightness: "dark" | "warm" | "bright";
+  noisiness: "tonal" | "mixed" | "noisy";
+  band_balance: "low-heavy" | "mid-heavy" | "high-heavy" | "balanced";
+  centroid_hz: number | null;
+  flatness: number | null;
+  band_split: number[];
+  interpretation: string;
+  confidence: number;
+}
+
+export interface RhythmProfile {
+  feel: "straight" | "swung";
+  swing_ratio: number | null;
+  syncopation: number;
+  density: "sparse" | "moderate" | "busy";
+  onsets_per_bar: number | null;
+  interpretation: string;
+  confidence: number;
+}
+
+export interface DynamicsPoint {
+  bar: number;
+  level: number;
+}
+
+export interface DynamicsEvent {
+  kind: "build" | "drop";
+  start_bar: number;
+  end_bar: number;
+}
+
+export interface StemDynamics {
+  points: DynamicsPoint[];
+  events: DynamicsEvent[];
+  interpretation: string;
+  confidence: number;
+}
+
 export interface StemProfile {
   name: string;
   artifact_uri: string | null;
   role: StemRole;
   available: boolean;
   confidence: number;
+  timbre?: TimbreProfile | null;
+  rhythm?: RhythmProfile | null;
+  dynamics?: StemDynamics | null;
 }
 
 export interface TimeRange {
