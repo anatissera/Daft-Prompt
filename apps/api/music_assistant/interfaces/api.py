@@ -31,7 +31,7 @@ from music_assistant.infrastructure.storage.in_memory_reference_store import InM
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
 from music_assistant.infrastructure.web_research.researcher import ConnectorSongResearcher
-from music_assistant.infrastructure.llm import LLMAllProvidersFailed, LLMError
+from music_assistant.infrastructure.llm import LLMAllProvidersFailed, LLMError, make_llm
 from music_assistant.interfaces.api_models import (
     AnalysisDoneEvent,
     AnalysisErrorEvent,
@@ -269,7 +269,16 @@ def _chat_music() -> ChatMusic:
         compose_song=_compose_song(),
         answer_music_question=AnswerMusicQuestion(),
         reference_store=REFERENCE_STORE,
+        chat_model=_chat_model(),
+        song_researcher=_song_researcher(),
     )
+
+
+def _chat_model():
+    try:
+        return make_llm("chat")
+    except RuntimeError:
+        return None
 
 
 def _reference_upload_root() -> Path:
