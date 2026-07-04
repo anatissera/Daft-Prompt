@@ -122,6 +122,25 @@ def test_query_tools_answer_section_chords_lyrics_instruments_conflicts_and_miss
     assert "section_timestamps" in missing.answer
 
 
+def test_query_tools_answer_specific_instrument_evidence_and_missing_instrument_evidence():
+    profile = knowledge_profile()
+    profile.evidence_claims = [
+        claim("songsterr_tracks", "instrumentation", "Available tab tracks: guitar, bass, drums", source="Songsterr"),
+        claim("songsterr_bass", "tab", "Bass tab available from Songsterr", source="Songsterr"),
+        claim("songsterr_piano", "instrumentation", "Available tab tracks: piano, vocal", source="Songsterr"),
+    ]
+
+    bass = ProfileQueryTools().instrumentation(profile, instrument="bass")
+    piano = ProfileQueryTools().instrumentation(profile, instrument="piano")
+    sax = ProfileQueryTools().instrumentation(profile, instrument="sax")
+
+    assert "bass" in bass.answer.lower()
+    assert "Songsterr" in " ".join(bass.evidence)
+    assert "piano" in piano.answer.lower()
+    assert "Songsterr" in " ".join(piano.evidence)
+    assert "do not have sax-specific evidence" in sax.answer
+
+
 def test_query_tools_do_not_invent_unavailable_solo_notes_or_timestamps():
     tools = ProfileQueryTools()
     profile = knowledge_profile()

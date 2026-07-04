@@ -7,6 +7,8 @@ import pytest
 from music_assistant.infrastructure.web_research.connectors import (
     CifraClubConnector,
     HookTheoryConnector,
+    LaCuerdaConnector,
+    SongsterrConnector,
 )
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_source_connector import ResolvedSongQuery
@@ -133,7 +135,50 @@ def test_cifraclub_connector_preserves_numbered_section_instances():
     assert any(claim.claim_type == "chord_progression" and claim.section_name == "chorus 2" for claim in result.claims)
 
 
-@pytest.mark.parametrize("connector_cls", [HookTheoryConnector, CifraClubConnector])
+def test_lacuerda_connector_extracts_sections_and_chords():
+    connector = LaCuerdaConnector(
+        fetcher=FixtureFetcher({"https://fixture.test/lacuerda": read_fixture("lacuerda_adios.html")})
+    )
+    query = ResolvedSongQuery(title="Adios", artist="Gustavo Cerati", source_url="https://fixture.test/lacuerda")
+
+    result = connector.collect(query)
+
+    assert result.fetch_status == "fetched"
+    assert any(claim.claim_type == "section" and claim.value == "intro" for claim in result.claims)
+    assert any(claim.claim_type == "section" and claim.value == "chorus" for claim in result.claims)
+    assert any(
+        claim.claim_type == "chord_progression"
+        and claim.section_name == "chorus"
+        and "Bm" in claim.value
+        for claim in result.claims
+    )
+    assert all(claim.source_name == "LaCuerda" for claim in result.claims)
+
+
+def test_songsterr_connector_extracts_instrument_tracks_and_tab_availability():
+    connector = SongsterrConnector(
+        fetcher=FixtureFetcher({"https://fixture.test/songsterr": read_fixture("songsterr_adios.html")})
+    )
+    query = ResolvedSongQuery(title="Adios", artist="Gustavo Cerati", source_url="https://fixture.test/songsterr")
+
+    result = connector.collect(query)
+
+    assert result.fetch_status == "fetched"
+    assert any(claim.claim_type == "tab" and "Guitar tab available" in claim.value for claim in result.claims)
+    assert any(claim.claim_type == "instrumentation" and "bass" in claim.value.lower() for claim in result.claims)
+    assert any(claim.claim_type == "instrumentation" and "drums" in claim.value.lower() for claim in result.claims)
+    assert all(claim.source_name == "Songsterr" for claim in result.claims)
+
+
+@pytest.mark.parametrize(
+    "connector_cls",
+    [
+        HookTheoryConnector,
+        CifraClubConnector,
+        LaCuerdaConnector,
+        SongsterrConnector,
+    ],
+)
 def test_connectors_report_blocked_fetches(connector_cls):
     connector = connector_cls(
         fetcher=FixtureFetcher(
@@ -151,7 +196,15 @@ def test_connectors_report_blocked_fetches(connector_cls):
     assert "HTTP 403" in result.failures[0].reason
 
 
-@pytest.mark.parametrize("connector_cls", [HookTheoryConnector, CifraClubConnector])
+@pytest.mark.parametrize(
+    "connector_cls",
+    [
+        HookTheoryConnector,
+        CifraClubConnector,
+        LaCuerdaConnector,
+        SongsterrConnector,
+    ],
+)
 def test_connectors_report_js_only_or_empty_pages(connector_cls):
     connector = connector_cls(
         fetcher=FixtureFetcher({"https://fixture.test/js": read_fixture("js_only.html")})

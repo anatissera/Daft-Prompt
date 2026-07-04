@@ -12,7 +12,12 @@ from music_assistant.domain.audio_profile import (
     ResearchEvidence,
     SongKnowledgeProfile,
 )
-from music_assistant.infrastructure.web_research.connectors import CifraClubConnector, HookTheoryConnector
+from music_assistant.infrastructure.web_research.connectors import (
+    CifraClubConnector,
+    HookTheoryConnector,
+    LaCuerdaConnector,
+    SongsterrConnector,
+)
 from music_assistant.infrastructure.web_research.fetch import UrlLibPageFetcher
 from music_assistant.infrastructure.web_research.fusion import EvidenceFuser
 from music_assistant.infrastructure.web_research.parsers import GenericSongPageParser
@@ -58,7 +63,12 @@ class ConnectorSongResearcher(SongResearcher):
         search: WebSearch | None = None,
         fuser: EvidenceFuser | None = None,
     ) -> None:
-        self.connectors = connectors or [HookTheoryConnector(), CifraClubConnector()]
+        self.connectors = connectors or [
+            HookTheoryConnector(),
+            CifraClubConnector(),
+            LaCuerdaConnector(),
+            SongsterrConnector(),
+        ]
         self.search = search or SeededWebSearch()
         self.fuser = fuser or EvidenceFuser()
 
@@ -241,4 +251,12 @@ def _matches_source(source_name: str, site: str, url: str) -> bool:
         return "hooktheory.com" in url_key
     if source == "cifraclub":
         return "cifraclub.com" in url_key
+    if source == "lacuerda":
+        return "lacuerda.net" in url_key
+    if source == "songsterr":
+        return "songsterr.com" in url_key
+    if source == "ultimateguitar":
+        return "ultimate-guitar.com" in url_key
+    if source == "musescore":
+        return "musescore.com" in url_key
     return False

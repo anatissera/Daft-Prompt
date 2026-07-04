@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 import music_assistant.interfaces.api as api
 from music_assistant.domain.audio_profile import EvidenceClaim
 from music_assistant.infrastructure.web_research.researcher import ConnectorSongResearcher
+from music_assistant.infrastructure.web_research.search import SeededWebSearch
 from music_assistant.ports.song_source_connector import (
     ConnectorFailure,
     ConnectorResult,
@@ -188,6 +189,71 @@ def test_connector_song_researcher_preserves_conflicts_in_reference_profile():
     assert profile.audio is not None
     assert profile.audio.key_confidence < 0.7
     assert any(note.code == "conflicting_key_claims" for note in profile.audio.analysis_notes)
+
+
+def test_connector_song_researcher_default_sources_include_instrument_sources():
+    researcher = ConnectorSongResearcher()
+
+    assert [connector.source_name for connector in researcher.connectors] == [
+        "HookTheory",
+        "CifraClub",
+        "LaCuerda",
+        "Songsterr",
+    ]
+
+
+def test_seeded_web_search_returns_candidates_for_all_configured_sources():
+    results = SeededWebSearch().search("Adios Gustavo Cerati", limit=20)
+
+    sites = {result.site for result in results}
+    assert {
+        "HookTheory",
+        "CifraClub",
+        "LaCuerda",
+        "Songsterr",
+    } <= sites
+    assert "UltimateGuitar" not in sites
+    assert "MuseScore" not in sites
+
+
+def test_connector_song_researcher_tries_matching_candidates_for_new_source_names():
+    class SongsterrSensitiveConnector(UrlSensitiveConnector):
+        source_name = "Songsterr"
+
+        def collect(self, query: ResolvedSongQuery) -> ConnectorResult:
+            self.calls.append(query)
+            if query.source_url == "https://www.songsterr.com/a/wsa/adios-gustavo-cerati-tab-s12345":
+                return ConnectorResult(source_name=self.source_name, query=query, fetch_status="fetched", claims=self.claims)
+            return ConnectorResult(
+                source_name=self.source_name,
+                query=query,
+                fetch_status="empty",
+                failures=[ConnectorFailure(source_name=self.source_name, url=query.source_url, status="empty", reason="empty")],
+            )
+
+    class SongsterrSearch:
+        def search(self, query: str, *, limit: int = 10) -> list[SearchResult]:
+            return [
+                SearchResult(
+                    url="https://www.songsterr.com/a/wsa/adios-gustavo-cerati-tab-s12345",
+                    title="Adios Guitar Tab",
+                    site="Songsterr",
+                )
+            ]
+
+    connector = SongsterrSensitiveConnector(
+        [claim("tracks", "instrumentation", "Available tab tracks: guitar, bass, drums", source="Songsterr")]
+    )
+    researcher = ConnectorSongResearcher(connectors=[connector], search=SongsterrSearch())
+
+    profile = researcher.research("Adios by Gustavo Cerati")
+
+    assert profile.knowledge is not None
+    assert any(claim.source_name == "Songsterr" for claim in profile.knowledge.evidence_claims)
+    assert [call.source_url for call in connector.calls] == [
+        None,
+        "https://www.songsterr.com/a/wsa/adios-gustavo-cerati-tab-s12345",
+    ]
 
 
 def test_research_endpoint_persists_connector_profile(monkeypatch):

@@ -113,12 +113,20 @@ class ProfileQueryTools:
             evidence=[_evidence_line(claim) for claim in credit_claims],
         )
 
-    def instrumentation(self, profile: SongKnowledgeProfile) -> ProfileQueryAnswer:
+    def instrumentation(self, profile: SongKnowledgeProfile, instrument: str | None = None) -> ProfileQueryAnswer:
         claims = [
             claim
             for claim in profile.evidence_claims
-            if claim.claim_type in {"instrumentation", "groove", "timbre", "trait"}
+            if claim.claim_type in {"instrumentation", "groove", "timbre", "trait", "tab"}
         ]
+        if instrument:
+            instrument = _normalize_instrument_query(instrument)
+            claims = [claim for claim in claims if instrument in (claim.value + " " + claim.snippet).lower()]
+            if not claims:
+                return ProfileQueryAnswer(
+                    answer=f"I do not have {instrument}-specific evidence for this song yet.",
+                    evidence=[],
+                )
         if not claims:
             return ProfileQueryAnswer(answer="I do not have instrumentation evidence for this song yet.", evidence=[])
         return ProfileQueryAnswer(
@@ -174,8 +182,8 @@ def answer_from_profile(question: str, profile: SongKnowledgeProfile) -> Profile
         return tools.lyrics_by_section(profile, section or "chorus")
     if any(token in normalized for token in ["credit", "writer", "producer", "album", "artist", "who sings"]):
         return tools.metadata_credits(profile)
-    if any(token in normalized for token in ["instrument", "drum", "bass", "guitar", "synth", "groove"]):
-        return tools.instrumentation(profile)
+    if any(token in normalized for token in ["instrument", "drum", "bass", "guitar", "synth", "piano", "groove"]):
+        return tools.instrumentation(profile, instrument=_mentioned_instrument(normalized))
     if any(token in normalized for token in ["conflict", "disagree", "source"]):
         return tools.conflicts(profile)
     if any(token in normalized for token in ["missing", "unknown", "not have"]):
@@ -207,6 +215,23 @@ def _mentioned_section(normalized_question: str) -> str | None:
         if name in normalized_question:
             return name
     return None
+
+
+def _mentioned_instrument(normalized_question: str) -> str | None:
+    for instrument in ["drums", "drum", "bass", "guitar", "piano", "keyboard", "keys", "synth", "vocal", "voice"]:
+        if instrument in normalized_question:
+            return _normalize_instrument_query(instrument)
+    return None
+
+
+def _normalize_instrument_query(value: str) -> str:
+    aliases = {
+        "drum": "drums",
+        "keyboard": "keys",
+        "voice": "vocal",
+        "vocals": "vocal",
+    }
+    return aliases.get(value.strip().lower(), value.strip().lower())
 
 
 def _section_aliases(name: str) -> set[str]:
