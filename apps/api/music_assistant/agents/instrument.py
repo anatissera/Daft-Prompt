@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from ..config import get_settings
 from ..infrastructure.llm import LLMError
 from ..music.theory import beats_per_bar, chord_tone_names
+from ..music.constraints import role_constraint_text
 from ..music.validators import ValidationIssue, errors_only, validate_song
 from ..skills._tables import DRUM_PATTERNS, DRUM_PATTERN_ALIASES
 from ..skills.edits import EditFailure, NoteEdit, apply_edits
@@ -127,7 +128,7 @@ def _song_system_prompt(header: Header) -> str:
     )
 
 
-def _instrument_intro(roster_item: RosterItem) -> str:
+def _instrument_intro(roster_item: RosterItem, header: Header | None = None) -> str:
     """Per-instrument context — lives in the first human turn (see
     `_song_system_prompt`) so it doesn't invalidate the shared system-prompt cache."""
     drum_note = (
@@ -138,10 +139,17 @@ def _instrument_intro(roster_item: RosterItem) -> str:
     style_line = (
         f"\nPlaying style: {roster_item.playing_style}" if roster_item.playing_style else ""
     )
+    constraint_line = "\n" + role_constraint_text(
+        roster_item.instrument,
+        roster_item.role,
+        roster_item.midi_range,
+        header.key if header else "",
+    )
     return (
         f"You play {roster_item.instrument} ({roster_item.role}). "
         f"Range MIDI {roster_item.midi_range[0]}-{roster_item.midi_range[1]}{drum_note}."
         f"{style_line}"
+        f"{constraint_line}"
     )
 
 
@@ -279,7 +287,7 @@ def compose_part(
 
     messages = [
         ("system", _song_system_prompt(header)),
-        ("human", _instrument_intro(roster_item)
+        ("human", _instrument_intro(roster_item, header)
                     + f"\n\nOther instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
     ]
     out = _invoke_structured(structured, messages, "InstrumentOutput")
@@ -454,7 +462,7 @@ def _compose_turn_full(
     structured = llm.with_structured_output(InstrumentTurnOutput)
     messages = [
         ("system", _song_system_prompt(header)),
-        ("human", _instrument_intro(roster_item) + _negotiation_etiquette(batch_peer_ids)
+        ("human", _instrument_intro(roster_item, header) + _negotiation_etiquette(batch_peer_ids)
                     + f"\n\nOther instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
         ("human", _pending_context(pending)),
     ]
@@ -502,7 +510,7 @@ def _compose_turn_revision(
     structured = llm.with_structured_output(InstrumentRevisionOutput)
     messages = [
         ("system", _song_system_prompt(header)),
-        ("human", _instrument_intro(roster_item)
+        ("human", _instrument_intro(roster_item, header)
                     + _revision_etiquette() + _negotiation_etiquette(batch_peer_ids)
                     + f"\n\nOther instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
         ("human", f"Your current part:\n{_compact_part_text(existing_part)}"),
