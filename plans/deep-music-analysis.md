@@ -166,10 +166,12 @@ harmonic MVP is green.
 - [ ] Tests on synthetic `Note` lists for determinism (no audio needed).
 
 ### Track 2: Spectral / timbre features (per stem + mix)
-- [ ] `spectral_features.py`: centroid/bandwidth/rolloff/flatness/contrast/ZCR +
-  low/mid/high split + MFCC → `TimbreProfile` with interpretation strings.
-- [ ] Fill `StemProfile.timbre` and a mix-level timbre.
-- [ ] Tests on synthetic bright vs dark signals.
+- [x] `listening_features.py`: centroid/flatness + low/mid/high split →
+  `TimbreProfile` with interpretation strings. *(Contrast/ZCR/MFCC deferred —
+  the coarse labels cover the chat surface.)*
+- [x] Fill `StemProfile.timbre`. *(Mix-level timbre still open.)*
+- [x] Tests on synthetic bright vs dark signals (incl. a real-librosa pass on
+  generated audio).
 
 ### Track 3: Melodic movement (per stem, over transcribed notes)
 - [ ] `movement_features.py`: contour, interval histogram, step/leap ratio, range,
@@ -177,14 +179,14 @@ harmonic MVP is green.
 - [ ] Tests on synthetic stepwise vs leaping note lists.
 
 ### Track 4: Per-stem dynamics (bar-aligned)
-- [ ] `stem_dynamics.py`: per-stem RMS keyed to bars + build/drop detection →
-  `StemDynamics`, aligned to the A/B/C structure.
-- [ ] Tests asserting energy rises map to the right bars/sections.
+- [x] `listening_features.py`: per-stem RMS keyed to bars + build/drop detection →
+  `StemDynamics`.
+- [x] Tests asserting energy rises map to the right bars.
 
 ### Track 5: Groove / rhythm
-- [ ] `rhythm_features.py`: swing ratio, syncopation, per-stem density from onsets +
-  bar grid → `RhythmProfile`.
-- [ ] Tests on synthetic straight vs swung patterns.
+- [x] `listening_features.py`: swing ratio, syncopation, per-stem density from
+  onsets + beat grid → `RhythmProfile`.
+- [x] Tests on synthetic straight vs swung patterns.
 
 ### Track 6: Ensemble / voice-leading ("together")
 - [ ] Cross-stem bass↔lead voice-leading per bar window → `VoiceLeadingProfile`.
