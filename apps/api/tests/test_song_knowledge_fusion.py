@@ -100,6 +100,40 @@ def test_fusion_preserves_key_and_chord_conflicts():
     assert profile.confidence_summary["harmony"] == "conflicting"
 
 
+def test_fusion_does_not_mark_same_source_extended_repeats_as_conflicts():
+    query = ResolvedSongQuery(title="Repeat Demo")
+    results = [
+        result(
+            "CifraClub",
+            query,
+            [
+                claim(
+                    "short_chorus",
+                    "chord_progression",
+                    "Ebm7(9) | Fm7(9) Bbm7(9) | Ebm7(9) | Fm7(9) Bbm7(9) | Ab7",
+                    source="CifraClub",
+                    section="chorus",
+                ),
+                claim(
+                    "extended_chorus",
+                    "chord_progression",
+                    (
+                        "Ebm7(9) | Fm7(9) Bbm7(9) | Ebm7(9) | Fm7(9) Bbm7(9) | "
+                        "Ebm7(9) | Fm7(9) Bbm7(9) | Ab7"
+                    ),
+                    source="CifraClub",
+                    section="chorus",
+                ),
+            ],
+        )
+    ]
+
+    profile = EvidenceFuser().fuse_connector_results(query, results)
+
+    assert [conflict.claim_type for conflict in profile.conflicts] == []
+    assert profile.confidence_summary["harmony"] == "medium"
+
+
 def test_fusion_detects_likely_capo_or_transposition_without_flattening_conflict():
     query = ResolvedSongQuery(title="Capo Demo")
     results = [
