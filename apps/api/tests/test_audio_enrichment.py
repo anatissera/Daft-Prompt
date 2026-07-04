@@ -103,3 +103,42 @@ def test_low_confidence_audio_estimates_are_marked_approximate():
     assert "approximate" in key_claim.notes
     chord_claim = next(claim for claim in enriched.knowledge.evidence_claims if claim.claim_type == "chord_progression")
     assert "approximate" in chord_claim.notes
+
+
+def test_stem_listening_profiles_become_timbre_groove_and_dynamics_claims():
+    from music_assistant.domain.audio_profile import (
+        DynamicsEvent,
+        RhythmProfile,
+        StemDynamics,
+        StemProfile,
+        TimbreProfile,
+    )
+
+    profile = audio_profile()
+    drums = StemProfile(
+        name="drums",
+        role="percussion",
+        timbre=TimbreProfile(brightness="bright", noisiness="noisy", band_balance="high-heavy", confidence=0.6),
+        rhythm=RhythmProfile(feel="swung", density="busy", syncopation=0.5, confidence=0.7),
+        dynamics=StemDynamics(
+            events=[DynamicsEvent(kind="build", start_bar=8, end_bar=15), DynamicsEvent(kind="drop", start_bar=15, end_bar=16)],
+            confidence=0.5,
+        ),
+    )
+    profile = profile.model_copy(update={"audio": profile.audio.model_copy(update={"stems": [drums]})})
+
+    enriched = enrich_profile_with_audio(profile, base_profile=None)
+    claims = enriched.knowledge.evidence_claims
+
+    timbre = [c for c in claims if c.claim_type == "timbre"]
+    groove = [c for c in claims if c.claim_type == "groove"]
+    assert timbre and "drums: bright, noisy, high-heavy" == timbre[0].value
+    assert groove and groove[0].value == "drums: swung, busy, syncopated"
+    dynamics = [c for c in claims if "builds through bars 8-15" in c.value or "drops at bar 16" in c.value]
+    assert len(dynamics) == 2
+    assert all("approximate" in c.notes for c in timbre + groove + dynamics)
+
+
+def test_stems_without_listening_profiles_emit_no_extra_claims():
+    enriched = enrich_profile_with_audio(audio_profile(), base_profile=None)
+    assert not [c for c in enriched.knowledge.evidence_claims if c.claim_type in ("timbre", "groove")]

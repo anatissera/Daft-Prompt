@@ -132,6 +132,60 @@ def _audio_claims(audio: AudioProfile, reference_id: str) -> list[EvidenceClaim]
                 notes=["approximate", "probable"],
             )
         )
+    claims.extend(_stem_listening_claims(audio, source_url))
+    return claims
+
+
+def _stem_listening_claims(audio: AudioProfile, source_url: str) -> list[EvidenceClaim]:
+    """Deep-listening evidence (timbre / groove / dynamics per stem). Only stems
+    the analyzer actually profiled produce claims; everything stays labeled as
+    an approximate audio estimate."""
+    claims: list[EvidenceClaim] = []
+    for stem in audio.stems:
+        if stem.timbre is not None and stem.timbre.confidence > 0.0:
+            timbre = stem.timbre
+            claims.append(
+                _claim(
+                    "timbre",
+                    f"{stem.name}: {timbre.brightness}, {timbre.noisiness}, {timbre.band_balance}",
+                    source_url,
+                    timbre.confidence,
+                    timbre.interpretation or f"Timbre estimate for the {stem.name} stem.",
+                    notes=["approximate"],
+                )
+            )
+        if stem.rhythm is not None and stem.rhythm.confidence > 0.0:
+            rhythm = stem.rhythm
+            value = f"{stem.name}: {rhythm.feel}, {rhythm.density}"
+            if rhythm.syncopation >= 0.35:
+                value += ", syncopated"
+            claims.append(
+                _claim(
+                    "groove",
+                    value,
+                    source_url,
+                    rhythm.confidence,
+                    rhythm.interpretation or f"Groove estimate for the {stem.name} stem.",
+                    notes=["approximate"],
+                )
+            )
+        if stem.dynamics is not None:
+            for event in stem.dynamics.events[:4]:
+                description = (
+                    f"{stem.name} builds through bars {event.start_bar}-{event.end_bar}"
+                    if event.kind == "build"
+                    else f"{stem.name} drops at bar {event.end_bar}"
+                )
+                claims.append(
+                    _claim(
+                        "audio_estimate",
+                        description,
+                        source_url,
+                        stem.dynamics.confidence,
+                        "Bar-aligned loudness event from the stem dynamics curve.",
+                        notes=["approximate"],
+                    )
+                )
     return claims
 
 

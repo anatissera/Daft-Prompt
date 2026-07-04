@@ -293,12 +293,63 @@ class StructureProfile(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
+class TimbreProfile(BaseModel):
+    """Compact spectral summary of one stem (deep-music-analysis Track 2).
+
+    Labels are coarse on purpose — they feed chat chips and evidence-grounded
+    answers, not a spectral display. Raw values stay bounded scalars."""
+
+    brightness: Literal["dark", "warm", "bright"] = "warm"
+    noisiness: Literal["tonal", "mixed", "noisy"] = "mixed"
+    band_balance: Literal["low-heavy", "mid-heavy", "high-heavy", "balanced"] = "balanced"
+    centroid_hz: Optional[float] = None
+    flatness: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    band_split: list[float] = Field(default_factory=list, max_length=3)
+    interpretation: str = Field(default="", max_length=280)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class RhythmProfile(BaseModel):
+    """Groove summary of one stem (deep-music-analysis Track 5)."""
+
+    feel: Literal["straight", "swung"] = "straight"
+    swing_ratio: Optional[float] = Field(default=None, ge=0.5, le=4.0)
+    syncopation: float = Field(default=0.0, ge=0.0, le=1.0)
+    density: Literal["sparse", "moderate", "busy"] = "moderate"
+    onsets_per_bar: Optional[float] = Field(default=None, ge=0.0)
+    interpretation: str = Field(default="", max_length=280)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class DynamicsPoint(BaseModel):
+    bar: int
+    level: float = Field(ge=0.0, le=1.0)
+
+
+class DynamicsEvent(BaseModel):
+    kind: Literal["build", "drop"]
+    start_bar: int
+    end_bar: int
+
+
+class StemDynamics(BaseModel):
+    """Bar-keyed loudness curve with build/drop callouts (Track 4)."""
+
+    points: list[DynamicsPoint] = Field(default_factory=list, max_length=64)
+    events: list[DynamicsEvent] = Field(default_factory=list, max_length=12)
+    interpretation: str = Field(default="", max_length=280)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class StemProfile(BaseModel):
     name: str
     artifact_uri: Optional[str] = None
     role: Literal["percussion", "bass", "vocal", "harmony", "mix", "other"] = "other"
     available: bool = True
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    timbre: Optional[TimbreProfile] = None
+    rhythm: Optional[RhythmProfile] = None
+    dynamics: Optional[StemDynamics] = None
 
 
 class AudioProfile(BaseModel):
