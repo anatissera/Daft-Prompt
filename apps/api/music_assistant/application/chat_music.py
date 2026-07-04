@@ -20,7 +20,9 @@ from music_assistant.domain.audio_profile import ExplanationAnswer, ReferencePro
 from music_assistant.domain.errors import OffTopicRequest
 from music_assistant.domain.song_state import SongState
 from music_assistant.domain.usage import USAGE_TRACKER, UsageTracker
+from music_assistant.ports.llm import ChatModel
 from music_assistant.ports.reference_store import ReferenceStore
+from music_assistant.ports.song_researcher import SongResearcher
 
 
 Intent = Literal[
@@ -30,6 +32,21 @@ Intent = Literal[
     "clarify",
     "off_topic",
 ]
+ChatToolAction = Literal[
+    "research_song",
+    "answer_profile",
+    "compose",
+    "compose_from_reference",
+    "clarify",
+    "off_topic",
+]
+
+
+class ChatToolDecision(BaseModel):
+    action: ChatToolAction
+    query: Optional[str] = None
+    composition_request: Optional[str] = None
+    clarification: Optional[str] = None
 
 
 class ChatRequest(BaseModel):
@@ -84,10 +101,14 @@ class ChatMusic:
         compose_song: ComposeSong,
         answer_music_question: AnswerMusicQuestion,
         reference_store: ReferenceStore,
+        chat_model: ChatModel | None = None,
+        song_researcher: SongResearcher | None = None,
     ) -> None:
         self.compose_song = compose_song
         self.answer_music_question = answer_music_question
         self.reference_store = reference_store
+        self.chat_model = chat_model
+        self.song_researcher = song_researcher
 
     def handle(self, request: ChatRequest) -> ChatResponse:
         tracker = UsageTracker()
@@ -115,7 +136,82 @@ class ChatMusic:
             else None
         )
 
+        if self.chat_model is not None:
+            return self._handle_with_llm_tools(request, message, profile)
+
         intent = self._classify(message, has_reference=profile is not None)
+        return self._execute_deterministic_intent(intent, message, profile)
+
+    def _handle_with_llm_tools(
+        self,
+        request: ChatRequest,
+        message: str,
+        profile: ReferenceProfile | None,
+    ) -> ChatResponse:
+        decision = self.chat_model.with_structured_output(ChatToolDecision).invoke(
+            _chat_decision_messages(message, profile)
+        )
+        if decision.action == "clarify":
+            clarification = decision.clarification or (
+                "Which song or reference should I use, and what musical task do you want?"
+            )
+            return ChatResponse(
+                intent="clarify",
+                reply=clarification,
+                clarification=clarification,
+            )
+        if decision.action == "off_topic":
+            return ChatResponse(
+                intent="off_topic",
+                reply=decision.clarification or "I can help with music research, analysis, and composition.",
+            )
+        if decision.action == "research_song":
+            if self.song_researcher is None:
+                return ChatResponse(
+                    intent="clarify",
+                    reply="I need a configured song research tool before I can research that song.",
+                    clarification="Configure song research or provide an existing reference.",
+                )
+            query = decision.query or message
+            researched = self.song_researcher.research(query)
+            self.reference_store.save(researched)
+            return ChatResponse(
+                intent="answer_reference",
+                reply=researched.summary or "Research ready from source-backed evidence.",
+                reference_id=researched.reference_id,
+            )
+        if decision.action == "answer_profile":
+            if profile is None:
+                return ChatResponse(
+                    intent="clarify",
+                    reply="I need a current song profile before I can answer from evidence.",
+                    clarification="Research a song or attach/select a reference first.",
+                )
+            answer = self.answer_music_question.execute(message, profile)
+            return ChatResponse(
+                intent="answer_reference",
+                reply=answer.answer,
+                reference_id=profile.reference_id,
+                answer=answer,
+            )
+        if decision.action == "compose_from_reference":
+            if profile is None:
+                return ChatResponse(
+                    intent="clarify",
+                    reply="I need a current song profile before composing from a reference.",
+                    clarification="Research a song or attach/select a reference first.",
+                )
+            return self._compose_from_reference(decision.composition_request or message, profile)
+        if decision.action == "compose":
+            return self._compose(decision.composition_request or message or "demo")
+        return self._execute_deterministic_intent(self._classify(message, has_reference=profile is not None), message, profile)
+
+    def _execute_deterministic_intent(
+        self,
+        intent: Intent,
+        message: str,
+        profile: ReferenceProfile | None,
+    ) -> ChatResponse:
 
         if intent == "clarify":
             return ChatResponse(
@@ -139,25 +235,31 @@ class ChatMusic:
 
         if intent == "compose_from_reference":
             assert profile is not None
-            style = _style_with_reference(message, profile)
-            try:
-                song, source = self.compose_song.compose(style)
-            except OffTopicRequest as refusal:
-                return _off_topic_response(refusal)
-            return ChatResponse(
-                intent="compose_from_reference",
-                reply=_compose_reply(song, source, reference=profile),
-                reference_id=profile.reference_id,
-                compose=ChatComposeResult(song=song, source=source),
-            )
+            return self._compose_from_reference(message, profile)
 
+        return self._compose(message or "demo")
+
+    def _compose(self, style: str) -> ChatResponse:
         try:
-            song, source = self.compose_song.compose(message or "demo")
+            song, source = self.compose_song.compose(style)
         except OffTopicRequest as refusal:
             return _off_topic_response(refusal)
         return ChatResponse(
             intent="compose",
             reply=_compose_reply(song, source),
+            compose=ChatComposeResult(song=song, source=source),
+        )
+
+    def _compose_from_reference(self, message: str, profile: ReferenceProfile) -> ChatResponse:
+        style = _style_with_reference(message, profile)
+        try:
+            song, source = self.compose_song.compose(style)
+        except OffTopicRequest as refusal:
+            return _off_topic_response(refusal)
+        return ChatResponse(
+            intent="compose_from_reference",
+            reply=_compose_reply(song, source, reference=profile),
+            reference_id=profile.reference_id,
             compose=ChatComposeResult(song=song, source=source),
         )
 
@@ -221,3 +323,46 @@ def _style_with_reference(message: str, profile: ReferenceProfile) -> str:
     if not traits:
         return f"{prefix} inspired by reference {profile.source.label}"
     return f"{prefix} inspired by reference {profile.source.label}: " + ", ".join(traits)
+
+
+def _chat_decision_messages(message: str, profile: ReferenceProfile | None) -> list[dict[str, str]]:
+    context = _compact_profile_context(profile) if profile else "No current profile."
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are LLMinem's music chat orchestrator. Choose one tool action only: "
+                "research_song, answer_profile, compose, compose_from_reference, clarify, or off_topic. "
+                "Use tools for evidence; do not answer from memory, scrape directly, output raw HTML, "
+                "full lyrics, or generated song JSON."
+            ),
+        },
+        {"role": "system", "content": f"Current compact profile context: {context}"},
+        {"role": "user", "content": message},
+    ]
+
+
+def _compact_profile_context(profile: ReferenceProfile) -> str:
+    if profile.knowledge is not None:
+        knowledge = profile.knowledge
+        sections = ", ".join(section.name for section in knowledge.sections[:6]) or "none"
+        claims = ", ".join(
+            f"{claim.claim_type}:{claim.value}" for claim in knowledge.evidence_claims[:8]
+        ) or "none"
+        conflicts = ", ".join(conflict.claim_type for conflict in knowledge.conflicts[:4]) or "none"
+        return (
+            f"id={profile.reference_id}; title={knowledge.identity.title}; "
+            f"artist={knowledge.identity.artist or 'unknown'}; sections={sections}; "
+            f"claims={claims}; conflicts={conflicts}"
+        )
+    audio = profile.audio
+    if audio is None:
+        return f"id={profile.reference_id}; label={profile.source.label}; no audio or knowledge profile"
+    bits = [f"id={profile.reference_id}", f"label={profile.source.label}"]
+    if audio.tempo_bpm is not None:
+        bits.append(f"tempo={round(audio.tempo_bpm)} BPM")
+    if audio.key:
+        bits.append(f"key={audio.key}")
+    if audio.sections:
+        bits.append("sections=" + ", ".join(section.name for section in audio.sections[:6]))
+    return "; ".join(bits)
