@@ -49,7 +49,7 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
               {keyCandidates.map((candidate) => (
                 <li key={candidate.label} className="chord-row">
                   <span className="chord-label">{candidate.label}</span>
-                  <span className="context-muted">{candidate.confidence}</span>
+                  <span className="context-muted">{candidate.description} · {candidate.confidence}</span>
                 </li>
               ))}
             </ul>

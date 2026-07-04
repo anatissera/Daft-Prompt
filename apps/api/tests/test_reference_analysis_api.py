@@ -9,6 +9,7 @@ harmony/structure fields and the legacy compatibility fields.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -191,3 +192,21 @@ def test_analyze_reference_reports_analyzer_failure(tmp_path: Path, monkeypatch:
 
     assert response.status_code == 422
     assert "analyze" in response.json()["detail"].lower()
+
+
+def test_reference_analyzer_wires_development_stem_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        api,
+        "get_settings",
+        lambda: SimpleNamespace(
+            reference_upload_dir=str(tmp_path / "uploads"),
+            reference_upload_max_bytes=1024,
+            reference_stem_cache_enabled=True,
+            reference_stem_cache_dir=str(tmp_path / "stem-cache"),
+        ),
+    )
+
+    analyzer = api._reference_analyzer()
+
+    assert analyzer.separator.cache_enabled is True
+    assert analyzer.separator.cache_root == tmp_path / "stem-cache"

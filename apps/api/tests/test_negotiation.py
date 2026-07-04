@@ -9,16 +9,7 @@ import pytest
 from music_assistant.agents.arbiter import ArbiterOutput, ArbiterResolution
 from music_assistant.agents.instrument import InstrumentTurnOutput, NewRequest, RequestResolution
 
-# NOTE: Efficiency changes (drum shortcut + diff-based revision schema) require
-# reworking the scripted LLM fakes below — drums no longer call the LLM at all,
-# and round > 0 turns request InstrumentRevisionOutput instead of
-# InstrumentTurnOutput. The tests below are skipped pending a rewrite that
-# exercises negotiation with a non-drum peer (bass ↔ epiano) and hands the LLM
-# either output schema on demand.
-_SKIP_REASON = (
-    "Rewrite pending after drum-bypass + revision-schema efficiency change "
-    "(feat/composition-efficiency)."
-)
+from music_assistant.agents.instrument import InstrumentRevisionOutput
 from music_assistant.agents.director import DirectorOutput, ArrangementInstrument, ArrangementSection, CompositionGroup as DCompositionGroup
 from music_assistant.graph import run_negotiation
 from music_assistant.domain.song_state import (
@@ -73,45 +64,6 @@ class DirectorLLM:
         return self._output
 
 
-class ScriptedInstrumentLLM:
-    def __init__(self, script):
-        self.script = list(script)
-        self.calls = 0
-
-    def with_structured_output(self, schema):
-        assert schema is InstrumentTurnOutput
-        return self
-
-    def invoke(self, _messages):
-        out = self.script[min(self.calls, len(self.script) - 1)]
-        self.calls += 1
-        return out
-
-
-class CombinedLLM:
-    def __init__(self, director_output, instrument_script, arbiter_script=None):
-        self._director = DirectorLLM(director_output)
-        self._instrument = ScriptedInstrumentLLM(instrument_script)
-        self._arbiter_script = arbiter_script or []
-        self._arbiter_calls = 0
-
-    def with_structured_output(self, schema):
-        from music_assistant.agents.director import DirectorOutput as DO
-        from music_assistant.agents.arbiter import ArbiterOutput as AO
-        if schema is DO:
-            return self._director
-        if schema is ArbiterOutput:
-            return self
-        assert schema is InstrumentTurnOutput
-        return self._instrument
-
-    def invoke(self, _messages):
-        # arbiter path
-        out = self._arbiter_script[min(self._arbiter_calls, len(self._arbiter_script) - 1)] if self._arbiter_script else ArbiterOutput(resolutions=[])
-        self._arbiter_calls += 1
-        return out
-
-
 def _silent_note(pitch=40) -> Note:
     return Note(bar=0, start_beat=0.0, pitch=pitch, dur=1.0)
 
@@ -126,7 +78,13 @@ def _turn(pitch=40, summary="ok", requests=None, resolutions=None) -> Instrument
 
 
 def test_batches_execute_in_order_and_peer_summaries_propagate():
-    """The epiano (batch 2) must see drums and bass summaries in peer context."""
+    """The epiano (batch 2) must see drums and bass summaries in peer context.
+
+    Drums never call the LLM (deterministic drum_pattern) and both scripted
+    turns are valid + in range (the sanitize pass would silently fix anything
+    else without spending a repair turn), so the call order is exactly:
+    call 1 = bass (batch 1), call 2 = epiano (batch 2).
+    """
     seen_peer_summaries = {}
 
     class SpyLLM:
@@ -142,146 +100,199 @@ def test_batches_execute_in_order_and_peer_summaries_propagate():
         def invoke(self, messages):
             self.calls += 1
             human_text = "\n".join(m for role, m in messages if role == "human")
-            # record what the epiano sees
-            if "epiano" in human_text or self.calls <= 2:
-                return _turn(40, f"part_{self.calls}")
+            if self.calls == 1:
+                return _turn(40, "bass groove part_1")  # in bass range (28, 55)
             seen_peer_summaries["epiano_saw"] = human_text
-            return _turn(60, "epiano part")
+            return _turn(60, "epiano comp")  # in epiano range (48, 72)
 
     llm = SpyLLM()
     result = run_negotiation("funk", llm=llm)
 
-    # epiano should see drums and bass summaries
+    assert llm.calls == 2  # drums composed without the LLM
+    # epiano should see the bass summary and the drums' deterministic pattern
     assert "epiano_saw" in seen_peer_summaries
-    assert "part_1" in seen_peer_summaries["epiano_saw"] or "part_2" in seen_peer_summaries["epiano_saw"]
+    assert "part_1" in seen_peer_summaries["epiano_saw"]
+    assert "pattern" in seen_peer_summaries["epiano_saw"]
     assert "epiano" in result.parts
     assert "drums" in result.parts
     assert "bass" in result.parts
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+# Post-efficiency negotiation fixtures: drums never call the LLM (deterministic
+# drum_pattern, requests to them auto-declined), and round > 0 turns request
+# InstrumentRevisionOutput (a diff) instead of InstrumentTurnOutput. Negotiation
+# is therefore exercised between the two non-drum peers (bass ↔ epiano) with a
+# dual-schema scripted fake that serves whichever schema the agent asks for.
+
+MELODIC_GROUPS = [
+    CompositionGroup(name="beat", instrument_ids=["drums"], max_negotiation_rounds=0),
+    CompositionGroup(name="melodic", instrument_ids=["bass", "epiano"], max_negotiation_rounds=2),
+]
+
+
+def _revision(summary="revised", resolutions=None, requests=None) -> InstrumentRevisionOutput:
+    return InstrumentRevisionOutput(
+        edits=[],  # keep the existing part; negotiation bookkeeping is what's under test
+        notes_summary=summary,
+        request_resolutions=resolutions or [],
+        new_requests=requests or [],
+    )
+
+
+class _Queue:
+    def __init__(self, script):
+        self.script = list(script)
+        self.calls = 0
+
+    def invoke(self, _messages):
+        out = self.script[min(self.calls, len(self.script) - 1)] if self.script else None
+        self.calls += 1
+        return out
+
+
+class DualSchemaLLM:
+    """Scripted fake serving DirectorOutput, InstrumentTurnOutput (round 0),
+    InstrumentRevisionOutput (round > 0), and ArbiterOutput on demand."""
+
+    def __init__(self, director_output, turn_script, revision_script=None, arbiter_script=None):
+        self._director = DirectorLLM(director_output)
+        self.turns = _Queue(turn_script)
+        self.revisions = _Queue(revision_script or [])
+        self.arbiter = _Queue(arbiter_script or [ArbiterOutput(resolutions=[])])
+
+    def with_structured_output(self, schema):
+        from music_assistant.agents.director import DirectorOutput as DO
+        if schema is DO:
+            return self._director
+        if schema is ArbiterOutput:
+            return self.arbiter
+        if schema is InstrumentRevisionOutput:
+            return self.revisions
+        assert schema is InstrumentTurnOutput
+        return self.turns
+
+
 def test_intra_batch_negotiation_resolves_within_group():
-    director_out = _make_director_output([DRUMS, BASS, EPIANO], GROUPS)
-    instrument_script = [
-        _turn(36, "drums round0", requests=[NewRequest(to="bass", bars=[0], request="leave beat 1", rationale="fill")]),
-        _turn(40, "bass round0"),
-        _turn(40, "bass round1", resolutions=[RequestResolution(request_id="req_0_drums_0", accepted=True, resolution="done")]),
-        _turn(60, "epiano"),  # epiano batch, no negotiation
-    ]
-    llm = CombinedLLM(director_out, instrument_script)
+    director_out = _make_director_output([DRUMS, BASS, EPIANO], MELODIC_GROUPS)
+    llm = DualSchemaLLM(
+        director_out,
+        turn_script=[
+            _turn(40, "bass round0", requests=[NewRequest(to="epiano", bars=[0], request="leave beat 1", rationale="fill")]),
+            _turn(60, "epiano round0"),
+        ],
+        revision_script=[
+            _revision("epiano round1", resolutions=[RequestResolution(request_id="req_0_bass_0", accepted=True, resolution="done")]),
+        ],
+    )
     result = run_negotiation("funk", llm=llm)
 
-    req = next((r for r in result.negotiation_requests if r.id == "req_0_drums_0"), None)
+    req = next((r for r in result.negotiation_requests if r.id == "req_0_bass_0"), None)
     assert req is not None
     assert req.status == "resolved"
+    assert llm.revisions.calls == 1  # only epiano was re-run, as a diff turn
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
 def test_cross_batch_requests_are_not_dispatched_within_batch():
-    """A request from the rhythm batch to epiano (harmony batch) must not
-    trigger an epiano turn in the rhythm batch's negotiation rounds."""
-    director_out = _make_director_output([DRUMS, BASS, EPIANO], GROUPS)
-    instrument_calls = []
-
-    class _SilentArbiter:
-        def invoke(self, _messages):
-            return ArbiterOutput(resolutions=[])
-
-    class TrackingLLM:
-        def with_structured_output(self, schema):
-            from music_assistant.agents.director import DirectorOutput as DO
-            from music_assistant.agents.arbiter import ArbiterOutput as AO
-            if schema is DO:
-                return DirectorLLM(director_out)
-            if schema is AO:
-                return _SilentArbiter()
-            assert schema is InstrumentTurnOutput
-            return self
-
-        def invoke(self, messages):
-            system_text = next((m for role, m in messages if role == "system"), "")
-            instrument_calls.append(system_text[:40])
-            if len(instrument_calls) <= 2:
-                # drums raises a cross-batch request to epiano — should be ignored within rhythm batch
-                return _turn(36, "rhythm", requests=[NewRequest(to="epiano", bars=[0], request="support me", rationale="texture")])
-            return _turn(60, "epiano part")
-
-    result = run_negotiation("funk", llm=TrackingLLM())
-    # epiano should only get called once (in its own batch), not dragged into rhythm batch negotiation
-    epiano_calls = sum(1 for s in instrument_calls if "epiano" in s.lower() or "rhodes" in s.lower())
-    assert epiano_calls == 1
-
-
-@pytest.mark.skip(reason=_SKIP_REASON)
-def test_zero_new_requests_exits_batch_early():
-    director_out = _make_director_output([DRUMS, BASS], [
-        CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"], max_negotiation_rounds=2),
-    ])
-    instrument_script = [
-        _turn(36, "drums no ask"),
-        _turn(40, "bass no ask"),
-    ]
-    llm = CombinedLLM(director_out, instrument_script)
+    """A request from the melodic batch to the drums (an earlier, closed batch)
+    must not trigger extra melodic negotiation rounds — it survives as pending
+    and is settled by the arbiter at the end."""
+    director_out = _make_director_output(
+        [DRUMS, BASS, EPIANO],
+        [
+            CompositionGroup(name="beat", instrument_ids=["drums"], max_negotiation_rounds=0),
+            CompositionGroup(name="melodic", instrument_ids=["bass", "epiano"], max_negotiation_rounds=2),
+        ],
+    )
+    llm = DualSchemaLLM(
+        director_out,
+        turn_script=[
+            _turn(40, "bass round0", requests=[NewRequest(to="drums", bars=[0], request="less hats", rationale="space")]),
+            _turn(60, "epiano round0"),
+        ],
+        arbiter_script=[
+            ArbiterOutput(resolutions=[ArbiterResolution(request_id="req_0_bass_0", accepted=False, resolution="arbiter declined")]),
+        ],
+    )
     result = run_negotiation("funk", llm=llm)
 
-    assert llm._instrument.calls == 2  # only round 0 — no negotiation
+    assert llm.turns.calls == 2  # bass + epiano round 0 only
+    assert llm.revisions.calls == 0  # no negotiation round was dispatched for it
+    req = next((r for r in result.negotiation_requests if r.id == "req_0_bass_0"), None)
+    assert req is not None
+    assert req.status == "declined"
     assert result.converged is True
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+def test_zero_new_requests_exits_batch_early():
+    director_out = _make_director_output([DRUMS, BASS, EPIANO], MELODIC_GROUPS)
+    llm = DualSchemaLLM(
+        director_out,
+        turn_script=[
+            _turn(40, "bass no ask"),
+            _turn(60, "epiano no ask"),
+        ],
+    )
+    result = run_negotiation("funk", llm=llm)
+
+    assert llm.turns.calls == 2  # only round 0 — no negotiation
+    assert llm.revisions.calls == 0
+    assert result.converged is True
+
+
 def test_per_instrument_llm_failure_is_isolated_so_compose_finishes():
     """When one instrument's LLM call fails, the others' parts are preserved and the
-    failing instrument ships an empty-part placeholder so the batch run still finishes."""
+    failing instrument ships an empty-part placeholder so the batch run still finishes.
+    Drums compose deterministically, so their part must survive a bass LLM outage."""
     from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
     director_out = _make_director_output([DRUMS, BASS], [
         CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"], max_negotiation_rounds=0),
     ])
 
+    class _QuotaQueue:
+        def invoke(self, _messages):
+            raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota")
+
     class FlakyInstrumentLLM:
         def with_structured_output(self, schema):
             from music_assistant.agents.director import DirectorOutput as DO
-            from music_assistant.agents.arbiter import ArbiterOutput as AO
             if schema is DO:
                 return DirectorLLM(director_out)
-            if schema is AO:
-                return self
-            assert schema is InstrumentTurnOutput
-            return self
-
-        def invoke(self, messages):
-            system_text = next((m for role, m in messages if role == "system"), "")
-            if isinstance(system_text, str) and "electric_bass" in system_text:
-                raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota")
-            if "arbiter" in system_text.lower() or "resolve" in system_text.lower():
-                return ArbiterOutput(resolutions=[])
-            return _turn(36, "drums ok")
+            if schema is ArbiterOutput:
+                return _Queue([ArbiterOutput(resolutions=[])])
+            assert schema is InstrumentTurnOutput  # only the bass reaches the LLM
+            return _QuotaQueue()
 
     result = run_negotiation("funk", llm=FlakyInstrumentLLM())
 
-    assert result.parts["drums"].notes_summary == "drums ok"
+    assert "pattern" in result.parts["drums"].notes_summary  # deterministic drum part survived
     assert result.parts["bass"].notes_summary.startswith("(failed to compose")
     assert result.converged is True
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
 def test_arbiter_resolves_surviving_requests_after_all_batches():
-    director_out = _make_director_output([DRUMS, BASS], [
-        CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"], max_negotiation_rounds=1),
+    director_out = _make_director_output([DRUMS, BASS, EPIANO], [
+        CompositionGroup(name="beat", instrument_ids=["drums"], max_negotiation_rounds=0),
+        CompositionGroup(name="melodic", instrument_ids=["bass", "epiano"], max_negotiation_rounds=1),
     ])
-    # drums raises a request that bass never resolves → goes to arbiter
-    instrument_script = [
-        _turn(36, "drums", requests=[NewRequest(to="bass", bars=[0], request="leave space", rationale="fill")]),
-        _turn(40, "bass round0"),
-        _turn(40, "bass round1"),  # no resolutions
-    ]
-    arbiter_script = [
-        ArbiterOutput(resolutions=[ArbiterResolution(request_id="req_0_drums_0", accepted=False, resolution="arbiter declined")])
-    ]
-    llm = CombinedLLM(director_out, instrument_script, arbiter_script)
+    # bass raises a request that epiano never resolves → goes to arbiter
+    llm = DualSchemaLLM(
+        director_out,
+        turn_script=[
+            _turn(40, "bass round0", requests=[NewRequest(to="epiano", bars=[0], request="leave space", rationale="fill")]),
+            _turn(60, "epiano round0"),
+        ],
+        revision_script=[
+            _revision("epiano round1"),  # no resolutions
+        ],
+        arbiter_script=[
+            ArbiterOutput(resolutions=[ArbiterResolution(request_id="req_0_bass_0", accepted=False, resolution="arbiter declined")]),
+        ],
+    )
     result = run_negotiation("funk", llm=llm)
 
-    req = next((r for r in result.negotiation_requests if r.id == "req_0_drums_0"), None)
+    assert llm.revisions.calls == 1  # epiano got exactly one negotiation round
+    req = next((r for r in result.negotiation_requests if r.id == "req_0_bass_0"), None)
     assert req is not None
     assert req.status == "declined"
     assert result.converged is True

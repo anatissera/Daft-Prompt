@@ -20,6 +20,7 @@ from ..music.constraints import role_constraint_text
 from ..music.validators import ValidationIssue, errors_only, validate_song
 from ..skills._tables import DRUM_PATTERNS, DRUM_PATTERN_ALIASES
 from ..skills.edits import EditFailure, NoteEdit, apply_edits
+from ..skills.harmony import fit_to_range
 from ..skills.rhythm import drum_pattern
 from ..domain.song_state import (
     ChordSpan,
@@ -189,6 +190,47 @@ def _to_part(roster_item: RosterItem, out: InstrumentOutput) -> Part:
     )
 
 
+def _sanitize_part(header: Header, roster_item: RosterItem, part: Part) -> Part:
+    """Deterministic repair pass over LLM-emitted notes (plans/composition-skills.md
+    steps 4-5): octave-shift out-of-range pitches into the instrument register via
+    `fit_to_range`, clamp velocity, snap stray onsets into the bar, trim bar
+    overflows, and drop unfixable notes (outside the song, non-positive duration).
+
+    Runs before `_validate_part` so the LLM repair loop only fires on issues that
+    need actual musical judgment — each mechanical fix here saves a full repair
+    turn per instrument per round.
+    """
+    bpb = beats_per_bar(header.time_signature)
+    lo, hi = roster_item.midi_range
+    changed = False
+    kept: list[Note] = []
+    for note in part.notes:
+        if note.bar < 0 or note.bar >= header.num_bars or note.dur <= 0:
+            changed = True
+            continue
+        update: dict = {}
+        start = note.start_beat
+        if start < 0.0 or start >= bpb:
+            start = min(max(start, 0.0), max(bpb - 0.25, 0.0))
+            update["start_beat"] = start
+        if start + note.dur > bpb:
+            update["dur"] = bpb - start
+        if not 1 <= note.velocity <= 127:
+            update["velocity"] = min(max(note.velocity, 1), 127)
+        if note.pitch is not None and not roster_item.is_drum:
+            fitted = fit_to_range(note.pitch, lo, hi)
+            if fitted != note.pitch:
+                update["pitch"] = fitted
+        if update:
+            changed = True
+            kept.append(note.model_copy(update=update))
+        else:
+            kept.append(note)
+    if not changed:
+        return part
+    return part.model_copy(update={"notes": kept})
+
+
 def _resolve_drum_style(header: Header, roster_item: RosterItem) -> str:
     """Pick a `drum_pattern` style key from the roster item's role and the
     header's genre. Role wins (so the director can override per-song with
@@ -293,7 +335,7 @@ def compose_part(
     out = _invoke_structured(structured, messages, "InstrumentOutput")
     if out is None:
         return _fallback_part(roster_item)
-    part = _to_part(roster_item, out)
+    part = _sanitize_part(header, roster_item, _to_part(roster_item, out))
 
     for _ in range(MAX_REPAIRS):
         issues = _validate_part(header, roster_item, part)
@@ -306,7 +348,7 @@ def compose_part(
         out = _invoke_structured(structured, messages, "InstrumentOutput")
         if out is None:
             return _fallback_part(roster_item)
-        part = _to_part(roster_item, out)
+        part = _sanitize_part(header, roster_item, _to_part(roster_item, out))
 
     return part
 
@@ -469,7 +511,7 @@ def _compose_turn_full(
     out = _invoke_structured(structured, messages, "InstrumentTurnOutput")
     if out is None:
         return _fallback_part(roster_item), [], []
-    part = _to_part(roster_item, out)
+    part = _sanitize_part(header, roster_item, _to_part(roster_item, out))
 
     for _ in range(MAX_REPAIRS):
         issues = _validate_part(header, roster_item, part)
@@ -482,7 +524,7 @@ def _compose_turn_full(
         out = _invoke_structured(structured, messages, "InstrumentTurnOutput")
         if out is None:
             return _fallback_part(roster_item), [], []
-        part = _to_part(roster_item, out)
+        part = _sanitize_part(header, roster_item, _to_part(roster_item, out))
 
     return part, out.request_resolutions, out.new_requests
 
@@ -521,10 +563,10 @@ def _compose_turn_revision(
     if out is None:
         return existing_part.model_copy(), [], []
     part, failures = apply_edits(existing_part, out.edits, num_bars=header.num_bars)
-    part = part.model_copy(update={
+    part = _sanitize_part(header, roster_item, part.model_copy(update={
         "notes_summary": out.notes_summary or existing_part.notes_summary,
         "self_notes": out.self_notes,
-    })
+    }))
 
     for _ in range(MAX_REPAIRS):
         issues = _validate_part(header, roster_item, part)
@@ -540,9 +582,9 @@ def _compose_turn_revision(
         if out is None:
             return part, [], []
         part, failures = apply_edits(existing_part, out.edits, num_bars=header.num_bars)
-        part = part.model_copy(update={
+        part = _sanitize_part(header, roster_item, part.model_copy(update={
             "notes_summary": out.notes_summary or existing_part.notes_summary,
             "self_notes": out.self_notes,
-        })
+        }))
 
     return part, out.request_resolutions, out.new_requests

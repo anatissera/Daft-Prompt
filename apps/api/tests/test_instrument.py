@@ -60,6 +60,12 @@ def _out_of_range_output() -> InstrumentOutput:
     )
 
 
+def _empty_output() -> InstrumentOutput:
+    # empty_part is the one validation error the sanitize pass cannot fix
+    # mechanically, so it still exercises the LLM repair loop.
+    return InstrumentOutput(notes=[], notes_summary="nothing yet")
+
+
 def test_compose_part_accepts_valid_output_first_try():
     llm = FakeLLM([_valid_output()])
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
@@ -69,17 +75,47 @@ def test_compose_part_accepts_valid_output_first_try():
 
 
 def test_compose_part_repairs_after_validation_failure():
-    llm = FakeLLM([_out_of_range_output(), _valid_output()])
+    llm = FakeLLM([_empty_output(), _valid_output()])
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
     assert part.notes[0].pitch == 40
     assert llm.structured.calls == 2  # one repair round-trip
 
 
 def test_compose_part_never_crashes_when_repairs_exhausted():
-    llm = FakeLLM([_out_of_range_output()])  # always invalid
+    llm = FakeLLM([_empty_output()])  # always invalid
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
-    assert part.notes[0].pitch == 10  # shipped as-is
+    assert part.notes == []  # shipped as-is
     assert llm.structured.calls == 1 + MAX_REPAIRS
+
+
+def test_compose_part_sanitizes_out_of_range_pitch_without_llm_repair():
+    llm = FakeLLM([_out_of_range_output()])
+    part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
+    assert part.notes[0].pitch == 34  # 10 octave-shifted up into (28, 55)
+    assert llm.structured.calls == 1  # mechanical fix, no repair turn
+
+
+def test_sanitize_clamps_velocity_and_trims_bar_overflow():
+    out = InstrumentOutput(
+        notes=[Note(bar=0, start_beat=3.0, pitch=40, dur=4.0, velocity=250)],
+        notes_summary="loud overflow",
+    )
+    part = compose_part(HEADER, BASS, ROSTER, {}, llm=FakeLLM([out]))
+    note = part.notes[0]
+    assert note.velocity == 127
+    assert note.start_beat + note.dur == pytest.approx(4.0)  # trimmed to bar end
+
+
+def test_sanitize_drops_notes_outside_the_song():
+    out = InstrumentOutput(
+        notes=[
+            Note(bar=99, start_beat=0.0, pitch=40, dur=1.0),
+            Note(bar=0, start_beat=0.0, pitch=40, dur=1.0),
+        ],
+        notes_summary="one stray",
+    )
+    part = compose_part(HEADER, BASS, ROSTER, {}, llm=FakeLLM([out]))
+    assert [n.bar for n in part.notes] == [0]
 
 
 def test_compose_part_falls_back_when_structured_output_is_none():
