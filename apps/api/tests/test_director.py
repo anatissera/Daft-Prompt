@@ -311,3 +311,55 @@ def test_director_prompt_contains_key_musical_concepts():
     assert "composition_group" in system_text or "composition group" in system_text.lower()
     assert "energy" in system_text.lower()
     assert "Jamiroquai" in human_text
+
+# --- chord/form backfill via skills (plans/composition-skills.md step 2) ---
+
+
+def test_empty_chord_progression_is_backfilled_for_every_bar():
+    out = _full_output()
+    out = out.model_copy(update={"chord_progression": []})
+    song = arrangement_to_song("funk", out)
+    covered = {span.bar for span in song.header.chord_progression}
+    assert covered == set(range(song.header.num_bars))
+    assert all(span.chord for span in song.header.chord_progression)
+
+
+def test_backfill_is_deterministic():
+    out = _full_output().model_copy(update={"chord_progression": []})
+    first = arrangement_to_song("funk", out).header.chord_progression
+    second = arrangement_to_song("funk", out).header.chord_progression
+    assert [ (s.bar, s.chord) for s in first ] == [ (s.bar, s.chord) for s in second ]
+
+
+def test_partial_chord_progression_keeps_director_spans_and_fills_gaps():
+    out = _full_output()
+    out = out.model_copy(update={"chord_progression": [ChordSpan(bar=3, chord="Gm7")]})
+    song = arrangement_to_song("funk", out)
+    by_bar = {span.bar: span.chord for span in song.header.chord_progression}
+    assert by_bar[3] == "Gm7"
+    assert set(by_bar) == set(range(song.header.num_bars))
+
+
+def test_out_of_range_chord_spans_are_dropped_then_backfilled():
+    out = _full_output()
+    out = out.model_copy(
+        update={"chord_progression": [ChordSpan(bar=99, chord="C"), ChordSpan(bar=-1, chord="C")]}
+    )
+    song = arrangement_to_song("funk", out)
+    bars = [span.bar for span in song.header.chord_progression]
+    assert bars == sorted(bars)
+    assert all(0 <= bar < song.header.num_bars for bar in bars)
+
+
+def test_full_progression_from_director_is_untouched():
+    out = _full_output()
+    song = arrangement_to_song("funk", out)
+    assert all(span.chord == "Dm7" for span in song.header.chord_progression)
+
+
+def test_empty_sections_get_a_suggested_form():
+    out = _full_output().model_copy(update={"sections": []})
+    song = arrangement_to_song("funk", out)
+    assert song.header.sections
+    assert song.header.sections[0].start_bar == 0
+    assert song.header.sections[-1].end_bar == song.header.num_bars

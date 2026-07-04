@@ -2,12 +2,15 @@ import type { ChatMessage } from "@/lib/chatTypes";
 import AnalysisResultBlock from "@/components/AnalysisResultBlock";
 import GeneratedSongBlock from "@/components/GeneratedSongBlock";
 import Typewriter from "@/components/Typewriter";
+import AnalysisProgressChecklist from "@/components/AnalysisProgressChecklist";
+import type { AnalysisStageState } from "@/lib/analysisProgress.mjs";
 
 interface ChatThreadProps {
   messages: ChatMessage[];
   busyLabel: string | null;
   busyElapsedMs?: number;
   onCancel?: () => void;
+  analysisProgress?: AnalysisStageState[] | null;
 }
 
 // Rough timeline of the compose pipeline. We can't show this list until the
@@ -30,7 +33,7 @@ function activeStageIndex(elapsedSec: number): number {
   return 0;
 }
 
-export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCancel }: ChatThreadProps) {
+export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCancel, analysisProgress }: ChatThreadProps) {
   const elapsedSec = (busyElapsedMs ?? 0) / 1000;
   const activeIdx = activeStageIndex(elapsedSec);
   const showPipeline =
@@ -71,7 +74,10 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
                 </button>
               ) : null}
             </p>
-            {showPipeline ? (
+            {analysisProgress ? (
+              <AnalysisProgressChecklist stages={analysisProgress} />
+            ) : null}
+            {showPipeline && !analysisProgress ? (
               <ol className="pipeline-steps">
                 {PIPELINE_STAGES.map((stage, idx) => {
                   const state =

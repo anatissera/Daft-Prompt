@@ -22,6 +22,7 @@ from ..domain.song_state import (
     Section,
     SongState,
 )
+from ..skills.progression import suggest_chord_progression, suggest_form
 
 _DEFAULT_REFUSAL = (
     "I only handle music tasks: compose a short sketch, analyze an audio file you upload, "
@@ -260,20 +261,40 @@ def _validate_groups(
         raise ValueError(f"instruments not assigned to any group: {missing}")
 
 
+def _backfill_chord_progression(
+    spans: list[ChordSpan], key: str, mood: str, num_bars: int, sections: list[Section]
+) -> list[ChordSpan]:
+    """Guarantee every bar has a chord. The director's own spans win; bars it
+    left uncovered (or placed out of range) are filled deterministically from
+    the progression skill so downstream instruments, harmonic-fit scoring, and
+    bass-downbeat enforcement always have a complete harmonic anchor."""
+    in_range = [s for s in spans if 0 <= s.bar < num_bars]
+    covered = {s.bar for s in in_range}
+    if len(covered) >= num_bars:
+        return sorted(in_range, key=lambda s: s.bar)
+    by_bar = {s.bar: s for s in suggest_chord_progression(key, mood, num_bars, sections)}
+    for span in in_range:
+        by_bar[span.bar] = span
+    return [by_bar[bar] for bar in range(num_bars)]
+
+
 def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
     clamped_instruments, id_map = _repair_roster_ids(_clamp_roster(out.instruments))
     groups = _remap_groups(out.composition_groups, id_map)
     clamped_instruments, groups = _collapse_drum_components(clamped_instruments, groups)
     num_bars = _clamp_num_bars(out.num_bars)
     _validate_groups(groups, clamped_instruments)
+    sections = _clamp_sections(out.sections, num_bars) or suggest_form(out.genre, num_bars)
     header = Header(
         genre=out.genre,
         key=out.key,
         tempo_bpm=out.tempo_bpm,
         time_signature=(out.time_sig_numerator, out.time_sig_denominator),
         num_bars=num_bars,
-        sections=_clamp_sections(out.sections, num_bars),
-        chord_progression=list(out.chord_progression),
+        sections=sections,
+        chord_progression=_backfill_chord_progression(
+            list(out.chord_progression), out.key, out.genre, num_bars, sections
+        ),
     )
     roster = [
         RosterItem(

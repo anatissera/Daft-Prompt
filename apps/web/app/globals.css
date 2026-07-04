@@ -1814,6 +1814,43 @@ input[type="number"], select {
 ::-webkit-scrollbar-thumb:hover { background: var(--gold-mid); }
 ::-webkit-scrollbar-track { background: transparent; }
 
+.analysis-progress-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analysis-progress-stage {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.analysis-progress-active {
+  color: var(--text);
+}
+
+.analysis-progress-completed {
+  color: var(--success);
+}
+
+.analysis-progress-active .analysis-progress-indicator {
+  animation: analysis-progress-pulse 1.2s ease-in-out infinite;
+}
+
+.analysis-progress-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes analysis-progress-pulse {
+  50% { opacity: 0.35; }
+}
+
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
   .app-sidebar { display: none; }

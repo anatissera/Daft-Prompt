@@ -5,6 +5,12 @@ import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
 import type { AnalysisEvent, ReferenceProfile, SongState } from "@/lib/types";
+import { getAnalysisReadyMessage } from "@/lib/referenceProfileView.mjs";
+import {
+  createAnalysisProgress,
+  updateAnalysisProgress,
+  type AnalysisStageState,
+} from "@/lib/analysisProgress.mjs";
 import {
   chooseChatAction,
   createAnalysisMessage,
@@ -60,6 +66,7 @@ export default function Home() {
   const [activeWork, setActiveWork] = useState<string | null>(null);
   const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
   const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisStageState[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
   const sessionTitledRef = useRef(false);
@@ -176,6 +183,7 @@ export default function Home() {
 
   async function analyzeReference(file: File) {
     startWork("Analyzing audio (tempo, key, energy, sections, chords)…");
+    setAnalysisProgress(createAnalysisProgress());
     const controller = new AbortController();
     abortRef.current = controller;
     setReferenceProfile(null);
@@ -206,12 +214,15 @@ export default function Home() {
             throw new Error(event.message);
           } else {
             setActiveWork(event.message);
+            setAnalysisProgress((current) => (
+              current ? updateAnalysisProgress(current, event) : current
+            ));
           }
         }
       }
       if (!profile) throw new Error("analysis stream ended without a profile");
       setReferenceProfile(profile);
-      appendMessage(createAnalysisMessage("assistant", analysisReadyMessage(profile), profile, nextMessageIndex()));
+      appendMessage(createAnalysisMessage("assistant", getAnalysisReadyMessage(profile), profile, nextMessageIndex()));
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
@@ -220,6 +231,7 @@ export default function Home() {
       setError(m);
       appendMessage(createTextMessage("assistant", `I could not analyze that file: ${m}`, nextMessageIndex()));
     } finally {
+      setAnalysisProgress(null);
       if (!controller.signal.aborted) stopWork();
     }
   }
@@ -283,7 +295,7 @@ export default function Home() {
           </div>
           <span className="app-topbar-meta">TWILIGHT · OUTPUT MIDI</span>
         </header>
-        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} />
+        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} analysisProgress={analysisProgress} />
         {error ? (
           <p className="error-banner" role="alert">{error}</p>
         ) : null}
@@ -345,14 +357,4 @@ function normalizeAnalysisError(err: unknown) {
     );
   }
   return message;
-}
-
-function analysisReadyMessage(profile: ReferenceProfile) {
-  const audio = profile.audio;
-  if (!audio) return "Analysis finished, but no audio profile was returned.";
-  const tempoValue = audio.tempo?.primary_bpm ?? audio.tempo_bpm;
-  const tempo = tempoValue == null ? "unknown tempo" : `likely ${Math.round(tempoValue)} BPM`;
-  const keyValue = audio.harmony?.key?.primary?.key ?? audio.key;
-  const key = keyValue ? `likely key ${keyValue}` : "unknown key";
-  return `Analysis ready for ${profile.source.label}: ${tempo}, ${key}.`;
 }
