@@ -1,0 +1,65 @@
+{
+  "profile_id": "song_conflicting_key",
+  "identity": {
+    "title": "Conflict Demo",
+    "artist": "Fixture Artist"
+  },
+  "evidence_claims": [
+    {
+      "claim_id": "conflict_key_a",
+      "claim_type": "key",
+      "value": "A major",
+      "normalized_value": "A major",
+      "source_name": "source one",
+      "source_url": "file://source-one",
+      "extraction_method": "manual_fixture",
+      "confidence": 0.78,
+      "snippet": "Key: A major"
+    },
+    {
+      "claim_id": "conflict_key_fsharp",
+      "claim_type": "key",
+      "value": "F# minor",
+      "normalized_value": "F# minor",
+      "source_name": "source two",
+      "source_url": "file://source-two",
+      "extraction_method": "manual_fixture",
+      "confidence": 0.76,
+      "snippet": "Key: F# minor"
+    }
+  ],
+  "conflicts": [
+    {
+      "conflict_id": "key_relative_conflict",
+      "claim_type": "key",
+      "description": "Sources disagree between relative major/minor interpretations.",
+      "claims": [
+        {
+          "claim_id": "conflict_key_a",
+          "claim_type": "key",
+          "value": "A major",
+          "normalized_value": "A major",
+          "source_name": "source one",
+          "source_url": "file://source-one",
+          "extraction_method": "manual_fixture",
+          "confidence": 0.78,
+          "snippet": "Key: A major"
+        },
+        {
+          "claim_id": "conflict_key_fsharp",
+          "claim_type": "key",
+          "value": "F# minor",
+          "normalized_value": "F# minor",
+          "source_name": "source two",
+          "source_url": "file://source-two",
+          "extraction_method": "manual_fixture",
+          "confidence": 0.76,
+          "snippet": "Key: F# minor"
+        }
+      ]
+    }
+  ],
+  "confidence_summary": {
+    "key": "conflicting"
+  }
+}
