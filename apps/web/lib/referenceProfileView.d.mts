@@ -68,3 +68,12 @@ export function isReferenceQuestion(prompt: string): boolean;
 export function answerReferenceQuestion(prompt: string, profile: ReferenceProfile): string;
 
 export function confidenceLabel(value: number): ConfidenceLabel;
+
+export interface DisplayStemListening {
+  name: string;
+  role: string;
+  chips: string[];
+  callouts: string[];
+}
+
+export function getStemListening(profile: ReferenceProfile): DisplayStemListening[];

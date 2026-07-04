@@ -11,6 +11,7 @@ import {
   getKeyCandidateSummary,
   getLegacyEnergySections,
   getMainProgression,
+  getStemListening,
   getStructureTimeline,
   getTopChordEstimates,
   isLowUsefulness,
@@ -508,4 +509,54 @@ test("getTopChordEstimates returns probable chord labels with time ranges", () =
       confidence: "medium · 72%",
     },
   ]);
+});
+
+test("getStemListening builds chips and callouts from listening profiles", () => {
+  const profile = {
+    audio: {
+      stems: [
+        {
+          name: "drums",
+          role: "percussion",
+          timbre: { brightness: "bright", noisiness: "noisy", band_balance: "high-heavy" },
+          rhythm: { feel: "swung", density: "busy", syncopation: 0.5 },
+          dynamics: {
+            events: [
+              { kind: "build", start_bar: 8, end_bar: 15 },
+              { kind: "drop", start_bar: 15, end_bar: 16 },
+            ],
+          },
+        },
+        { name: "bass", role: "bass" },
+      ],
+    },
+  };
+  const rows = getStemListening(profile);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, "drums");
+  assert.deepEqual(rows[0].chips, ["bright", "noisy", "high-heavy", "swung", "busy", "syncopated"]);
+  assert.deepEqual(rows[0].callouts, ["builds bars 8–15", "drops at bar 16"]);
+});
+
+test("getStemListening hides balanced band and low syncopation chips", () => {
+  const profile = {
+    audio: {
+      stems: [
+        {
+          name: "other",
+          role: "harmony",
+          timbre: { brightness: "warm", noisiness: "tonal", band_balance: "balanced" },
+          rhythm: { feel: "straight", density: "moderate", syncopation: 0.1 },
+        },
+      ],
+    },
+  };
+  const rows = getStemListening(profile);
+  assert.deepEqual(rows[0].chips, ["warm", "tonal", "straight", "moderate"]);
+  assert.deepEqual(rows[0].callouts, []);
+});
+
+test("getStemListening is empty without listening data", () => {
+  assert.deepEqual(getStemListening({ audio: { stems: [{ name: "bass" }] } }), []);
+  assert.deepEqual(getStemListening({}), []);
 });

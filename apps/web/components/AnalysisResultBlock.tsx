@@ -6,6 +6,7 @@ import {
   getKeyCandidateSummary,
   getLegacyEnergySections,
   getMainProgression,
+  getStemListening,
   getTopChordEstimates,
 } from "@/lib/referenceProfileView.mjs";
 
@@ -17,6 +18,7 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
   const mainProgression = getMainProgression(profile);
   const analysisNotes = getAnalysisNotes(profile);
   const legacyEnergySections = getLegacyEnergySections(profile);
+  const stemListening = getStemListening(profile);
 
   return (
     <section className="result-block" aria-label="Reference analysis result">
@@ -85,6 +87,29 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
                 <span className="context-muted">
                   {estimate.timeRange} · {estimate.confidence}
                 </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      {stemListening.length > 0 ? (
+        <details className="details-panel" open>
+          <summary className="details-summary">Deep listening</summary>
+          <ul className="section-list">
+            {stemListening.map((stem) => (
+              <li key={stem.name} className="section-row">
+                <div className="section-row-main">
+                  <span className="section-row-name">{stem.name}</span>
+                  <span className="listening-chips">
+                    {stem.chips.map((chip) => (
+                      <span key={`${stem.name}-${chip}`} className="listening-chip">{chip}</span>
+                    ))}
+                  </span>
+                </div>
+                {stem.callouts.length > 0 ? (
+                  <span className="context-muted">{stem.callouts.join(" · ")}</span>
+                ) : null}
               </li>
             ))}
           </ul>

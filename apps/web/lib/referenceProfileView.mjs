@@ -287,3 +287,29 @@ export function confidenceLabel(value) {
   if (value >= 0.5) return "medium";
   return "low";
 }
+
+export function getStemListening(profile) {
+  const stems = profile?.audio?.stems ?? [];
+  const rows = [];
+  for (const stem of stems) {
+    const chips = [];
+    if (stem.timbre) {
+      chips.push(stem.timbre.brightness, stem.timbre.noisiness);
+      if (stem.timbre.band_balance && stem.timbre.band_balance !== "balanced") {
+        chips.push(stem.timbre.band_balance);
+      }
+    }
+    if (stem.rhythm) {
+      chips.push(stem.rhythm.feel, stem.rhythm.density);
+      if ((stem.rhythm.syncopation ?? 0) >= 0.35) chips.push("syncopated");
+    }
+    const callouts = (stem.dynamics?.events ?? []).slice(0, 3).map((event) => (
+      event.kind === "build"
+        ? `builds bars ${event.start_bar}–${event.end_bar}`
+        : `drops at bar ${event.end_bar}`
+    ));
+    if (chips.length === 0 && callouts.length === 0) continue;
+    rows.push({ name: stem.name, role: stem.role, chips, callouts });
+  }
+  return rows;
+}
