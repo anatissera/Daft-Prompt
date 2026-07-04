@@ -1,0 +1,108 @@
+{
+  "profile_id": "song_jamiroquai_space_cowboy",
+  "identity": {
+    "title": "Space Cowboy",
+    "artist": "Jamiroquai",
+    "album": "The Return of the Space Cowboy",
+    "year": 1994,
+    "version": "album"
+  },
+  "metadata": {
+    "genre": "acid jazz",
+    "language": "English"
+  },
+  "evidence_claims": [
+    {
+      "claim_id": "space_tempo_1",
+      "claim_type": "tempo",
+      "value": "111 BPM",
+      "normalized_value": "111",
+      "source_name": "manual fixture",
+      "source_url": "file://space-cowboy",
+      "extraction_method": "manual_fixture",
+      "confidence": 0.86,
+      "snippet": "Tempo listed as 111 BPM."
+    },
+    {
+      "claim_id": "space_chorus_chords_1",
+      "claim_type": "chord_progression",
+      "value": "Bm7 - E9 - Amaj7",
+      "normalized_value": "Bm7 E9 Amaj7",
+      "section_name": "chorus",
+      "source_name": "chord fixture",
+      "source_url": "file://space-cowboy-chords",
+      "extraction_method": "site_parser",
+      "confidence": 0.74,
+      "snippet": "Chorus: Bm7 E9 Amaj7"
+    },
+    {
+      "claim_id": "space_chorus_lyrics_1",
+      "claim_type": "lyrics",
+      "value": "section lyric locator",
+      "section_name": "chorus",
+      "source_name": "lyrics fixture",
+      "source_url": "file://space-cowboy-lyrics",
+      "extraction_method": "site_parser",
+      "confidence": 0.72,
+      "snippet": "Chorus heading present; lyrics kept as a section-scoped locator."
+    }
+  ],
+  "sections": [
+    {
+      "name": "verse",
+      "order": 1,
+      "energy": 0.48,
+      "density": 0.52
+    },
+    {
+      "name": "chorus",
+      "order": 2,
+      "energy": 0.78,
+      "density": 0.7,
+      "chord_claims": [
+        {
+          "claim_id": "space_chorus_chords_1",
+          "claim_type": "chord_progression",
+          "value": "Bm7 - E9 - Amaj7",
+          "normalized_value": "Bm7 E9 Amaj7",
+          "section_name": "chorus",
+          "source_name": "chord fixture",
+          "source_url": "file://space-cowboy-chords",
+          "extraction_method": "site_parser",
+          "confidence": 0.74,
+          "snippet": "Chorus: Bm7 E9 Amaj7"
+        }
+      ],
+      "lyric_claims": [
+        {
+          "claim_id": "space_chorus_lyrics_1",
+          "claim_type": "lyrics",
+          "value": "section lyric locator",
+          "section_name": "chorus",
+          "source_name": "lyrics fixture",
+          "source_url": "file://space-cowboy-lyrics",
+          "extraction_method": "site_parser",
+          "confidence": 0.72,
+          "snippet": "Chorus heading present; lyrics kept as a section-scoped locator."
+        }
+      ]
+    }
+  ],
+  "traits": [
+    {
+      "instrument": "drums",
+      "role": "groove",
+      "traits": {
+        "groove_family": "four-on-the-floor funk",
+        "density": "medium"
+      },
+      "source_claim_ids": ["space_tempo_1"],
+      "confidence": 0.68
+    }
+  ],
+  "confidence_summary": {
+    "tempo": "high",
+    "harmony": "medium",
+    "lyrics": "section-scoped"
+  }
+}

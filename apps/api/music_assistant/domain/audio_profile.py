@@ -1,13 +1,38 @@
-"""Domain models for future listening/reference-analysis workflows."""
+"""Domain models for listening, research, and reference-guided composition."""
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, computed_field
 
 
 ConfidenceLabel = Literal["low", "medium", "high"]
+EvidenceClaimType = Literal[
+    "tempo",
+    "key",
+    "meter",
+    "chord_progression",
+    "section",
+    "lyrics",
+    "tab",
+    "credit",
+    "metadata",
+    "instrumentation",
+    "groove",
+    "timbre",
+    "trait",
+    "audio_estimate",
+    "other",
+]
+ExtractionMethod = Literal[
+    "site_parser",
+    "browser_rendered_page",
+    "api",
+    "audio_analyzer",
+    "manual_fixture",
+    "inference",
+]
 
 
 class ReferenceSource(BaseModel):
@@ -25,6 +50,122 @@ def confidence_label(confidence: float) -> ConfidenceLabel:
     if confidence >= 0.5:
         return "medium"
     return "low"
+
+
+class TimeRange(BaseModel):
+    start_seconds: Optional[float] = Field(default=None, ge=0.0)
+    end_seconds: Optional[float] = Field(default=None, ge=0.0)
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    source: Optional[str] = None
+
+
+class EvidenceClaim(BaseModel):
+    """A source-backed musical claim, stored as evidence rather than truth."""
+
+    claim_id: str
+    claim_type: EvidenceClaimType
+    value: str
+    normalized_value: Optional[str] = None
+    section_name: Optional[str] = None
+    time_range: Optional[TimeRange] = None
+    source_name: str = Field(min_length=1)
+    source_url: str = Field(min_length=1)
+    extraction_method: ExtractionMethod
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    snippet: str = Field(default="", max_length=280)
+    notes: list[str] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def confidence_label(self) -> ConfidenceLabel:
+        return confidence_label(self.confidence)
+
+
+class EvidenceConflict(BaseModel):
+    conflict_id: str
+    claim_type: EvidenceClaimType
+    description: str
+    claims: list[EvidenceClaim] = Field(default_factory=list)
+    resolution: Optional[str] = None
+
+
+class MissingData(BaseModel):
+    field: str
+    reason: str
+    needed_evidence: str = ""
+
+
+class SongIdentity(BaseModel):
+    title: str
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    year: Optional[int] = None
+    version: Optional[str] = None
+    candidate_matches: list[str] = Field(default_factory=list)
+
+
+class SongSectionProfile(BaseModel):
+    name: str
+    order: int
+    start_seconds: Optional[float] = Field(default=None, ge=0.0)
+    end_seconds: Optional[float] = Field(default=None, ge=0.0)
+    timestamp_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    timestamp_source: Optional[str] = None
+    lyric_claims: list[EvidenceClaim] = Field(default_factory=list)
+    chord_claims: list[EvidenceClaim] = Field(default_factory=list)
+    key_claims: list[EvidenceClaim] = Field(default_factory=list)
+    instrument_claims: list[EvidenceClaim] = Field(default_factory=list)
+    energy: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    density: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    notable_instruments: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class InstrumentTrait(BaseModel):
+    instrument: str
+    role: str
+    traits: dict[str, str] = Field(default_factory=dict)
+    source_claim_ids: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @computed_field
+    @property
+    def confidence_label(self) -> ConfidenceLabel:
+        return confidence_label(self.confidence)
+
+
+class SongKnowledgeProfile(BaseModel):
+    """Traceable known-song profile built from web and optional audio evidence."""
+
+    profile_id: str
+    identity: SongIdentity
+    credits: dict[str, list[EvidenceClaim]] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    evidence_claims: list[EvidenceClaim] = Field(default_factory=list)
+    sections: list[SongSectionProfile] = Field(default_factory=list)
+    traits: list[InstrumentTrait] = Field(default_factory=list)
+    conflicts: list[EvidenceConflict] = Field(default_factory=list)
+    missing_data: list[MissingData] = Field(default_factory=list)
+    confidence_summary: dict[str, str] = Field(default_factory=dict)
+    audio: Optional["AudioProfile"] = None
+
+
+class CompositionBrief(BaseModel):
+    """Structured contract passed from chat/profile tools into composition."""
+
+    brief_id: str
+    user_request: str
+    global_constraints: dict[str, Any] = Field(default_factory=dict)
+    references_used: list[str] = Field(default_factory=list)
+    transfer_policy: dict[str, list[str]] = Field(default_factory=dict)
+    harmonic_guidance: dict[str, Any] = Field(default_factory=dict)
+    rhythmic_guidance: dict[str, Any] = Field(default_factory=dict)
+    form_guidance: dict[str, Any] = Field(default_factory=dict)
+    instrumentation: dict[str, Any] = Field(default_factory=dict)
+    instrument_requests: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    timbre_traits: dict[str, Any] = Field(default_factory=dict)
+    forbidden_traits: list[str] = Field(default_factory=list)
+    uncertainty_notes: list[str] = Field(default_factory=list)
 
 
 class ChordEstimate(BaseModel):
@@ -196,6 +337,7 @@ class ReferenceProfile(BaseModel):
     audio: Optional[AudioProfile] = None
     summary: str = ""
     research_evidence: list[ResearchEvidence] = Field(default_factory=list)
+    knowledge: Optional[SongKnowledgeProfile] = None
 
 
 class ExplanationAnswer(BaseModel):

@@ -1,0 +1,30 @@
+{
+  "profile_id": "song_incomplete_demo",
+  "identity": {
+    "title": "Incomplete Demo",
+    "artist": "Fixture Artist"
+  },
+  "sections": [
+    {
+      "name": "chorus",
+      "order": 1,
+      "timestamp_confidence": null
+    }
+  ],
+  "missing_data": [
+    {
+      "field": "section_timestamps",
+      "reason": "Sources provide section labels but no timing.",
+      "needed_evidence": "audio analysis or timestamped annotation"
+    },
+    {
+      "field": "credits.producers",
+      "reason": "No source-backed producer credit found.",
+      "needed_evidence": "metadata source with producer credits"
+    }
+  ],
+  "confidence_summary": {
+    "sections": "medium",
+    "timestamps": "missing"
+  }
+}

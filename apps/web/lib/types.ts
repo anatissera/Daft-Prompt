@@ -91,6 +91,29 @@ export type MeterSource = "assumed" | "estimated";
 export type KeyMode = "major" | "minor" | "unknown";
 export type ChordQuality = "major" | "minor" | "diminished" | "unknown";
 export type StemRole = "percussion" | "bass" | "vocal" | "harmony" | "mix" | "other";
+export type EvidenceClaimType =
+  | "tempo"
+  | "key"
+  | "meter"
+  | "chord_progression"
+  | "section"
+  | "lyrics"
+  | "tab"
+  | "credit"
+  | "metadata"
+  | "instrumentation"
+  | "groove"
+  | "timbre"
+  | "trait"
+  | "audio_estimate"
+  | "other";
+export type ExtractionMethod =
+  | "site_parser"
+  | "browser_rendered_page"
+  | "api"
+  | "audio_analyzer"
+  | "manual_fixture"
+  | "inference";
 
 export interface ReferenceSource {
   reference_id: string;
@@ -224,6 +247,108 @@ export interface StemProfile {
   confidence: number;
 }
 
+export interface TimeRange {
+  start_seconds: number | null;
+  end_seconds: number | null;
+  confidence: number | null;
+  source: string | null;
+}
+
+export interface EvidenceClaim {
+  claim_id: string;
+  claim_type: EvidenceClaimType;
+  value: string;
+  normalized_value: string | null;
+  section_name: string | null;
+  time_range: TimeRange | null;
+  source_name: string;
+  source_url: string;
+  extraction_method: ExtractionMethod;
+  confidence: number;
+  snippet: string;
+  notes: string[];
+  confidence_label: ConfidenceLabel;
+}
+
+export interface EvidenceConflict {
+  conflict_id: string;
+  claim_type: EvidenceClaimType;
+  description: string;
+  claims: EvidenceClaim[];
+  resolution: string | null;
+}
+
+export interface MissingData {
+  field: string;
+  reason: string;
+  needed_evidence: string;
+}
+
+export interface SongIdentity {
+  title: string;
+  artist: string | null;
+  album: string | null;
+  year: number | null;
+  version: string | null;
+  candidate_matches: string[];
+}
+
+export interface SongSectionProfile {
+  name: string;
+  order: number;
+  start_seconds: number | null;
+  end_seconds: number | null;
+  timestamp_confidence: number | null;
+  timestamp_source: string | null;
+  lyric_claims: EvidenceClaim[];
+  chord_claims: EvidenceClaim[];
+  key_claims: EvidenceClaim[];
+  instrument_claims: EvidenceClaim[];
+  energy: number | null;
+  density: number | null;
+  notable_instruments: string[];
+  evidence_ids: string[];
+}
+
+export interface InstrumentTrait {
+  instrument: string;
+  role: string;
+  traits: Record<string, string>;
+  source_claim_ids: string[];
+  confidence: number;
+  confidence_label: ConfidenceLabel;
+}
+
+export interface SongKnowledgeProfile {
+  profile_id: string;
+  identity: SongIdentity;
+  credits: Record<string, EvidenceClaim[]>;
+  metadata: Record<string, unknown>;
+  evidence_claims: EvidenceClaim[];
+  sections: SongSectionProfile[];
+  traits: InstrumentTrait[];
+  conflicts: EvidenceConflict[];
+  missing_data: MissingData[];
+  confidence_summary: Record<string, string>;
+  audio: AudioProfile | null;
+}
+
+export interface CompositionBrief {
+  brief_id: string;
+  user_request: string;
+  global_constraints: Record<string, unknown>;
+  references_used: string[];
+  transfer_policy: Record<string, string[]>;
+  harmonic_guidance: Record<string, unknown>;
+  rhythmic_guidance: Record<string, unknown>;
+  form_guidance: Record<string, unknown>;
+  instrumentation: Record<string, unknown>;
+  instrument_requests: Record<string, Record<string, unknown>>;
+  timbre_traits: Record<string, unknown>;
+  forbidden_traits: string[];
+  uncertainty_notes: string[];
+}
+
 export interface AudioProfile {
   duration_seconds: number;
   tempo_bpm: number | null;
@@ -248,6 +373,17 @@ export interface ReferenceProfile {
   source: ReferenceSource;
   audio: AudioProfile | null;
   summary: string;
+  research_evidence: ResearchEvidence[];
+  knowledge: SongKnowledgeProfile | null;
+}
+
+export interface ResearchEvidence {
+  url: string;
+  site: string;
+  claim_type: string;
+  value: string;
+  confidence: number;
+  snippet: string;
 }
 
 export interface ExplanationAnswer {
