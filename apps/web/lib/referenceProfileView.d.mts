@@ -7,11 +7,14 @@ export interface DisplayChordEstimate {
 }
 
 export interface DisplayKeyCandidate {
+  kind: "tonal_candidate";
   label: string;
+  description: string;
   confidence: string;
 }
 
 export interface DisplayProgression {
+  kind: "chord_progression";
   label: string;
   bars: string;
   repetitions: number;
@@ -51,6 +54,8 @@ export function getTopChordEstimates(profile: ReferenceProfile, limit?: number):
 export function getKeyCandidateSummary(profile: ReferenceProfile, limit?: number): DisplayKeyCandidate[];
 
 export function getMainProgression(profile: ReferenceProfile): DisplayProgression | null;
+
+export function getAnalysisReadyMessage(profile: ReferenceProfile): string;
 
 export function getStructureTimeline(profile: ReferenceProfile): DisplayStructureSection[];
 
