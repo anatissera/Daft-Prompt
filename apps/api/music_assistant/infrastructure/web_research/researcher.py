@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from music_assistant.domain.audio_profile import (
     AnalysisNote,
     AudioProfile,
@@ -53,14 +55,20 @@ class ConnectorSongResearcher(SongResearcher):
         self,
         *,
         connectors: list[SongSourceConnector] | None = None,
+        search: WebSearch | None = None,
         fuser: EvidenceFuser | None = None,
     ) -> None:
         self.connectors = connectors or [HookTheoryConnector(), CifraClubConnector()]
+        self.search = search or SeededWebSearch()
         self.fuser = fuser or EvidenceFuser()
 
     def research(self, query: str) -> ReferenceProfile:
-        resolved = ResolvedSongQuery(title=query)
-        results = [connector.collect(resolved) for connector in self.connectors]
+        resolved = _resolve_song_query(query)
+        search_results = self.search.search(_search_query(resolved), limit=12)
+        results = [
+            _collect_with_candidates(connector, resolved, search_results)
+            for connector in self.connectors
+        ]
         knowledge = self.fuser.fuse_connector_results(resolved, results)
         return _reference_from_knowledge(query, knowledge, results)
 
@@ -173,3 +181,64 @@ def _summary_from_knowledge(knowledge: SongKnowledgeProfile, results: list[Conne
     if any(result.failures for result in results):
         parts.append("Some sources were blocked or unavailable.")
     return " ".join(parts)
+
+
+def _resolve_song_query(query: str) -> ResolvedSongQuery:
+    cleaned = re.sub(r"\s+", " ", query).strip()
+    by_match = re.match(r"(?P<title>.+?)\s+by\s+(?P<artist>.+)$", cleaned, flags=re.IGNORECASE)
+    if by_match:
+        return ResolvedSongQuery(
+            title=_clean_song_part(by_match.group("title")),
+            artist=_clean_song_part(by_match.group("artist")),
+        )
+    return ResolvedSongQuery(title=cleaned)
+
+
+def _clean_song_part(value: str) -> str:
+    cleaned = value.strip(" \t\r\n\"'")
+    return re.sub(r"\s+", " ", cleaned)
+
+
+def _search_query(query: ResolvedSongQuery) -> str:
+    return " ".join(part for part in [query.title, query.artist] if part).strip()
+
+
+def _collect_with_candidates(
+    connector: SongSourceConnector,
+    resolved: ResolvedSongQuery,
+    search_results: list,
+) -> ConnectorResult:
+    attempts = [resolved]
+    attempts.extend(
+        resolved.model_copy(update={"source_url": result.url})
+        for result in search_results
+        if _matches_source(connector.source_name, result.site, result.url)
+    )
+    failures = []
+    last_result: ConnectorResult | None = None
+    seen_urls: set[str | None] = set()
+    for attempt in attempts:
+        if attempt.source_url in seen_urls:
+            continue
+        seen_urls.add(attempt.source_url)
+        result = connector.collect(attempt)
+        if result.claims:
+            return result.model_copy(update={"failures": failures + result.failures})
+        failures.extend(result.failures)
+        last_result = result
+    if last_result is None:
+        return connector.collect(resolved)
+    return last_result.model_copy(update={"failures": failures})
+
+
+def _matches_source(source_name: str, site: str, url: str) -> bool:
+    source = source_name.lower().replace(" ", "")
+    site_key = site.lower().replace(" ", "")
+    url_key = url.lower()
+    if source and source in site_key:
+        return True
+    if source == "hooktheory":
+        return "hooktheory.com" in url_key
+    if source == "cifraclub":
+        return "cifraclub.com" in url_key
+    return False
