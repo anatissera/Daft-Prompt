@@ -170,6 +170,48 @@ def test_songsterr_connector_extracts_instrument_tracks_and_tab_availability():
     assert all(claim.source_name == "Songsterr" for claim in result.claims)
 
 
+def test_songsterr_connector_extracts_search_result_tabs_without_global_filter_false_positives():
+    connector = SongsterrConnector(
+        fetcher=FixtureFetcher({"https://fixture.test/songsterr": read_fixture("songsterr_search_results.html")})
+    )
+    query = ResolvedSongQuery(
+        title="Another One Bites the Dust",
+        artist="Queen",
+        source_url="https://fixture.test/songsterr",
+    )
+
+    result = connector.collect(query)
+
+    assert result.fetch_status == "fetched"
+    assert any(
+        claim.claim_type == "metadata"
+        and "Another One Bites the Dust" in claim.value
+        and "Queen" in claim.value
+        for claim in result.claims
+    )
+    assert any(claim.claim_type == "tab" and "Generic tab available" in claim.value for claim in result.claims)
+    assert any(claim.claim_type == "tab" and "Bass tab available" in claim.value for claim in result.claims)
+    assert any(claim.claim_type == "tab" and "Drum tab available" in claim.value for claim in result.claims)
+
+
+def test_songsterr_connector_does_not_use_global_filters_as_instrument_evidence():
+    connector = SongsterrConnector(
+        fetcher=FixtureFetcher({"https://fixture.test/songsterr": read_fixture("songsterr_global_filters_only.html")})
+    )
+    query = ResolvedSongQuery(
+        title="Another One Bites the Dust",
+        artist="Queen",
+        source_url="https://fixture.test/songsterr",
+    )
+
+    result = connector.collect(query)
+
+    assert result.fetch_status == "fetched"
+    assert any(claim.claim_type == "tab" and "Generic tab available" in claim.value for claim in result.claims)
+    assert not any("Bass tab available" in claim.value for claim in result.claims)
+    assert not any("Drum tab available" in claim.value for claim in result.claims)
+
+
 @pytest.mark.parametrize(
     "connector_cls",
     [
