@@ -30,7 +30,7 @@ from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmon
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
-from music_assistant.infrastructure.web_research.researcher import DefaultSongResearcher
+from music_assistant.infrastructure.web_research.researcher import ConnectorSongResearcher
 from music_assistant.infrastructure.llm import LLMAllProvidersFailed, LLMError
 from music_assistant.interfaces.api_models import (
     AnalysisDoneEvent,
@@ -127,8 +127,8 @@ def research_reference_stream(req: ResearchRequest) -> StreamingResponse:
     return StreamingResponse(sse(), media_type="text/event-stream")
 
 
-def _song_researcher() -> DefaultSongResearcher:
-    return DefaultSongResearcher()
+def _song_researcher() -> ConnectorSongResearcher:
+    return ConnectorSongResearcher()
 
 
 async def _store_reference_upload(file: UploadFile | None) -> ReferenceSource:
