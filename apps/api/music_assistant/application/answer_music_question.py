@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Protocol
 
+from music_assistant.application.profile_queries import answer_from_profile
 from music_assistant.domain.audio_profile import (
     ChordSpan,
     ExplanationAnswer,
@@ -28,6 +29,14 @@ class AnswerMusicQuestion:
 
 class DeterministicMusicQuestionExplainer:
     def answer(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer:
+        if profile.knowledge is not None:
+            answer = answer_from_profile(question, profile.knowledge)
+            return ExplanationAnswer(
+                reference_id=profile.reference_id,
+                answer=answer.answer,
+                evidence=answer.evidence,
+            )
+
         audio = profile.audio
         if audio is None:
             return ExplanationAnswer(
