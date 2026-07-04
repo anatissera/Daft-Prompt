@@ -7,6 +7,7 @@ import {
   formatConfidence,
   formatDuration,
   getAnalysisNotes,
+  getAnalysisReadyMessage,
   getKeyCandidateSummary,
   getLegacyEnergySections,
   getMainProgression,
@@ -177,11 +178,12 @@ test("answerReferenceQuestion answers chord questions from probable estimates", 
 
 test("harmonic helpers prefer key candidates, progressions, structure, and notes", () => {
   assert.deepEqual(getKeyCandidateSummary(harmonicProfile), [
-    { label: "D major", confidence: "medium · 64%" },
-    { label: "B minor", confidence: "medium · 58%" },
+    { kind: "tonal_candidate", label: "D major", description: "Tonal center candidate", confidence: "medium · 64%" },
+    { kind: "tonal_candidate", label: "B minor", description: "Tonal center candidate", confidence: "medium · 58%" },
   ]);
   assert.deepEqual(getMainProgression(harmonicProfile), {
-    label: "Probably D - A - Bm - G",
+    kind: "chord_progression",
+    label: "Probable chord progression: D - A - Bm - G",
     bars: "bars 1-4",
     repetitions: 2,
     confidence: "medium · 63%",
@@ -213,7 +215,7 @@ test("harmonic helpers prefer key candidates, progressions, structure, and notes
 test("answerReferenceQuestion answers structure and harmonic progression questions from rich profile", () => {
   assert.equal(
     answerReferenceQuestion("What chords repeat?", harmonicProfile),
-    "The main progression is estimated as Probably D - A - Bm - G across bars 1-4, with medium · 63% confidence.",
+    "The main progression is estimated as probably D - A - Bm - G across bars 1-4, with medium · 63% confidence.",
   );
   assert.equal(
     answerReferenceQuestion("What is the A/B/C structure?", harmonicProfile),
@@ -337,8 +339,8 @@ test("describeReferenceSummary includes close key alternatives for ambiguous key
   };
 
   assert.deepEqual(getKeyCandidateSummary(ambiguousProfile, 2), [
-    { label: "Ab major", confidence: "low · 44%" },
-    { label: "F minor", confidence: "low · 42%" },
+    { kind: "tonal_candidate", label: "Ab major", description: "Tonal center candidate", confidence: "low · 44%" },
+    { kind: "tonal_candidate", label: "F minor", description: "Tonal center candidate", confidence: "low · 42%" },
   ]);
   assert(!describeReferenceSummary(ambiguousProfile).some((row) => row.startsWith("Likely key")));
   assert(
@@ -347,6 +349,45 @@ test("describeReferenceSummary includes close key alternatives for ambiguous key
     ),
   );
   assert(describeReferenceSummary(ambiguousProfile).includes("Close alternatives: F minor, C# minor, Ab minor"));
+});
+
+
+test("harmony helpers label tonal candidates separately from chord progression", () => {
+  const keyCandidates = getKeyCandidateSummary(harmonicProfile);
+  const mainProgression = getMainProgression(harmonicProfile);
+
+  assert.equal(keyCandidates[0].kind, "tonal_candidate");
+  assert.equal(keyCandidates[0].description, "Tonal center candidate");
+  assert.equal(mainProgression.kind, "chord_progression");
+  assert(mainProgression.label.startsWith("Probable chord progression:"));
+});
+
+
+test("analysis ready message avoids likely key copy for ambiguous key", () => {
+  const ambiguousProfile = {
+    ...harmonicProfile,
+    audio: {
+      ...harmonicProfile.audio,
+      harmony: {
+        ...harmonicProfile.audio.harmony,
+        key: {
+          primary: { key: "Ab major", mode: "major", confidence: 0.44 },
+          candidates: [
+            { key: "Ab major", mode: "major", confidence: 0.44 },
+            { key: "F minor", mode: "minor", confidence: 0.44 },
+          ],
+          relative_key_ambiguity: true,
+          confidence: 0.44,
+        },
+      },
+    },
+  };
+
+  const message = getAnalysisReadyMessage(ambiguousProfile);
+
+  assert(!message.includes("likely key"));
+  assert(message.includes("ambiguous tonal center"));
+  assert(message.includes("Ab major"));
 });
 
 test("weak progression and low-confidence structure use candidate copy", () => {
@@ -378,6 +419,7 @@ test("weak progression and low-confidence structure use candidate copy", () => {
   };
 
   assert.deepEqual(getMainProgression(weakProfile), {
+    kind: "chord_progression",
     label: "Weak chord loop candidate: D - A - Bm - G",
     bars: "bars 1-4",
     repetitions: 3,
