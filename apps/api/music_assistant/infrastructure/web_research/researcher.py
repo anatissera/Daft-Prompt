@@ -23,14 +23,11 @@ from music_assistant.infrastructure.web_research.fetch import UrlLibPageFetcher
 from music_assistant.infrastructure.web_research.fusion import EvidenceFuser
 from music_assistant.infrastructure.web_research.parsers import GenericSongPageParser
 from music_assistant.infrastructure.web_research.search import SeededWebSearch
-from music_assistant.infrastructure.web_research.songsterr_tabs import (
-    InMemorySongsterrTabStore,
-    SongsterrTabBundle,
-    SongsterrTabLoader,
-)
+from music_assistant.infrastructure.web_research.songsterr_tabs import SongsterrTabBundle, SongsterrTabLoader
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_researcher import SongResearcher
 from music_assistant.ports.song_source_connector import ConnectorResult, ResolvedSongQuery, SongSourceConnector
+from music_assistant.ports.songsterr_tab_store import SongsterrTabStore
 from music_assistant.ports.web_search import WebSearch
 
 
@@ -69,7 +66,7 @@ class ConnectorSongResearcher(SongResearcher):
         search: WebSearch | None = None,
         fuser: EvidenceFuser | None = None,
         songsterr_tab_loader: SongsterrTabLoader | None = None,
-        songsterr_tab_store: InMemorySongsterrTabStore | None = None,
+        songsterr_tab_store: SongsterrTabStore | None = None,
     ) -> None:
         self.connectors = connectors or [
             HookTheoryConnector(),
@@ -93,6 +90,8 @@ class ConnectorSongResearcher(SongResearcher):
         if bundle is not None:
             results.append(_connector_result_from_songsterr_bundle(resolved, bundle))
         knowledge = self.fuser.fuse_connector_results(resolved, results)
+        if bundle is not None:
+            knowledge.metadata["songsterr_tab_index"] = _songsterr_tab_index(bundle)
         profile = _reference_from_knowledge(query, knowledge, results)
         if bundle is not None and self.songsterr_tab_store is not None:
             self.songsterr_tab_store.save(profile.reference_id, bundle)
@@ -333,6 +332,29 @@ def _sections_from_bundle(bundle: SongsterrTabBundle) -> list[str]:
             if measure.marker and measure.marker not in sections:
                 sections.append(measure.marker)
     return sections
+
+
+def _songsterr_tab_index(bundle: SongsterrTabBundle) -> dict:
+    tracks = [
+        {
+            "instrument": track.instrument_family,
+            "name": track.name,
+            "part_id": track.part_id,
+        }
+        for track in bundle.tracks
+    ]
+    source_urls: list[str] = []
+    for url in [bundle.source_url, *[track.source_url for track in bundle.tracks]]:
+        if url and url not in source_urls:
+            source_urls.append(url)
+    return {
+        "loaded": True,
+        "instruments": bundle.instrument_names,
+        "tracks": tracks,
+        "sections": _sections_from_bundle(bundle),
+        "source_urls": source_urls,
+        "warnings_count": len(bundle.warnings),
+    }
 
 
 def _normalize_songsterr_section(section: str) -> str:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
 from music_assistant.domain.audio_profile import ReferenceProfile, ReferenceSource, SongIdentity, SongKnowledgeProfile
+from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
 from music_assistant.infrastructure.web_research.songsterr_tabs import (
-    InMemorySongsterrTabStore,
     InstrumentTabTrack,
     SongsterrTabBundle,
     TabEvent,

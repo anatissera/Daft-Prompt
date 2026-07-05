@@ -29,10 +29,10 @@ from music_assistant.graph import iter_negotiation_events, run_negotiation
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from music_assistant.infrastructure.mir.demucs_separator import DemucsSeparator
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
+from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
 from music_assistant.infrastructure.web_research.researcher import ConnectorSongResearcher
-from music_assistant.infrastructure.web_research.songsterr_tabs import InMemorySongsterrTabStore
 from music_assistant.infrastructure.llm import LLMAllProvidersFailed, LLMError, make_llm
 from music_assistant.interfaces.api_models import (
     AnalysisDoneEvent,

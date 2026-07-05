@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import json
 
-from music_assistant.infrastructure.web_research.songsterr_tabs import (
-    InMemorySongsterrTabStore,
-    SongsterrTabLoader,
-)
+from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
+from music_assistant.infrastructure.web_research.songsterr_tabs import SongsterrTabLoader
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_source_connector import ResolvedSongQuery
 

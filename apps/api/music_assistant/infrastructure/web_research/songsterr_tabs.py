@@ -1,8 +1,7 @@
-"""Songsterr full-tab loading and ephemeral in-memory storage.
+"""Songsterr full-tab loading and normalization.
 
-This module is intentionally infrastructure-only: it can cache heavy Songsterr
-track payloads for the running process without adding them to public chat
-responses or persisted reference profiles.
+This module is infrastructure-only and handles fetching/parsing Songsterr data.
+Storage of heavy tab bundles lives behind the SongsterrTabStore port.
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ from __future__ import annotations
 from html import unescape
 import json
 import re
-from threading import RLock
 from typing import Any, Optional
 from urllib.parse import quote_plus
 
@@ -87,20 +85,6 @@ class SongsterrTabBundle(BaseModel):
             or (normalized == "guitar" and track.is_guitar)
             or (normalized == "piano" and track.is_piano)
         ]
-
-
-class InMemorySongsterrTabStore:
-    def __init__(self) -> None:
-        self._lock = RLock()
-        self._bundles: dict[str, SongsterrTabBundle] = {}
-
-    def save(self, reference_id: str, bundle: SongsterrTabBundle) -> None:
-        with self._lock:
-            self._bundles[reference_id] = bundle
-
-    def get(self, reference_id: str) -> Optional[SongsterrTabBundle]:
-        with self._lock:
-            return self._bundles.get(reference_id)
 
 
 class SongsterrTabLoader:

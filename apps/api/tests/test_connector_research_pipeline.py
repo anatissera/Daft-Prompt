@@ -4,10 +4,10 @@ from fastapi.testclient import TestClient
 
 import music_assistant.interfaces.api as api
 from music_assistant.domain.audio_profile import EvidenceClaim
+from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
 from music_assistant.infrastructure.web_research.researcher import ConnectorSongResearcher
 from music_assistant.infrastructure.web_research.search import SeededWebSearch
 from music_assistant.infrastructure.web_research.songsterr_tabs import (
-    InMemorySongsterrTabStore,
     InstrumentTabTrack,
     SongsterrTabBundle,
     TabEvent,
@@ -383,3 +383,15 @@ def test_connector_song_researcher_stores_songsterr_tab_bundle_and_keeps_cifra_c
     values = [claim.value for claim in profile.knowledge.evidence_claims]
     assert "Songsterr full tab tracks loaded: bass, drums" in values
     assert "Em | G | D | A" in values
+    index = profile.knowledge.metadata["songsterr_tab_index"]
+    assert index["loaded"] is True
+    assert index["instruments"] == ["bass", "drums"]
+    assert index["tracks"] == [
+        {"instrument": "bass", "name": "John Deacon | Fender Precision Bass", "part_id": 4},
+        {"instrument": "drums", "name": "Roger Taylor | Drum Loops", "part_id": 6},
+    ]
+    assert index["sections"] == ["Intro"]
+    assert index["source_urls"] == ["https://www.songsterr.com/a/wsa/queen-another-one-bites-the-dust-tab-s371"]
+    assert index["warnings_count"] == 0
+    assert "measures" not in index
+    assert "events" not in index
