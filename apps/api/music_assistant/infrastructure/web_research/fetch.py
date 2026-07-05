@@ -41,6 +41,7 @@ class CurlPageFetcher(PageFetcher):
                     "-L",
                     "--max-time",
                     str(int(self.timeout_seconds)),
+                    "--compressed",
                     "--silent",
                     "--show-error",
                     url,
