@@ -142,3 +142,31 @@ def test_stem_listening_profiles_become_timbre_groove_and_dynamics_claims():
 def test_stems_without_listening_profiles_emit_no_extra_claims():
     enriched = enrich_profile_with_audio(audio_profile(), base_profile=None)
     assert not [c for c in enriched.knowledge.evidence_claims if c.claim_type in ("timbre", "groove")]
+
+
+def test_mix_timbre_and_ensemble_callouts_become_claims():
+    from music_assistant.domain.audio_profile import (
+        ArrangementCell,
+        ArrangementColumn,
+        EnsembleProfile,
+        TimbreProfile,
+    )
+
+    profile = audio_profile()
+    profile = profile.model_copy(update={"audio": profile.audio.model_copy(update={
+        "mix_timbre": TimbreProfile(brightness="warm", noisiness="mixed", band_balance="mid-heavy", confidence=0.6),
+        "ensemble": EnsembleProfile(
+            columns=[ArrangementColumn(section="A", start_bar=1, end_bar=4, cells=[ArrangementCell(stem="drums", level="high")])],
+            callouts=["vocals enters in B (bar 5)", "bass drops out in B (bar 5)"],
+            confidence=0.5,
+        ),
+    })})
+
+    enriched = enrich_profile_with_audio(profile, base_profile=None)
+    claims = enriched.knowledge.evidence_claims
+
+    mix = [c for c in claims if c.claim_type == "timbre" and c.value.startswith("mix:")]
+    assert mix and mix[0].value == "mix: warm, mixed, mid-heavy"
+    instrumentation = [c for c in claims if c.claim_type == "instrumentation"]
+    assert {c.value for c in instrumentation} == {"vocals enters in B (bar 5)", "bass drops out in B (bar 5)"}
+    assert all("approximate" in c.notes for c in mix + instrumentation)

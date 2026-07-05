@@ -141,6 +141,30 @@ def _stem_listening_claims(audio: AudioProfile, source_url: str) -> list[Evidenc
     the analyzer actually profiled produce claims; everything stays labeled as
     an approximate audio estimate."""
     claims: list[EvidenceClaim] = []
+    if audio.mix_timbre is not None and audio.mix_timbre.confidence > 0.0:
+        mix = audio.mix_timbre
+        claims.append(
+            _claim(
+                "timbre",
+                f"mix: {mix.brightness}, {mix.noisiness}, {mix.band_balance}",
+                source_url,
+                mix.confidence,
+                mix.interpretation or "Timbre estimate for the full mix.",
+                notes=["approximate"],
+            )
+        )
+    if audio.ensemble is not None:
+        for callout in audio.ensemble.callouts[:4]:
+            claims.append(
+                _claim(
+                    "instrumentation",
+                    callout,
+                    source_url,
+                    audio.ensemble.confidence,
+                    "Arrangement change from the bar-aligned ensemble timeline.",
+                    notes=["approximate"],
+                )
+            )
     for stem in audio.stems:
         if stem.timbre is not None and stem.timbre.confidence > 0.0:
             timbre = stem.timbre

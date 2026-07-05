@@ -157,6 +157,25 @@ def extract_stem_listening(
     )
 
 
+def analyze_mix_timbre(
+    audio_path: str,
+    bar_times: list[float],
+    end_seconds: float,
+    *,
+    extractor: StemListeningExtractor | None = None,
+) -> "TimbreProfile | None":
+    """Mix-level timbre from the original audio (Track 2's 'and the mix').
+
+    Returns None instead of raising so the analyzer can degrade gracefully."""
+    extract = extractor or extract_stem_listening
+    try:
+        raw = extract(audio_path, bar_times, end_seconds)
+    except Exception:
+        return None
+    profile = timbre_profile(raw)
+    return profile if profile.confidence > 0.0 else None
+
+
 # ---- Track 2: timbre --------------------------------------------------------
 
 
@@ -202,6 +221,7 @@ def timbre_profile(raw: RawStemListening) -> TimbreProfile:
 
 
 def dynamics_profile(rms_by_bar: list[float]) -> StemDynamics:
+    """Bars are 1-based in the output, matching ChordSpan / StructuralSection."""
     if not rms_by_bar:
         return StemDynamics(interpretation="No loudness curve available.", confidence=0.0)
 
@@ -211,9 +231,9 @@ def dynamics_profile(rms_by_bar: list[float]) -> StemDynamics:
 
     stride = max(1, math.ceil(len(levels) / MAX_DYNAMICS_POINTS))
     points = [
-        DynamicsPoint(bar=bar, level=round(level, 3))
-        for bar, level in enumerate(levels)
-        if bar % stride == 0
+        DynamicsPoint(bar=index + 1, level=round(level, 3))
+        for index, level in enumerate(levels)
+        if index % stride == 0
     ]
 
     if events:
@@ -238,6 +258,7 @@ def dynamics_profile(rms_by_bar: list[float]) -> StemDynamics:
 
 
 def _detect_dynamics_events(levels: list[float]) -> list[DynamicsEvent]:
+    """Detection runs on 0-based list indexes; emitted bars are 1-based."""
     events: list[DynamicsEvent] = []
     start = 0
     for index in range(1, len(levels) + 1):
@@ -250,11 +271,11 @@ def _detect_dynamics_events(levels: list[float]) -> list[DynamicsEvent]:
         length = index - start
         rise = levels[index - 1] - levels[start]
         if length >= BUILD_MIN_BARS and rise >= BUILD_MIN_RISE:
-            events.append(DynamicsEvent(kind="build", start_bar=start, end_bar=index - 1))
+            events.append(DynamicsEvent(kind="build", start_bar=start + 1, end_bar=index))
         start = index
-    for bar in range(1, len(levels)):
-        if levels[bar - 1] - levels[bar] >= DROP_MIN_FALL:
-            events.append(DynamicsEvent(kind="drop", start_bar=bar - 1, end_bar=bar))
+    for index in range(1, len(levels)):
+        if levels[index - 1] - levels[index] >= DROP_MIN_FALL:
+            events.append(DynamicsEvent(kind="drop", start_bar=index, end_bar=index + 1))
     events.sort(key=lambda e: (e.start_bar, e.end_bar))
     return events
 

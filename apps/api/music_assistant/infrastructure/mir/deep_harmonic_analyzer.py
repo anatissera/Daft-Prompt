@@ -38,7 +38,11 @@ from music_assistant.infrastructure.mir.demucs_separator import DemucsSeparator
 from music_assistant.infrastructure.mir.harmonic_source import build_harmonic_source
 from music_assistant.infrastructure.mir.key_features import estimate_key, estimate_tuning_deviation
 from music_assistant.infrastructure.mir.librosa_analyzer import _clamp, _prepare_librosa_import
-from music_assistant.infrastructure.mir.listening_features import analyze_stem_listening
+from music_assistant.infrastructure.mir.ensemble_features import build_ensemble_profile
+from music_assistant.infrastructure.mir.listening_features import (
+    analyze_mix_timbre,
+    analyze_stem_listening,
+)
 from music_assistant.infrastructure.mir.multimodal_features import (
     MultimodalBarFeatures,
     extract_multimodal_features,
@@ -82,6 +86,8 @@ class DeepHarmonicAnalyzer:
         multimodal_feature_provider: Callable | None = extract_multimodal_features,
         multimodal_section_detector: Callable | None = detect_multimodal_sections,
         stem_listening_provider: Callable | None = analyze_stem_listening,
+        mix_timbre_provider: Callable | None = analyze_mix_timbre,
+        ensemble_builder: Callable | None = build_ensemble_profile,
         energy_provider: Callable | None = per_bar_energy,
         stem_activity_provider: Callable | None = per_stem_activity_by_bar,
         tuning_deviation_provider: Callable[[str], float | None] | None = estimate_tuning_deviation,
@@ -102,6 +108,8 @@ class DeepHarmonicAnalyzer:
         self.multimodal_feature_provider = multimodal_feature_provider
         self.multimodal_section_detector = multimodal_section_detector
         self.stem_listening_provider = stem_listening_provider
+        self.mix_timbre_provider = mix_timbre_provider
+        self.ensemble_builder = ensemble_builder
         self.energy_provider = energy_provider
         self.stem_activity_provider = stem_activity_provider
         self.tuning_deviation_provider = tuning_deviation_provider
@@ -252,6 +260,9 @@ class DeepHarmonicAnalyzer:
             stem_listening = _safe_stem_listening(
                 self.stem_listening_provider, stems, bar_times, grid.beat_times, duration
             )
+            mix_timbre = _safe_mix_timbre(
+                self.mix_timbre_provider, str(audio_path), bar_times, duration
+            )
             if self.stem_listening_provider is not None and stems and not stem_listening:
                 notes.append(
                     AnalysisNote(
@@ -400,6 +411,16 @@ class DeepHarmonicAnalyzer:
                 )
             )
 
+        ensemble = None
+        if self.ensemble_builder is not None and stem_listening:
+            try:
+                ensemble = self.ensemble_builder(
+                    structure,
+                    {name: listening.dynamics for name, listening in stem_listening.items()},
+                )
+            except Exception:
+                ensemble = None
+
         audio = AudioProfile(
             duration_seconds=duration,
             tempo_bpm=grid.tempo.primary_bpm,
@@ -411,6 +432,8 @@ class DeepHarmonicAnalyzer:
             chord_estimates=_legacy_chord_estimates(chord_spans),
             sections=_legacy_sections(structure),
             stems=[_stem_profile(stem, stem_listening.get(stem.name)) for stem in stems],
+            mix_timbre=mix_timbre,
+            ensemble=ensemble,
             tempo=grid.tempo,
             meter=grid.meter,
             harmony=harmony,
@@ -602,6 +625,15 @@ def _stem_profile(stem, listening=None) -> StemProfile:
         rhythm=listening.rhythm if listening else None,
         dynamics=listening.dynamics if listening else None,
     )
+
+
+def _safe_mix_timbre(provider: Callable | None, audio_path: str, bar_times, duration: float):
+    if provider is None or not bar_times:
+        return None
+    try:
+        return provider(audio_path, bar_times, duration)
+    except Exception:
+        return None
 
 
 def _safe_stem_listening(
