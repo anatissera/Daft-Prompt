@@ -77,3 +77,17 @@ export interface DisplayStemListening {
 }
 
 export function getStemListening(profile: ReferenceProfile): DisplayStemListening[];
+
+export interface DisplayArrangementColumn {
+  section: string;
+  bars: string;
+  levels: Record<string, "silent" | "low" | "medium" | "high">;
+}
+
+export interface DisplayArrangement {
+  stems: string[];
+  columns: DisplayArrangementColumn[];
+  callouts: string[];
+}
+
+export function getArrangement(profile: ReferenceProfile): DisplayArrangement | null;

@@ -5,6 +5,7 @@ import {
   getAnalysisNotes,
   getKeyCandidateSummary,
   getLegacyEnergySections,
+  getArrangement,
   getMainProgression,
   getStemListening,
   getTopChordEstimates,
@@ -19,6 +20,7 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
   const analysisNotes = getAnalysisNotes(profile);
   const legacyEnergySections = getLegacyEnergySections(profile);
   const stemListening = getStemListening(profile);
+  const arrangement = getArrangement(profile);
 
   return (
     <section className="result-block" aria-label="Reference analysis result">
@@ -113,6 +115,49 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
               </li>
             ))}
           </ul>
+        </details>
+      ) : null}
+
+      {arrangement ? (
+        <details className="details-panel" open>
+          <summary className="details-summary">Arrangement</summary>
+          <div className="arrangement-scroll">
+            <table className="arrangement-grid">
+              <thead>
+                <tr>
+                  <th scope="col" aria-label="Stem" />
+                  {arrangement.columns.map((column) => (
+                    <th key={`${column.section}-${column.bars}`} scope="col">
+                      <span className="arrangement-section">{column.section}</span>
+                      <span className="context-muted arrangement-bars">{column.bars}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {arrangement.stems.map((stem) => (
+                  <tr key={stem}>
+                    <th scope="row" className="arrangement-stem">{stem}</th>
+                    {arrangement.columns.map((column) => {
+                      const level = column.levels[stem] ?? "silent";
+                      return (
+                        <td key={`${stem}-${column.section}-${column.bars}`}>
+                          <span
+                            className={`arrangement-cell arrangement-${level}`}
+                            title={`${stem}: ${level}`}
+                            aria-label={`${stem} ${level} in ${column.section}`}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {arrangement.callouts.length > 0 ? (
+            <p className="context-muted">{arrangement.callouts.join(" · ")}</p>
+          ) : null}
         </details>
       ) : null}
 

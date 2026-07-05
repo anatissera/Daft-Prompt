@@ -291,6 +291,14 @@ export function confidenceLabel(value) {
 export function getStemListening(profile) {
   const stems = profile?.audio?.stems ?? [];
   const rows = [];
+  const mixTimbre = profile?.audio?.mix_timbre;
+  if (mixTimbre) {
+    const chips = [mixTimbre.brightness, mixTimbre.noisiness];
+    if (mixTimbre.band_balance && mixTimbre.band_balance !== "balanced") {
+      chips.push(mixTimbre.band_balance);
+    }
+    rows.push({ name: "mix", role: "mix", chips, callouts: [] });
+  }
   for (const stem of stems) {
     const chips = [];
     if (stem.timbre) {
@@ -312,4 +320,23 @@ export function getStemListening(profile) {
     rows.push({ name: stem.name, role: stem.role, chips, callouts });
   }
   return rows;
+}
+
+export function getArrangement(profile) {
+  const ensemble = profile?.audio?.ensemble;
+  if (!ensemble || !ensemble.columns?.length) return null;
+  const stems = [];
+  for (const column of ensemble.columns) {
+    for (const cell of column.cells ?? []) {
+      if (!stems.includes(cell.stem)) stems.push(cell.stem);
+    }
+  }
+  const columns = ensemble.columns.map((column) => ({
+    section: column.section,
+    bars: column.start_bar === column.end_bar
+      ? `bar ${column.start_bar}`
+      : `bars ${column.start_bar}–${column.end_bar}`,
+    levels: Object.fromEntries((column.cells ?? []).map((cell) => [cell.stem, cell.level])),
+  }));
+  return { stems, columns, callouts: ensemble.callouts ?? [] };
 }

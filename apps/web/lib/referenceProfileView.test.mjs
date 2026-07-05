@@ -8,6 +8,7 @@ import {
   formatDuration,
   getAnalysisNotes,
   getAnalysisReadyMessage,
+  getArrangement,
   getKeyCandidateSummary,
   getLegacyEnergySections,
   getMainProgression,
@@ -559,4 +560,56 @@ test("getStemListening hides balanced band and low syncopation chips", () => {
 test("getStemListening is empty without listening data", () => {
   assert.deepEqual(getStemListening({ audio: { stems: [{ name: "bass" }] } }), []);
   assert.deepEqual(getStemListening({}), []);
+});
+
+test("getStemListening prepends a mix row when mix_timbre exists", () => {
+  const profile = {
+    audio: {
+      mix_timbre: { brightness: "warm", noisiness: "mixed", band_balance: "mid-heavy" },
+      stems: [],
+    },
+  };
+  const rows = getStemListening(profile);
+  assert.equal(rows[0].name, "mix");
+  assert.deepEqual(rows[0].chips, ["warm", "mixed", "mid-heavy"]);
+});
+
+test("getArrangement transposes ensemble columns into a stem grid", () => {
+  const profile = {
+    audio: {
+      ensemble: {
+        columns: [
+          {
+            section: "A", start_bar: 1, end_bar: 4,
+            cells: [
+              { stem: "drums", activity: 1, level: "high" },
+              { stem: "vocals", activity: 0, level: "silent" },
+            ],
+          },
+          {
+            section: "B", start_bar: 5, end_bar: 8,
+            cells: [
+              { stem: "drums", activity: 1, level: "high" },
+              { stem: "vocals", activity: 1, level: "medium" },
+            ],
+          },
+        ],
+        callouts: ["vocals enters in B (bar 5)"],
+        interpretation: "",
+        confidence: 0.5,
+      },
+    },
+  };
+  const arrangement = getArrangement(profile);
+  assert.deepEqual(arrangement.stems, ["drums", "vocals"]);
+  assert.equal(arrangement.columns.length, 2);
+  assert.equal(arrangement.columns[0].bars, "bars 1–4");
+  assert.equal(arrangement.columns[1].levels.vocals, "medium");
+  assert.deepEqual(arrangement.callouts, ["vocals enters in B (bar 5)"]);
+});
+
+test("getArrangement returns null without ensemble data", () => {
+  assert.equal(getArrangement({ audio: {} }), null);
+  assert.equal(getArrangement({}), null);
+  assert.equal(getArrangement({ audio: { ensemble: { columns: [] } } }), null);
 });
