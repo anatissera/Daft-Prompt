@@ -380,3 +380,24 @@ def test_listening_questions_without_evidence_stay_honest():
     assert "do not have timbre evidence" in answer_from_profile("How does it sound?", empty).answer
     assert "do not have groove evidence" in answer_from_profile("Does it swing?", empty).answer
     assert "do not have dynamics or arrangement evidence" in answer_from_profile("Where is the drop?", empty).answer
+
+
+def test_answer_music_question_routes_listening_questions_end_to_end():
+    """Chat path: AnswerMusicQuestion -> answer_from_profile -> listening tools."""
+    reference = ReferenceProfile(
+        reference_id="ref_listen",
+        source=ReferenceSource(
+            reference_id="ref_listen",
+            kind="upload",
+            label="listen.wav",
+            uri="local://listen.wav",
+            authorized=True,
+        ),
+        knowledge=_listening_profile(),
+    )
+    swing = AnswerMusicQuestion().execute("Does this song swing?", reference)
+    assert "swung" in swing.answer
+    sound = AnswerMusicQuestion().execute("How does it sound?", reference)
+    assert "mix: warm, mixed, mid-heavy" in sound.answer
+    drop = AnswerMusicQuestion().execute("Where is the drop?", reference)
+    assert "drops at bar 16" in drop.answer
