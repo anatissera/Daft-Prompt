@@ -303,6 +303,7 @@ def _chat_music() -> ChatMusic:
         reference_store=REFERENCE_STORE,
         chat_model=_chat_model(),
         song_researcher=_song_researcher(),
+        songsterr_tab_store=SONGSTERR_TAB_STORE,
     )
 
 
