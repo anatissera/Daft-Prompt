@@ -169,7 +169,7 @@ harmonic MVP is green.
 - [x] `listening_features.py`: centroid/flatness + low/mid/high split →
   `TimbreProfile` with interpretation strings. *(Contrast/ZCR/MFCC deferred —
   the coarse labels cover the chat surface.)*
-- [x] Fill `StemProfile.timbre`. *(Mix-level timbre still open.)*
+- [x] Fill `StemProfile.timbre` and a mix-level timbre (`AudioProfile.mix_timbre`).
 - [x] Tests on synthetic bright vs dark signals (incl. a real-librosa pass on
   generated audio).
 
@@ -190,15 +190,22 @@ harmonic MVP is green.
 
 ### Track 6: Ensemble / voice-leading ("together")
 - [ ] Cross-stem bass↔lead voice-leading per bar window → `VoiceLeadingProfile`.
-- [ ] Arrangement timeline (section × stem activity/role/energy) → `EnsembleProfile`.
-- [ ] Tests on synthetic multi-stem note/energy fixtures.
+  *(Deferred with Track 1 — needs transcribed notes.)*
+- [x] Arrangement timeline (section × stem activity/level) → `EnsembleProfile`
+  with entry/exit/push callouts (`ensemble_features.py`).
+- [x] Tests on synthetic multi-stem energy fixtures.
 
 ### Track 7: Explanation + UI
-- [ ] Extend `answer_music_question.py` to cite timbre, movement, voice-leading,
-  groove, and arrangement events (with confidence, probabilistic phrasing).
-- [ ] UI: extend the analysis block with a stem roster (timbre chips, play/solo),
-  a bar-aligned arrangement strip, per-stem movement/groove behind detail toggles,
-  and a mix frequency-balance bar. Keep it compact / expandable (DESIGN.md).
+- [x] Chat answers cite timbre, groove, and arrangement/dynamics events with
+  probabilistic phrasing — via listening `EvidenceClaims` (`audio_enrichment.py`)
+  and `profile_queries.py` groove/timbre/dynamics tools. *(Movement/voice-leading
+  citations wait on Tracks 1/3; `answer_music_question.py` legacy path untouched.)*
+- [x] UI: "Deep listening" chips panel (incl. mix row) + bar-aligned
+  "Arrangement" strip in the analysis block. *(Play/solo per stem and a
+  frequency-balance bar remain open.)*
+
+See [`docs/deep-listening.md`](../docs/deep-listening.md) for the full feature
+documentation.
 
 ### Track 8: Compose-from-reference bridge
 - [ ] Document how transcribed per-stem `Note` lists can seed the composer's
