@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Protocol
+from typing import Any, Protocol
 
 from music_assistant.application.profile_queries import answer_from_profile
 from music_assistant.domain.audio_profile import (
@@ -20,15 +20,22 @@ class MusicQuestionExplainer(Protocol):
 
 
 class AnswerMusicQuestion:
-    def __init__(self, explainer: MusicQuestionExplainer | None = None):
-        self.explainer = explainer or DeterministicMusicQuestionExplainer()
+    def __init__(self, explainer: MusicQuestionExplainer | None = None, *, songsterr_tab_store: Any | None = None):
+        self.explainer = explainer or DeterministicMusicQuestionExplainer(songsterr_tab_store=songsterr_tab_store)
 
     def execute(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer:
         return self.explainer.answer(question, profile)
 
 
 class DeterministicMusicQuestionExplainer:
+    def __init__(self, *, songsterr_tab_store: Any | None = None) -> None:
+        self.songsterr_tab_store = songsterr_tab_store
+
     def answer(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer:
+        tab_answer = self._answer_from_songsterr_tabs(question, profile)
+        if tab_answer is not None:
+            return tab_answer
+
         if profile.knowledge is not None:
             answer = answer_from_profile(question, profile.knowledge)
             return ExplanationAnswer(
@@ -68,6 +75,54 @@ class DeterministicMusicQuestionExplainer:
                 "probable chords, repeated progressions, and A/B/C structure."
             ),
             evidence=_general_evidence(profile),
+        )
+
+    def _answer_from_songsterr_tabs(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer | None:
+        if self.songsterr_tab_store is None:
+            return None
+        bundle = self.songsterr_tab_store.get(profile.reference_id)
+        if bundle is None:
+            return None
+        normalized = question.lower()
+        asks_tab = any(token in normalized for token in ["tab", "tabs", "tablature", "riff", "solo"])
+        asks_instrument = any(
+            token in normalized
+            for token in ["bass", "drum", "guitar", "piano", "keyboard", "keys", "synth", "sax", "vocal", "voice"]
+        )
+        if not asks_tab and not asks_instrument:
+            return None
+        if "section" in normalized or "form" in normalized:
+            sections = _songsterr_tab_sections(bundle)
+            if not sections:
+                return ExplanationAnswer(
+                    reference_id=profile.reference_id,
+                    answer="I do not have section markers from Songsterr for this song yet.",
+                    evidence=[],
+                )
+            return ExplanationAnswer(
+                reference_id=profile.reference_id,
+                answer="Songsterr tab sections: " + ", ".join(sections) + ".",
+                evidence=[f"songsterr:sections:{len(sections)}"],
+            )
+        instrument = _mentioned_tab_instrument(normalized)
+        if instrument is None:
+            return ExplanationAnswer(
+                reference_id=profile.reference_id,
+                answer="Songsterr tab data is loaded for: " + ", ".join(bundle.instrument_names) + ".",
+                evidence=[f"songsterr:tracks:{len(bundle.tracks)}"],
+            )
+        tracks = bundle.tracks_for_instrument(instrument)
+        if not tracks:
+            return ExplanationAnswer(
+                reference_id=profile.reference_id,
+                answer=f"I do not have {instrument}-specific Songsterr tab data for this song yet.",
+                evidence=[],
+            )
+        summaries = [_songsterr_track_summary(track) for track in tracks[:3]]
+        return ExplanationAnswer(
+            reference_id=profile.reference_id,
+            answer=" ".join(summaries),
+            evidence=[f"songsterr:part:{track.part_id}:measures={len(track.measures)}:notes={track.note_count}" for track in tracks[:3]],
         )
 
 
@@ -123,6 +178,48 @@ def _answer_key(profile: ReferenceProfile) -> ExplanationAnswer:
             f"Primary key candidate: {primary.key}, confidence {_percent(primary.confidence)}.",
             *[f"Alternative key candidate: {candidate}." for candidate in alternatives],
         ],
+    )
+
+
+def _mentioned_tab_instrument(normalized_question: str) -> str | None:
+    aliases = [
+        ("drums", "drums"),
+        ("drum", "drums"),
+        ("bass", "bass"),
+        ("guitar", "guitar"),
+        ("piano", "piano"),
+        ("keyboard", "piano"),
+        ("keys", "piano"),
+        ("synth", "piano"),
+        ("sax", "sax"),
+        ("vocal", "vocal"),
+        ("voice", "vocal"),
+    ]
+    for token, instrument in aliases:
+        if token in normalized_question:
+            return instrument
+    return None
+
+
+def _songsterr_tab_sections(bundle) -> list[str]:
+    sections: list[str] = []
+    for track in bundle.tracks:
+        for measure in track.measures:
+            if measure.marker and measure.marker not in sections:
+                sections.append(measure.marker)
+    return sections
+
+
+def _songsterr_track_summary(track) -> str:
+    sections = []
+    for measure in track.measures:
+        if measure.marker and measure.marker not in sections:
+            sections.append(measure.marker)
+    section_text = ", ".join(sections[:6]) if sections else "no section markers"
+    return (
+        f"{track.instrument_family.title()} tab loaded from Songsterr: {track.name} "
+        f"({len(track.measures)} measures, {track.note_count} note events). "
+        f"Sections: {section_text}."
     )
 
 
