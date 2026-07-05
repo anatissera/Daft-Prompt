@@ -9,12 +9,14 @@ from __future__ import annotations
 from html import unescape
 import json
 import re
+import time
+from collections.abc import Callable
 from typing import Any, Optional
 from urllib.parse import quote_plus
 
 from pydantic import BaseModel, Field
 
-from music_assistant.infrastructure.web_research.fetch import CurlPageFetcher, FallbackPageFetcher, UrlLibPageFetcher
+from music_assistant.infrastructure.web_research.fetch import CurlPageFetcher
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_source_connector import ResolvedSongQuery
 
@@ -92,33 +94,42 @@ class SongsterrTabLoader:
         self,
         *,
         fetcher: PageFetcher | None = None,
+        timeout_seconds: float = 12.0,
+        total_budget_seconds: float = 45.0,
+        clock: Callable[[], float] = time.monotonic,
         cdn_bases: tuple[str, ...] = (
             "https://dqsljvtekg760.cloudfront.net",
             "https://d3d3l6a6rcgkaf.cloudfront.net",
         ),
     ) -> None:
-        self.fetcher = fetcher or FallbackPageFetcher(
-            primary=UrlLibPageFetcher(timeout_seconds=4.0),
-            fallback=CurlPageFetcher(timeout_seconds=4.0),
-            retry_when="HTTP Error",
-        )
+        self.fetcher = fetcher or CurlPageFetcher(timeout_seconds=timeout_seconds)
+        self.total_budget_seconds = total_budget_seconds
+        self.clock = clock
         self.cdn_bases = cdn_bases
 
     def load(self, query: ResolvedSongQuery) -> Optional[SongsterrTabBundle]:
+        started_at = self.clock()
         bundles: list[SongsterrTabBundle] = []
         seen_urls: set[str] = set()
         for instrument in [None, "guitar", "bass", "drum", "piano"]:
-            for url in self._candidate_tab_urls(query, instrument=instrument):
+            if self._budget_exhausted(started_at):
+                break
+            for url in self._candidate_tab_urls(query, instrument=instrument, started_at=started_at)[:1]:
                 if url in seen_urls:
                     continue
                 seen_urls.add(url)
-                bundle = self.load_from_tab_url(url, query)
+                bundle = self._load_from_tab_url(url, query, started_at=started_at)
                 if bundle is not None and bundle.tracks:
                     bundles.append(bundle)
                     break
         return _merge_bundles(bundles)
 
     def load_from_tab_url(self, url: str, query: ResolvedSongQuery) -> Optional[SongsterrTabBundle]:
+        return self._load_from_tab_url(url, query, started_at=self.clock())
+
+    def _load_from_tab_url(self, url: str, query: ResolvedSongQuery, *, started_at: float) -> Optional[SongsterrTabBundle]:
+        if self._budget_exhausted(started_at):
+            return None
         try:
             html_text = self.fetcher.fetch(url)
         except RuntimeError:
@@ -135,6 +146,9 @@ class SongsterrTabLoader:
         warnings: list[str] = []
         tracks: list[InstrumentTabTrack] = []
         for meta in tracks_meta:
+            if self._budget_exhausted(started_at):
+                warnings.append("Songsterr load budget exhausted; keeping partial tab bundle.")
+                break
             payload = self._fetch_track_payload(song_id, revision_id, image, int(meta["partId"]), warnings)
             if payload is None:
                 continue
@@ -171,7 +185,15 @@ class SongsterrTabLoader:
         warnings.append(f"Could not fetch Songsterr part {part_id}: {last_error}")
         return None
 
-    def _candidate_tab_urls(self, query: ResolvedSongQuery, *, instrument: str | None = None) -> list[str]:
+    def _candidate_tab_urls(
+        self,
+        query: ResolvedSongQuery,
+        *,
+        instrument: str | None = None,
+        started_at: float | None = None,
+    ) -> list[str]:
+        if started_at is not None and self._budget_exhausted(started_at):
+            return []
         query_text = " ".join(part for part in [query.title, query.artist] if part).strip()
         encoded = quote_plus(query_text)
         suffix = f"&inst={instrument}" if instrument else ""
@@ -189,6 +211,9 @@ class SongsterrTabLoader:
             if href not in ordered:
                 ordered.append(href)
         return ordered
+
+    def _budget_exhausted(self, started_at: float) -> bool:
+        return self.clock() - started_at >= self.total_budget_seconds
 
 
 def _state_from_html(html_text: str) -> dict[str, Any]:
