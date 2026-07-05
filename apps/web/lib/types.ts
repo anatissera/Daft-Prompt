@@ -391,6 +391,26 @@ export interface CompositionBrief {
   uncertainty_notes: string[];
 }
 
+export interface ArrangementCell {
+  stem: string;
+  activity: number;
+  level: "silent" | "low" | "medium" | "high";
+}
+
+export interface ArrangementColumn {
+  section: string;
+  start_bar: number;
+  end_bar: number;
+  cells: ArrangementCell[];
+}
+
+export interface EnsembleProfile {
+  columns: ArrangementColumn[];
+  callouts: string[];
+  interpretation: string;
+  confidence: number;
+}
+
 export interface AudioProfile {
   duration_seconds: number;
   tempo_bpm: number | null;
@@ -407,6 +427,8 @@ export interface AudioProfile {
   meter: MeterProfile;
   harmony: HarmonicProfile | null;
   structure: StructureProfile | null;
+  mix_timbre?: TimbreProfile | null;
+  ensemble?: EnsembleProfile | null;
   analysis_notes: AnalysisNote[];
 }
 
