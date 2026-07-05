@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
+from music_assistant.infrastructure.web_research.fetch import CurlPageFetcher
 from music_assistant.infrastructure.web_research.songsterr_tabs import SongsterrTabLoader
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_source_connector import ResolvedSongQuery
@@ -19,6 +20,17 @@ class FixtureFetcher(PageFetcher):
         if url in self.errors:
             raise self.errors[url]
         return self.pages[url]
+
+
+class AdvancingClock:
+    def __init__(self, values: list[float]) -> None:
+        self.values = values
+        self.index = 0
+
+    def __call__(self) -> float:
+        value = self.values[min(self.index, len(self.values) - 1)]
+        self.index += 1
+        return value
 
 
 def songsterr_state_html(*, tracks: list[dict] | None = None, song_id: int = 371, revision_id: int = 7564044, image: str = "v0-test-image") -> str:
@@ -100,6 +112,14 @@ def revision_payload(name: str, *, instrument_id: int = 33) -> str:
             ],
         }
     )
+
+
+def test_songsterr_tab_loader_uses_curl_fetcher_by_default():
+    loader = SongsterrTabLoader()
+
+    assert isinstance(loader.fetcher, CurlPageFetcher)
+    assert loader.fetcher.timeout_seconds == 12.0
+    assert loader.total_budget_seconds == 45.0
 
 
 def test_songsterr_tab_loader_fetches_and_normalizes_all_available_tracks():
@@ -254,6 +274,28 @@ def test_songsterr_tab_loader_keeps_partial_bundle_when_one_track_fails():
     assert bundle is not None
     assert [track.part_id for track in bundle.tracks] == [4, 5]
     assert any("part 6" in warning for warning in bundle.warnings)
+
+
+def test_songsterr_tab_loader_stops_before_new_track_when_total_budget_is_spent():
+    fetcher = FixtureFetcher(
+        {
+            "https://www.songsterr.com/a/wsa/queen-another-one-bites-the-dust-tab-s371": songsterr_state_html(),
+            "https://dqsljvtekg760.cloudfront.net/371/7564044/v0-test-image/4.json": revision_payload("Bass"),
+            "https://dqsljvtekg760.cloudfront.net/371/7564044/v0-test-image/6.json": revision_payload("Drums", instrument_id=1024),
+            "https://dqsljvtekg760.cloudfront.net/371/7564044/v0-test-image/5.json": revision_payload("Keys", instrument_id=95),
+        }
+    )
+    loader = SongsterrTabLoader(fetcher=fetcher, total_budget_seconds=1.0, clock=AdvancingClock([0.0, 0.1, 0.2, 1.5]))
+
+    bundle = loader.load_from_tab_url(
+        "https://www.songsterr.com/a/wsa/queen-another-one-bites-the-dust-tab-s371",
+        ResolvedSongQuery(title="Another One Bites the Dust", artist="Queen"),
+    )
+
+    assert bundle is not None
+    assert [track.part_id for track in bundle.tracks] == [4]
+    assert "https://dqsljvtekg760.cloudfront.net/371/7564044/v0-test-image/6.json" not in fetcher.urls
+    assert any("Songsterr load budget exhausted" in warning for warning in bundle.warnings)
 
 
 def test_in_memory_songsterr_tab_store_is_process_local():

@@ -122,6 +122,34 @@ def test_query_tools_answer_section_chords_lyrics_instruments_conflicts_and_miss
     assert "section_timestamps" in missing.answer
 
 
+def test_query_tools_prefer_songsterr_tab_markers_for_sections_when_available():
+    profile = knowledge_profile()
+    profile.metadata["songsterr_tab_index"] = {
+        "loaded": True,
+        "instruments": ["bass", "drums"],
+        "tracks": [],
+        "sections": ["Intro", "Verse I", "Chorus I", "Break", "Verse II", "Chorus II"],
+        "source_urls": ["https://www.songsterr.com/a/wsa/fixture-tab-s1"],
+        "warnings_count": 0,
+    }
+    profile.sections = [
+        SongSectionProfile(name="unknown", order=0),
+        SongSectionProfile(name="chorus", order=1),
+        SongSectionProfile(name="verse 2", order=2),
+    ]
+
+    sections = ProfileQueryTools().sections(profile)
+
+    assert sections.answer.startswith("Songsterr tab sections: Intro, Verse I, Chorus I")
+    assert "CifraClub/LaCuerda-style section evidence is partial: unknown, chorus, verse 2" in sections.answer
+    assert sections.evidence == [
+        "songsterr:sections:6",
+        "section:unknown:claims=0",
+        "section:chorus:claims=0",
+        "section:verse 2:claims=0",
+    ]
+
+
 def test_query_tools_answer_specific_instrument_evidence_and_missing_instrument_evidence():
     profile = knowledge_profile()
     profile.evidence_claims = [
