@@ -352,6 +352,32 @@ class StemProfile(BaseModel):
     dynamics: Optional[StemDynamics] = None
 
 
+class ArrangementCell(BaseModel):
+    """One stem's presence within one section of the arrangement timeline."""
+
+    stem: str
+    activity: float = Field(default=0.0, ge=0.0, le=1.0)
+    level: Literal["silent", "low", "medium", "high"] = "silent"
+
+
+class ArrangementColumn(BaseModel):
+    section: str
+    start_bar: int
+    end_bar: int
+    cells: list[ArrangementCell] = Field(default_factory=list, max_length=8)
+
+
+class EnsembleProfile(BaseModel):
+    """Bar-aligned arrangement timeline (deep-music-analysis Track 6): which
+    stems play in which section, how loud, and what changes between sections.
+    Voice-leading stays deferred until per-stem transcription (Track 1) exists."""
+
+    columns: list[ArrangementColumn] = Field(default_factory=list, max_length=64)
+    callouts: list[str] = Field(default_factory=list, max_length=12)
+    interpretation: str = Field(default="", max_length=280)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class AudioProfile(BaseModel):
     duration_seconds: float
     tempo_bpm: Optional[float] = None
@@ -368,6 +394,8 @@ class AudioProfile(BaseModel):
     meter: MeterProfile = Field(default_factory=MeterProfile)
     harmony: Optional[HarmonicProfile] = None
     structure: Optional[StructureProfile] = None
+    mix_timbre: Optional[TimbreProfile] = None
+    ensemble: Optional[EnsembleProfile] = None
     analysis_notes: list[AnalysisNote] = Field(default_factory=list)
 
 

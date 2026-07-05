@@ -55,7 +55,7 @@ def test_sustained_rise_is_detected_as_build():
     levels = [0.1, 0.2, 0.35, 0.5, 0.7, 0.9, 0.9, 0.9]
     dynamics = dynamics_profile(levels)
     builds = [e for e in dynamics.events if e.kind == "build"]
-    assert builds and builds[0].start_bar == 0
+    assert builds and builds[0].start_bar == 1  # bars are 1-based like ChordSpan
     assert "builds" in dynamics.interpretation
 
 
@@ -63,8 +63,13 @@ def test_sudden_fall_is_detected_as_drop():
     levels = [0.9, 0.95, 1.0, 0.2, 0.25, 0.3]
     dynamics = dynamics_profile(levels)
     drops = [e for e in dynamics.events if e.kind == "drop"]
-    assert drops and drops[0].end_bar == 3
+    assert drops and drops[0].end_bar == 4  # the fall lands on 1-based bar 4
     assert "drops" in dynamics.interpretation
+
+
+def test_dynamics_points_are_one_based():
+    dynamics = dynamics_profile([0.5, 0.6, 0.7])
+    assert [p.bar for p in dynamics.points] == [1, 2, 3]
 
 
 def test_steady_curve_has_no_events():
@@ -185,3 +190,29 @@ def test_extract_stem_listening_on_synthetic_audio(tmp_path):
     timbre = timbre_profile(raw)
     assert timbre.brightness == "dark"
     assert timbre.noisiness == "tonal"
+
+
+# ---- Mix-level timbre ----------------------------------------------------------
+
+
+def test_analyze_mix_timbre_uses_injected_extractor():
+    from music_assistant.infrastructure.mir.listening_features import analyze_mix_timbre
+
+    raw = RawStemListening(centroid_hz=3_000.0, flatness=0.4, band_split=[0.2, 0.3, 0.5])
+    timbre = analyze_mix_timbre(
+        "/tmp/mix.wav", [0.0, 2.0], 4.0, extractor=lambda path, bars, end: raw
+    )
+    assert timbre is not None
+    assert timbre.brightness == "bright"
+    assert timbre.noisiness == "noisy"
+
+
+def test_analyze_mix_timbre_returns_none_on_failure_or_silence():
+    from music_assistant.infrastructure.mir.listening_features import analyze_mix_timbre
+
+    def broken(path, bars, end):
+        raise RuntimeError("unreadable")
+
+    assert analyze_mix_timbre("/tmp/mix.wav", [0.0], 2.0, extractor=broken) is None
+    silent = lambda path, bars, end: RawStemListening()  # centroid 0 → zero confidence
+    assert analyze_mix_timbre("/tmp/mix.wav", [0.0], 2.0, extractor=silent) is None

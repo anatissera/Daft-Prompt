@@ -72,6 +72,7 @@ def _analyzer(
     section_structure=None,
     chord_confidence=0.8,
     stem_listening=None,
+    mix_timbre=None,
 ) -> DeepHarmonicAnalyzer:
     stems = stems if stems is not None else _full_stems()
     chord_spans = [
@@ -130,6 +131,11 @@ def _analyzer(
         stem_listening_provider=(
             (lambda stem_paths, bar_times, beat_times, duration: stem_listening)
             if stem_listening is not None
+            else None
+        ),
+        mix_timbre_provider=(
+            (lambda audio_path, bar_times, duration: mix_timbre)
+            if mix_timbre is not None
             else None
         ),
         duration_provider=lambda path: 8.0,
@@ -500,3 +506,41 @@ def test_disabled_stem_listening_stays_silent(tmp_path):
     profile = _analyzer(tmp_path).analyze(_source(tmp_path))
     codes = {note.code for note in profile.audio.analysis_notes}
     assert "stem_listening_unavailable" not in codes
+
+
+def test_mix_timbre_attaches_to_the_audio_profile(tmp_path):
+    from music_assistant.domain.audio_profile import TimbreProfile
+
+    timbre = TimbreProfile(brightness="bright", noisiness="mixed", interpretation="full mix", confidence=0.6)
+    profile = _analyzer(tmp_path, mix_timbre=timbre).analyze(_source(tmp_path))
+    assert profile.audio.mix_timbre is not None
+    assert profile.audio.mix_timbre.brightness == "bright"
+
+
+def test_ensemble_profile_builds_from_structure_and_stem_dynamics(tmp_path):
+    from music_assistant.domain.audio_profile import DynamicsPoint, RhythmProfile, StemDynamics, TimbreProfile
+    from music_assistant.infrastructure.mir.listening_features import StemListening
+
+    listening = {
+        "drums": StemListening(
+            timbre=TimbreProfile(),
+            rhythm=RhythmProfile(),
+            dynamics=StemDynamics(
+                points=[DynamicsPoint(bar=bar, level=0.9) for bar in range(1, 5)],
+                confidence=0.6,
+            ),
+        )
+    }
+    profile = _analyzer(tmp_path, stem_listening=listening).analyze(_source(tmp_path))
+
+    ensemble = profile.audio.ensemble
+    assert ensemble is not None
+    assert [column.section for column in ensemble.columns] == ["A"]
+    assert ensemble.columns[0].cells[0].stem == "drums"
+    assert ensemble.columns[0].cells[0].level == "high"
+
+
+def test_no_listening_means_no_ensemble(tmp_path):
+    profile = _analyzer(tmp_path).analyze(_source(tmp_path))
+    assert profile.audio.ensemble is None
+    assert profile.audio.mix_timbre is None
