@@ -306,3 +306,77 @@ def test_query_tools_list_different_numbered_chorus_instances_and_support_exact_
     assert "chorus 2" in exact.answer.lower()
     assert "Em | A | D | G" in exact.answer
     assert "Bm | F#m7 | G | D" not in exact.answer
+
+
+# ---- Deep-listening queries (timbre / groove / dynamics claims) ----------------
+
+
+def _listening_profile() -> SongKnowledgeProfile:
+    return SongKnowledgeProfile(
+        profile_id="song_listening",
+        identity=SongIdentity(title="Listening Test", artist="Fixture"),
+        evidence_claims=[
+            claim("mix_timbre", "timbre", "mix: warm, mixed, mid-heavy", confidence=0.6, source="LocalAudio"),
+            claim("drum_timbre", "timbre", "drums: bright, noisy, high-heavy", confidence=0.6, source="LocalAudio"),
+            claim("drum_groove", "groove", "drums: swung, busy, syncopated", confidence=0.7, source="LocalAudio"),
+            claim("bass_groove", "groove", "bass: straight, moderate", confidence=0.5, source="LocalAudio"),
+            claim("build", "audio_estimate", "drums builds through bars 8-15", confidence=0.5, source="LocalAudio"),
+            claim("drop", "audio_estimate", "drums drops at bar 16", confidence=0.5, source="LocalAudio"),
+            claim("vox_enter", "instrumentation", "vocals enters in B (bar 5)", confidence=0.5, source="LocalAudio"),
+        ],
+    )
+
+
+def test_groove_tool_leads_with_the_strongest_groove_claim():
+    from music_assistant.application.profile_queries import answer_from_profile
+
+    answer = answer_from_profile("Does this song swing?", _listening_profile())
+    assert answer.answer.startswith("The groove is likely drums: swung, busy, syncopated")
+    assert "bass: straight, moderate" in answer.answer
+    assert answer.evidence
+
+
+def test_groove_tool_falls_back_to_instrumentation_descriptions():
+    tools = ProfileQueryTools()
+    profile = SongKnowledgeProfile(
+        profile_id="song_fallback",
+        identity=SongIdentity(title="Fallback"),
+        evidence_claims=[claim("drums", "instrumentation", "four-on-the-floor funk groove", confidence=0.66)],
+    )
+    answer = tools.groove(profile)
+    assert "four-on-the-floor funk groove" in answer.answer
+
+
+def test_timbre_tool_prefers_the_mix_claim():
+    from music_assistant.application.profile_queries import answer_from_profile
+
+    answer = answer_from_profile("How does it sound?", _listening_profile())
+    assert answer.answer.startswith("It likely sounds like this: mix: warm, mixed, mid-heavy")
+    assert "not ground truth" in answer.answer
+
+
+def test_timbre_tool_filters_by_stem():
+    from music_assistant.application.profile_queries import answer_from_profile
+
+    answer = answer_from_profile("What is the timbre of the drums?", _listening_profile())
+    assert "drums: bright, noisy, high-heavy" in answer.answer
+    assert "mix:" not in answer.answer
+
+
+def test_dynamics_tool_cites_builds_drops_and_arrangement_changes():
+    from music_assistant.application.profile_queries import answer_from_profile
+
+    answer = answer_from_profile("Where does it build or drop?", _listening_profile())
+    assert "vocals enters in B (bar 5)" in answer.answer
+    assert "drums builds through bars 8-15" in answer.answer
+    assert "drums drops at bar 16" in answer.answer
+    assert len(answer.evidence) == 3
+
+
+def test_listening_questions_without_evidence_stay_honest():
+    from music_assistant.application.profile_queries import answer_from_profile
+
+    empty = SongKnowledgeProfile(profile_id="song_empty", identity=SongIdentity(title="Empty"))
+    assert "do not have timbre evidence" in answer_from_profile("How does it sound?", empty).answer
+    assert "do not have groove evidence" in answer_from_profile("Does it swing?", empty).answer
+    assert "do not have dynamics or arrangement evidence" in answer_from_profile("Where is the drop?", empty).answer

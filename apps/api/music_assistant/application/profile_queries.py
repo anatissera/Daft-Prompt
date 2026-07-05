@@ -134,6 +134,76 @@ class ProfileQueryTools:
             evidence=[_evidence_line(claim) for claim in claims],
         )
 
+    def groove(self, profile: SongKnowledgeProfile) -> ProfileQueryAnswer:
+        """Feel/swing/density from deep-listening groove claims."""
+        claims = _claims(profile, "groove")
+        if not claims:
+            # Web evidence sometimes describes the groove inside instrumentation
+            # claims — better that than "no evidence".
+            fallback = [
+                claim
+                for claim in _claims(profile, "instrumentation")
+                if "groove" in claim.value.lower() or "rhythm" in claim.value.lower()
+            ]
+            if fallback:
+                return ProfileQueryAnswer(
+                    answer="Groove evidence: " + "; ".join(claim.value for claim in fallback[:3]) + ".",
+                    evidence=[_evidence_line(claim) for claim in fallback],
+                )
+            return ProfileQueryAnswer(answer="I do not have groove evidence for this song yet.", evidence=[])
+        best = _best(claims)
+        others = [claim for claim in claims if claim is not best][:2]
+        answer = f"The groove is likely {best.value}"
+        if others:
+            answer += "; also " + "; ".join(claim.value for claim in others)
+        answer += " — from audio listening evidence (approximate)."
+        return ProfileQueryAnswer(answer=answer, evidence=[_evidence_line(claim) for claim in claims])
+
+    def timbre(self, profile: SongKnowledgeProfile, stem: str | None = None) -> ProfileQueryAnswer:
+        """Sound/brightness/noisiness from deep-listening timbre claims. The
+        mix-level claim leads unless a specific stem was asked for."""
+        claims = _claims(profile, "timbre")
+        if stem:
+            stem = _normalize_instrument_query(stem)
+            claims = [claim for claim in claims if stem in claim.value.lower()]
+            if not claims:
+                return ProfileQueryAnswer(
+                    answer=f"I do not have {stem}-specific timbre evidence for this song yet.",
+                    evidence=[],
+                )
+        if not claims:
+            return ProfileQueryAnswer(answer="I do not have timbre evidence for this song yet.", evidence=[])
+        ordered = sorted(claims, key=lambda c: (not c.value.startswith("mix:"), -c.confidence))
+        answer = (
+            "It likely sounds like this: "
+            + "; ".join(claim.value for claim in ordered[:3])
+            + " — spectral estimates, not ground truth."
+        )
+        return ProfileQueryAnswer(answer=answer, evidence=[_evidence_line(claim) for claim in ordered])
+
+    def dynamics_and_arrangement(self, profile: SongKnowledgeProfile) -> ProfileQueryAnswer:
+        """Builds/drops and stem entry/exit events from the bar-aligned curves."""
+        events = [
+            claim
+            for claim in _claims(profile, "audio_estimate")
+            if "builds through bars" in claim.value or "drops at bar" in claim.value
+        ]
+        changes = [
+            claim
+            for claim in _claims(profile, "instrumentation")
+            if any(marker in claim.value for marker in ("enters", "drops out", "pushes high"))
+        ]
+        if not events and not changes:
+            return ProfileQueryAnswer(
+                answer="I do not have dynamics or arrangement evidence for this song yet.",
+                evidence=[],
+            )
+        fragments = [claim.value for claim in changes[:3] + events[:3]]
+        return ProfileQueryAnswer(
+            answer="Arrangement and dynamics evidence: " + "; ".join(fragments) + " — bar-aligned estimates.",
+            evidence=[_evidence_line(claim) for claim in changes + events],
+        )
+
     def conflicts(self, profile: SongKnowledgeProfile) -> ProfileQueryAnswer:
         if not profile.conflicts:
             return ProfileQueryAnswer(answer="I do not have preserved source conflicts for this profile.", evidence=[])
@@ -182,7 +252,13 @@ def answer_from_profile(question: str, profile: SongKnowledgeProfile) -> Profile
         return tools.lyrics_by_section(profile, section or "chorus")
     if any(token in normalized for token in ["credit", "writer", "producer", "album", "artist", "who sings"]):
         return tools.metadata_credits(profile)
-    if any(token in normalized for token in ["instrument", "drum", "bass", "guitar", "synth", "piano", "groove"]):
+    if any(token in normalized for token in ["timbre", "bright", "dark", "warm", "tone", "sound", "noisy"]):
+        return tools.timbre(profile, stem=_mentioned_instrument(normalized))
+    if any(token in normalized for token in ["swing", "swung", "groove", "syncopat", "shuffle", "feel"]):
+        return tools.groove(profile)
+    if any(token in normalized for token in ["build", "drop", "louder", "quieter", "dynamic", "arrangement", "loudness"]):
+        return tools.dynamics_and_arrangement(profile)
+    if any(token in normalized for token in ["instrument", "drum", "bass", "guitar", "synth", "piano"]):
         return tools.instrumentation(profile, instrument=_mentioned_instrument(normalized))
     if any(token in normalized for token in ["conflict", "disagree", "source"]):
         return tools.conflicts(profile)
