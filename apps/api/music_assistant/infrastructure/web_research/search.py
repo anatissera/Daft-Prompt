@@ -40,6 +40,26 @@ class SeededWebSearch(WebSearch):
                 site="Songsterr",
             ),
             SearchResult(
+                url=f"https://www.songsterr.com/?pattern={encoded}&inst=guitar",
+                title=f"Songsterr guitar search for {query}",
+                site="Songsterr",
+            ),
+            SearchResult(
+                url=f"https://www.songsterr.com/?pattern={encoded}&inst=bass",
+                title=f"Songsterr bass search for {query}",
+                site="Songsterr",
+            ),
+            SearchResult(
+                url=f"https://www.songsterr.com/?pattern={encoded}&inst=drum",
+                title=f"Songsterr drum search for {query}",
+                site="Songsterr",
+            ),
+            SearchResult(
+                url=f"https://www.songsterr.com/?pattern={encoded}&inst=piano",
+                title=f"Songsterr piano search for {query}",
+                site="Songsterr",
+            ),
+            SearchResult(
                 url=f"https://www.hooktheory.com/theorytab/view/{slug}",
                 title=f"Hooktheory candidate for {query}",
                 site="HookTheory",

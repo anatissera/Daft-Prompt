@@ -15,8 +15,15 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 from music_assistant.application.answer_music_question import AnswerMusicQuestion, MusicQuestionExplainer
+from music_assistant.application.chat_agent import ChatAgent
 from music_assistant.application.composition_brief import BuildCompositionBrief
 from music_assistant.application.compose_song import ComposeSong
+from music_assistant.application.music_tool_models import (
+    AnswerToolOutput,
+    ChatAgentDecision as ChatToolDecision,
+    CompositionToolOutput,
+)
+from music_assistant.application.music_tools import MusicTools
 from music_assistant.domain.audio_profile import ExplanationAnswer, ReferenceProfile
 from music_assistant.domain.errors import OffTopicRequest
 from music_assistant.domain.song_state import SongState
@@ -24,6 +31,7 @@ from music_assistant.domain.usage import USAGE_TRACKER, UsageTracker
 from music_assistant.ports.llm import ChatModel
 from music_assistant.ports.reference_store import ReferenceStore
 from music_assistant.ports.song_researcher import SongResearcher
+from music_assistant.ports.songsterr_tab_store import SongsterrTabStore
 
 
 Intent = Literal[
@@ -33,23 +41,6 @@ Intent = Literal[
     "clarify",
     "off_topic",
 ]
-ChatToolAction = Literal[
-    "research_song",
-    "answer_profile",
-    "compose",
-    "compose_from_reference",
-    "clarify",
-    "off_topic",
-]
-
-
-class ChatToolDecision(BaseModel):
-    action: ChatToolAction
-    query: Optional[str] = None
-    composition_request: Optional[str] = None
-    clarification: Optional[str] = None
-
-
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     reference_id: Optional[str] = None
@@ -105,12 +96,14 @@ class ChatMusic:
         reference_store: ReferenceStore,
         chat_model: ChatModel | None = None,
         song_researcher: SongResearcher | None = None,
+        songsterr_tab_store: SongsterrTabStore | None = None,
     ) -> None:
         self.compose_song = compose_song
         self.answer_music_question = answer_music_question
         self.reference_store = reference_store
         self.chat_model = chat_model
         self.song_researcher = song_researcher
+        self.songsterr_tab_store = songsterr_tab_store
 
     def handle(self, request: ChatRequest) -> ChatResponse:
         tracker = UsageTracker()
@@ -154,65 +147,31 @@ class ChatMusic:
         profile: ReferenceProfile | None,
         profiles: list[ReferenceProfile],
     ) -> ChatResponse:
-        decision = self.chat_model.with_structured_output(ChatToolDecision).invoke(
-            _chat_decision_messages(message, profile)
+        assert self.chat_model is not None
+        tools = MusicTools(
+            compose_song=self.compose_song,
+            answer_music_question=self.answer_music_question,
+            reference_store=self.reference_store,
+            song_researcher=self.song_researcher,
+            songsterr_tab_store=self.songsterr_tab_store,
         )
-        if decision.action == "clarify":
-            clarification = decision.clarification or (
-                "Which song or reference should I use, and what musical task do you want?"
-            )
-            return ChatResponse(
-                intent="clarify",
-                reply=clarification,
-                clarification=clarification,
-            )
-        if decision.action == "off_topic":
-            return ChatResponse(
-                intent="off_topic",
-                reply=decision.clarification or "I can help with music research, analysis, and composition.",
-            )
-        if decision.action == "research_song":
-            if self.song_researcher is None:
-                return ChatResponse(
-                    intent="clarify",
-                    reply="I need a configured song research tool before I can research that song.",
-                    clarification="Configure song research or provide an existing reference.",
-                )
-            query = decision.query or message
-            researched = self.song_researcher.research(query)
-            self.reference_store.save(researched)
-            return ChatResponse(
-                intent="answer_reference",
-                reply=researched.summary or "Research ready from source-backed evidence.",
-                reference_id=researched.reference_id,
-            )
-        if decision.action == "answer_profile":
-            if profile is None:
-                return ChatResponse(
-                    intent="clarify",
-                    reply="I need a current song profile before I can answer from evidence.",
-                    clarification="Research a song or attach/select a reference first.",
-                )
-            answer = self.answer_music_question.execute(message, profile)
-            return ChatResponse(
-                intent="answer_reference",
-                reply=answer.answer,
-                reference_id=profile.reference_id,
-                answer=answer,
-            )
-        if decision.action == "compose_from_reference":
-            if len(profiles) > 1:
-                return self._compose_from_references(decision.composition_request or message, profiles)
-            if profile is None:
-                return ChatResponse(
-                    intent="clarify",
-                    reply="I need a current song profile before composing from a reference.",
-                    clarification="Research a song or attach/select a reference first.",
-                )
-            return self._compose_from_reference(decision.composition_request or message, profile)
-        if decision.action == "compose":
-            return self._compose(decision.composition_request or message or "demo")
-        return self._execute_deterministic_intent(self._classify(message, has_reference=profile is not None), message, profile)
+        agent_result = ChatAgent(chat_model=self.chat_model, tools=tools).run(request)
+        return self._response_from_agent_result(agent_result)
+
+    def _response_from_agent_result(self, agent_result) -> ChatResponse:
+        output = agent_result.tool_output
+        answer = output.explanation if isinstance(output, AnswerToolOutput) else None
+        compose = None
+        if isinstance(output, CompositionToolOutput) and output.song is not None and output.source is not None:
+            compose = ChatComposeResult(song=output.song, source=output.source)
+        return ChatResponse(
+            intent=agent_result.intent,  # type: ignore[arg-type]
+            reply=agent_result.reply,
+            reference_id=agent_result.reference_id,
+            answer=answer,
+            compose=compose,
+            clarification=agent_result.clarification,
+        )
 
     def _execute_deterministic_intent(
         self,
