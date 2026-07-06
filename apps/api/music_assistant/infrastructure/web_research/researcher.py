@@ -7,6 +7,7 @@ import re
 from music_assistant.domain.audio_profile import (
     AnalysisNote,
     AudioProfile,
+    EvidenceClaim,
     ReferenceProfile,
     ReferenceSource,
     ResearchEvidence,
@@ -22,9 +23,11 @@ from music_assistant.infrastructure.web_research.fetch import UrlLibPageFetcher
 from music_assistant.infrastructure.web_research.fusion import EvidenceFuser
 from music_assistant.infrastructure.web_research.parsers import GenericSongPageParser
 from music_assistant.infrastructure.web_research.search import SeededWebSearch
+from music_assistant.infrastructure.web_research.songsterr_tabs import SongsterrTabBundle, SongsterrTabLoader
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_researcher import SongResearcher
 from music_assistant.ports.song_source_connector import ConnectorResult, ResolvedSongQuery, SongSourceConnector
+from music_assistant.ports.songsterr_tab_store import SongsterrTabStore
 from music_assistant.ports.web_search import WebSearch
 
 
@@ -62,6 +65,8 @@ class ConnectorSongResearcher(SongResearcher):
         connectors: list[SongSourceConnector] | None = None,
         search: WebSearch | None = None,
         fuser: EvidenceFuser | None = None,
+        songsterr_tab_loader: SongsterrTabLoader | None = None,
+        songsterr_tab_store: SongsterrTabStore | None = None,
     ) -> None:
         self.connectors = connectors or [
             HookTheoryConnector(),
@@ -71,6 +76,8 @@ class ConnectorSongResearcher(SongResearcher):
         ]
         self.search = search or SeededWebSearch()
         self.fuser = fuser or EvidenceFuser()
+        self.songsterr_tab_loader = songsterr_tab_loader or (SongsterrTabLoader() if songsterr_tab_store is not None else None)
+        self.songsterr_tab_store = songsterr_tab_store
 
     def research(self, query: str) -> ReferenceProfile:
         resolved = _resolve_song_query(query)
@@ -79,8 +86,16 @@ class ConnectorSongResearcher(SongResearcher):
             _collect_with_candidates(connector, resolved, search_results)
             for connector in self.connectors
         ]
+        bundle = _load_songsterr_tab_bundle(results, resolved, self.songsterr_tab_loader)
+        if bundle is not None:
+            results.append(_connector_result_from_songsterr_bundle(resolved, bundle))
         knowledge = self.fuser.fuse_connector_results(resolved, results)
-        return _reference_from_knowledge(query, knowledge, results)
+        if bundle is not None:
+            knowledge.metadata["songsterr_tab_index"] = _songsterr_tab_index(bundle)
+        profile = _reference_from_knowledge(query, knowledge, results)
+        if bundle is not None and self.songsterr_tab_store is not None:
+            self.songsterr_tab_store.save(profile.reference_id, bundle)
+        return profile
 
 
 def _reference_from_knowledge(
@@ -177,6 +192,193 @@ def _notes_from_failures(results: list[ConnectorResult]) -> list[AnalysisNote]:
                 )
             )
     return notes
+
+
+def _load_songsterr_tab_bundle(
+    results: list[ConnectorResult],
+    resolved: ResolvedSongQuery,
+    loader,
+) -> SongsterrTabBundle | None:
+    if loader is None:
+        return None
+    songsterr_results = [result for result in results if result.source_name == "Songsterr" and result.claims]
+    if not songsterr_results:
+        return None
+    load = getattr(loader, "load", None)
+    if load is not None:
+        bundle = load(resolved)
+        if bundle is not None:
+            return bundle
+    for result in songsterr_results:
+        source_url = result.query.source_url
+        if source_url and "/a/wsa/" in source_url:
+            bundle = loader.load_from_tab_url(source_url, resolved)
+            if bundle is not None:
+                return bundle
+    return None
+
+
+def _connector_result_from_songsterr_bundle(
+    resolved: ResolvedSongQuery,
+    bundle: SongsterrTabBundle,
+) -> ConnectorResult:
+    claims: list[EvidenceClaim] = []
+    source_url = bundle.source_url
+    if bundle.tempo_bpm is not None:
+        claims.append(
+            _songsterr_bundle_claim(
+                "songsterr_tempo",
+                "tempo",
+                f"{bundle.tempo_bpm:g} BPM",
+                source_url,
+                0.72,
+                f"Songsterr tab tempo: {bundle.tempo_bpm:g} BPM",
+            )
+        )
+    if bundle.instrument_names:
+        instruments = ", ".join(bundle.instrument_names)
+        claims.append(
+            _songsterr_bundle_claim(
+                "songsterr_full_tab_tracks",
+                "instrumentation",
+                f"Songsterr full tab tracks loaded: {instruments}",
+                source_url,
+                0.78,
+                f"Loaded full Songsterr track payloads for {instruments}",
+            )
+        )
+    sections = _sections_from_bundle(bundle)
+    for order, section in enumerate(sections):
+        claims.append(
+            _songsterr_bundle_claim(
+                f"songsterr_section_{order}",
+                "section",
+                section,
+                source_url,
+                0.68,
+                f"Songsterr tab marker: {section}",
+                section_name=_normalize_songsterr_section(section),
+            )
+        )
+    for track in bundle.tracks:
+        summary = (
+            f"{track.instrument_family.title()} tab loaded from Songsterr: "
+            f"{track.name} ({len(track.measures)} measures, {track.note_count} note events)"
+        )
+        claims.append(
+            _songsterr_bundle_claim(
+                f"songsterr_track_{track.part_id}",
+                "tab",
+                summary,
+                source_url,
+                0.8,
+                summary,
+            )
+        )
+        if track.instrument_family in {"bass", "drums"}:
+            groove = _track_groove_summary(track)
+            claims.append(
+                _songsterr_bundle_claim(
+                    f"songsterr_trait_{track.part_id}",
+                    "trait",
+                    groove,
+                    source_url,
+                    0.66,
+                    groove,
+                )
+            )
+    for index, warning in enumerate(bundle.warnings):
+        claims.append(
+            _songsterr_bundle_claim(
+                f"songsterr_warning_{index}",
+                "metadata",
+                f"Songsterr tab warning: {warning}",
+                source_url,
+                0.35,
+                warning,
+            )
+        )
+    return ConnectorResult(source_name="Songsterr", query=resolved.model_copy(update={"source_url": source_url}), fetch_status="fetched", claims=claims)
+
+
+def _songsterr_bundle_claim(
+    claim_id: str,
+    claim_type: str,
+    value: str,
+    source_url: str,
+    confidence: float,
+    snippet: str,
+    *,
+    section_name: str | None = None,
+) -> EvidenceClaim:
+    return EvidenceClaim(
+        claim_id=claim_id,
+        claim_type=claim_type,  # type: ignore[arg-type]
+        value=value,
+        normalized_value=value,
+        section_name=section_name,
+        source_name="Songsterr",
+        source_url=source_url,
+        extraction_method="api",
+        confidence=confidence,
+        snippet=snippet[:280],
+    )
+
+
+def _sections_from_bundle(bundle: SongsterrTabBundle) -> list[str]:
+    sections: list[str] = []
+    for track in bundle.tracks:
+        for measure in track.measures:
+            if measure.marker and measure.marker not in sections:
+                sections.append(measure.marker)
+    return sections
+
+
+def _songsterr_tab_index(bundle: SongsterrTabBundle) -> dict:
+    tracks = [
+        {
+            "instrument": track.instrument_family,
+            "name": track.name,
+            "part_id": track.part_id,
+        }
+        for track in bundle.tracks
+    ]
+    source_urls: list[str] = []
+    for url in [bundle.source_url, *[track.source_url for track in bundle.tracks]]:
+        if url and url not in source_urls:
+            source_urls.append(url)
+    return {
+        "loaded": True,
+        "instruments": bundle.instrument_names,
+        "tracks": tracks,
+        "sections": _sections_from_bundle(bundle),
+        "source_urls": source_urls,
+        "warnings_count": len(bundle.warnings),
+    }
+
+
+def _normalize_songsterr_section(section: str) -> str:
+    value = section.strip().lower()
+    value = re.sub(r"\b(i{1,3}|iv|v|vi{0,3}|\d+)\b$", "", value).strip()
+    aliases = {
+        "verse": "verse",
+        "chorus": "chorus",
+        "intro": "intro",
+        "outro": "outro",
+        "bridge": "bridge",
+        "break": "break",
+        "solo": "solo",
+    }
+    return aliases.get(value, value)
+
+
+def _track_groove_summary(track) -> str:
+    markers = [measure.marker for measure in track.measures if measure.marker]
+    marker_text = ", ".join(markers[:6]) if markers else "no section markers"
+    return (
+        f"{track.instrument_family.title()} has {len(track.measures)} tab measures, "
+        f"{track.note_count} note events, and markers: {marker_text}"
+    )
 
 
 def _summary_from_knowledge(knowledge: SongKnowledgeProfile, results: list[ConnectorResult]) -> str:

@@ -78,6 +78,21 @@ class ProfileQueryTools:
         )
 
     def sections(self, profile: SongKnowledgeProfile) -> ProfileQueryAnswer:
+        songsterr_sections = _songsterr_index_sections(profile)
+        if songsterr_sections:
+            evidence = [f"songsterr:sections:{len(songsterr_sections)}"]
+            section_evidence = [
+                f"section:{section.name}:claims={len(section.evidence_ids)}"
+                for section in profile.sections
+            ]
+            partial = ""
+            if profile.sections:
+                partial_names = ", ".join(section.name for section in profile.sections)
+                partial = f" CifraClub/LaCuerda-style section evidence is partial: {partial_names}."
+            return ProfileQueryAnswer(
+                answer=f"Songsterr tab sections: {', '.join(songsterr_sections)}.{partial}",
+                evidence=[*evidence, *section_evidence],
+            )
         if not profile.sections:
             return ProfileQueryAnswer(answer="I do not have section evidence for this song yet.", evidence=[])
         names = ", ".join(section.name for section in profile.sections)
@@ -273,6 +288,16 @@ def answer_from_profile(question: str, profile: SongKnowledgeProfile) -> Profile
 
 def _claims(profile: SongKnowledgeProfile, claim_type: str) -> list[EvidenceClaim]:
     return [claim for claim in profile.evidence_claims if claim.claim_type == claim_type]
+
+
+def _songsterr_index_sections(profile: SongKnowledgeProfile) -> list[str]:
+    index = profile.metadata.get("songsterr_tab_index") if isinstance(profile.metadata, dict) else None
+    if not isinstance(index, dict) or not index.get("loaded"):
+        return []
+    sections = index.get("sections")
+    if not isinstance(sections, list):
+        return []
+    return [str(section) for section in sections if str(section).strip()]
 
 
 def _best(claims: list[EvidenceClaim]) -> EvidenceClaim:

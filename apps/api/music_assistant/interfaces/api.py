@@ -29,6 +29,7 @@ from music_assistant.graph import iter_negotiation_events, run_negotiation
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from music_assistant.infrastructure.mir.demucs_separator import DemucsSeparator
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
+from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
 from music_assistant.infrastructure.web_research.researcher import ConnectorSongResearcher
@@ -52,6 +53,7 @@ OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
 REFERENCE_UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
 REFERENCE_STORE = InMemoryReferenceStore()
+SONGSTERR_TAB_STORE = InMemorySongsterrTabStore()
 SUPPORTED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 ANALYSIS_KEEPALIVE_SECONDS = 15.0
@@ -129,7 +131,7 @@ def research_reference_stream(req: ResearchRequest) -> StreamingResponse:
 
 
 def _song_researcher() -> ConnectorSongResearcher:
-    return ConnectorSongResearcher()
+    return ConnectorSongResearcher(songsterr_tab_store=SONGSTERR_TAB_STORE)
 
 
 async def _store_reference_upload(file: UploadFile | None) -> ReferenceSource:
@@ -297,10 +299,11 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
 def _chat_music() -> ChatMusic:
     return ChatMusic(
         compose_song=_compose_song(),
-        answer_music_question=AnswerMusicQuestion(),
+        answer_music_question=AnswerMusicQuestion(songsterr_tab_store=SONGSTERR_TAB_STORE),
         reference_store=REFERENCE_STORE,
         chat_model=_chat_model(),
         song_researcher=_song_researcher(),
+        songsterr_tab_store=SONGSTERR_TAB_STORE,
     )
 
 
