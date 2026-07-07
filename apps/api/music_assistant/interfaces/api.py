@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from music_assistant.application.analyze_reference import AnalyzeReference
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.application.audio_enrichment import enrich_profile_with_audio
 from music_assistant.application.chat_music import ChatMusic
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
 from music_assistant.application.reference_instruments import ReferenceInstrumentProfileBuilder
@@ -247,7 +248,12 @@ def _reference_analysis_stream_events(source: ReferenceSource) -> Iterator[dict]
     def worker() -> None:
         analyzer = _reference_analyzer()
         try:
-            profile = _analyze_with_progress(analyzer, source, progress)
+            # Same enrichment as the blocking endpoint (AnalyzeReference): the
+            # streamed profile must also carry the SongKnowledgeProfile with
+            # audio evidence claims, or chat Q&A falls back to legacy answers.
+            profile = enrich_profile_with_audio(
+                _analyze_with_progress(analyzer, source, progress)
+            )
             REFERENCE_STORE.save(profile)
             events.put(AnalysisDoneEvent(profile=profile).model_dump(mode="json"))
         except Exception as exc:

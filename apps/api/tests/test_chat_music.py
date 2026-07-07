@@ -170,3 +170,90 @@ def test_compose_from_reference_uses_message_as_prefix():
     style = composer.calls[0]
     assert style.startswith("generate a chill chorus inspired by this song")
     assert "demo.wav" in style
+
+
+# ---- keyless routing fixes: research intent + deep-listening vocabulary --------
+
+
+class _FakeResearcher:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def research(self, query: str) -> ReferenceProfile:
+        self.queries.append(query)
+        profile = _make_profile("ref_researched")
+        return profile.model_copy(update={"summary": "Research ready: Every Breath You Take."})
+
+
+def test_research_phrase_triggers_web_research_without_an_llm():
+    store = InMemoryReferenceStore()
+    researcher = _FakeResearcher()
+    chat = ChatMusic(
+        compose_song=_RecordingComposer(),
+        answer_music_question=AnswerMusicQuestion(_CountingExplainer()),
+        reference_store=store,
+        song_researcher=researcher,
+    )
+
+    response = chat.handle(ChatRequest(message="Research Every Breath You Take by The Police"))
+
+    assert response.intent == "answer_reference"
+    assert response.reference_id == "ref_researched"
+    assert "Research ready" in response.reply
+    assert researcher.queries == ["Every Breath You Take by The Police"]  # verb stripped
+    assert store.get("ref_researched") is not None
+
+
+def test_look_up_and_analyze_routes_to_research_even_with_a_reference_loaded():
+    store = InMemoryReferenceStore()
+    profile = _make_profile()
+    store.save(profile)
+    researcher = _FakeResearcher()
+    chat = ChatMusic(
+        compose_song=_RecordingComposer(),
+        answer_music_question=AnswerMusicQuestion(_CountingExplainer()),
+        reference_store=store,
+        song_researcher=researcher,
+    )
+
+    response = chat.handle(
+        ChatRequest(
+            message="Look up on the internet and analyze Every breath you take by The Police",
+            reference_id=profile.reference_id,
+        )
+    )
+
+    assert response.intent == "answer_reference"
+    assert researcher.queries and "Every breath you take" in researcher.queries[0]
+
+
+def test_research_without_configured_researcher_explains_instead_of_generic_clarify():
+    chat, _, _, _ = _make_chat()
+
+    response = chat.handle(ChatRequest(message="Research Get Lucky by Daft Punk"))
+
+    assert response.intent == "clarify"
+    assert "not configured" in response.reply
+
+
+def test_listening_questions_route_to_the_answer_path():
+    profile = _make_profile()
+    chat, composer, explainer, store = _make_chat()
+    store.save(profile)
+
+    for question in [
+        "Does it swing? Where does it build?",
+        "How does it sound?",
+        "What is the timbre of the drums?",
+        "Where is the drop?",
+    ]:
+        response = chat.handle(ChatRequest(message=question, reference_id=profile.reference_id))
+        assert response.intent == "answer_reference", question
+
+    assert composer.calls == []
+    assert [call[0] for call in explainer.calls] == [
+        "Does it swing? Where does it build?",
+        "How does it sound?",
+        "What is the timbre of the drums?",
+        "Where is the drop?",
+    ]

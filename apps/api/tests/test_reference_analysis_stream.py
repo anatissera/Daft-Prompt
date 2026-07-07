@@ -156,6 +156,12 @@ def test_analyze_reference_stream_emits_progress_and_done(tmp_path: Path, monkey
     assert stage_events[1]["cache_hit"] is True
     assert events[-1]["profile"]["audio"]["harmony"]["key"]["primary"]["key"] == "A minor"
     assert events[-1]["profile"]["audio"]["structure"]["sections"][0]["label"] == "A"
+    # The streamed profile must carry the enriched knowledge profile (same as
+    # the blocking endpoint) or chat Q&A cannot answer from evidence claims.
+    knowledge = events[-1]["profile"]["knowledge"]
+    assert knowledge is not None
+    claim_types = {claim["claim_type"] for claim in knowledge["evidence_claims"]}
+    assert {"tempo", "key"} <= claim_types
 
 
 def test_analyze_reference_stream_emits_error_event(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
