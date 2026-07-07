@@ -310,7 +310,69 @@ def test_director_prompt_contains_key_musical_concepts():
     assert "playing_style" in system_text or "playing style" in system_text.lower()
     assert "composition_group" in system_text or "composition group" in system_text.lower()
     assert "energy" in system_text.lower()
+    assert "instrument_requests" in system_text
+    assert "midi_program" in system_text
+    assert "symbolic_seed" in system_text
     assert "Jamiroquai" in human_text
+
+
+def test_director_canonicalizes_requested_instrument_family_ids():
+    out = DirectorOutput(
+        genre="funk",
+        key="E minor",
+        tempo_bpm=110,
+        time_sig_numerator=4,
+        time_sig_denominator=4,
+        num_bars=8,
+        sections=[ArrangementSection(name="verse", start_bar=0, end_bar=8, energy="medium")],
+        chord_progression=[ChordSpan(bar=i, chord="Em7") for i in range(8)],
+        instruments=[
+            ArrangementInstrument(
+                id="low_end",
+                instrument="electric_bass",
+                midi_program=33,
+                midi_low=28,
+                midi_high=55,
+                role="rhythmic foundation",
+                playing_style="Literal bass reference.",
+                is_drum=False,
+            ),
+            ArrangementInstrument(
+                id="kit",
+                instrument="drum_kit",
+                midi_program=0,
+                midi_low=35,
+                midi_high=81,
+                role="beat",
+                playing_style="Backbeat.",
+                is_drum=True,
+            ),
+            ArrangementInstrument(
+                id="gtr",
+                instrument="electric_guitar",
+                midi_program=26,
+                midi_low=40,
+                midi_high=84,
+                role="stabs",
+                playing_style="Short chords.",
+                is_drum=False,
+            ),
+        ],
+        composition_groups=[
+            CompositionGroup(name="rhythm", instrument_ids=["low_end", "kit"]),
+            CompositionGroup(name="harmony", instrument_ids=["gtr"]),
+        ],
+    )
+    style = (
+        "CompositionBrief\n"
+        'instrument_requests_json: {"bass":{"literal_application":true,"note_pack_id":"bass_verse_0_0"}}\n'
+    )
+
+    song = arrangement_to_song(style, out)
+
+    assert {item.id for item in song.roster} == {"bass", "kit", "gtr"}
+    rhythm = next(group for group in song.composition_groups if group.name == "rhythm")
+    assert rhythm.instrument_ids == ["bass", "kit"]
 
 # --- chord/form backfill via skills (plans/composition-skills.md step 2) ---
 

@@ -7,6 +7,8 @@ from typing import Any
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
 from music_assistant.application.composition_brief import BuildCompositionBrief
 from music_assistant.application.compose_song import ComposeSong
+from music_assistant.application.reference_instruments import ReferenceInstrumentProfileBuilder
+from music_assistant.application.reference_transfer_intent import BuildReferenceTransferIntent
 from music_assistant.application.music_tool_models import (
     AnswerToolOutput,
     AnswerProfileToolInput,
@@ -28,8 +30,15 @@ from music_assistant.application.music_tool_models import (
     InstrumentSummaryToolInput,
 )
 from music_assistant.application.profile_queries import ProfileQueryTools
-from music_assistant.domain.audio_profile import ExplanationAnswer, ReferenceProfile
+from music_assistant.domain.audio_profile import (
+    ExplanationAnswer,
+    ReferenceInstrumentProfile,
+    ReferenceProfile,
+    ReferenceTransferIntent,
+    ReferenceTransferItem,
+)
 from music_assistant.domain.errors import OffTopicRequest
+from music_assistant.ports.llm import ChatModel
 from music_assistant.ports.reference_store import ReferenceStore
 from music_assistant.ports.song_researcher import SongResearcher
 from music_assistant.ports.songsterr_tab_store import SongsterrTabStore
@@ -44,12 +53,14 @@ class MusicTools:
         song_researcher: SongResearcher | None = None,
         compose_song: ComposeSong | None = None,
         songsterr_tab_store: SongsterrTabStore | None = None,
+        chat_model: ChatModel | None = None,
     ) -> None:
         self.reference_store = reference_store
         self.answer_music_question = answer_music_question
         self.song_researcher = song_researcher
         self.compose_song = compose_song
         self.songsterr_tab_store = songsterr_tab_store
+        self.chat_model = chat_model
         self.profile_queries = ProfileQueryTools()
 
     def research_song(self, payload: ResearchSongToolInput) -> ResearchSongToolOutput:
@@ -68,6 +79,7 @@ class MusicTools:
             summary=profile.summary or "",
             evidence_count=evidence_count,
             evidence=_profile_evidence_summary(profile),
+            instrument_profile_summary=_instrument_profile_summary(profile, self.songsterr_tab_store),
         )
 
     def get_song_profile(self, payload: SongReferenceToolInput) -> ProfileToolOutput:
@@ -95,6 +107,7 @@ class MusicTools:
             artist=knowledge.identity.artist,
             sources=sources,
             songsterr_tab_index=index or {},
+            instrument_profile_summary=_instrument_profile_summary(profile, self.songsterr_tab_store),
             evidence=_profile_evidence_summary(profile),
         )
 
@@ -271,6 +284,65 @@ class MusicTools:
         profiles = self._profiles(payload.reference_id, payload.reference_ids)
         try:
             if profiles and all(profile.knowledge is not None for profile in profiles):
+                instrument_profiles = {
+                    profile.reference_id: ReferenceInstrumentProfileBuilder(
+                        songsterr_tab_store=self.songsterr_tab_store,
+                    ).build(profile)
+                    for profile in profiles
+                }
+                has_instrument_profiles = any(instruments for instruments in instrument_profiles.values())
+                if has_instrument_profiles:
+                    operational_notes: list[str] = []
+                    intent_result = BuildReferenceTransferIntent(chat_model=self.chat_model).execute(
+                        payload.composition_request,
+                        instrument_profiles,
+                    )
+                    if intent_result.clarification:
+                        operational_notes = _operational_clarification_notes(
+                            intent_result.clarification,
+                            instrument_profiles,
+                            payload.composition_request,
+                        )
+                        if operational_notes:
+                            intent_result.intent = _default_reference_transfer_intent(instrument_profiles)
+                            intent_result.clarification = None
+                        else:
+                            return CompositionToolOutput(
+                                reference_id=profiles[0].reference_id,
+                                answer=intent_result.clarification,
+                                error="clarification_needed",
+                                intent="compose_from_reference",
+                            )
+                    if intent_result.intent is not None:
+                        intent_result.intent = _filter_transfer_intent_to_available_instruments(
+                            intent_result.intent,
+                            instrument_profiles,
+                            payload.composition_request,
+                        )
+                        built = BuildCompositionBrief().execute(
+                            payload.composition_request,
+                            [profile.knowledge for profile in profiles if profile.knowledge is not None],
+                            transfer_intent=intent_result.intent,
+                            instrument_profiles=instrument_profiles,
+                        )
+                        assert built.brief is not None
+                        if operational_notes:
+                            built.brief.uncertainty_notes.extend(operational_notes)
+                        song, source = self.compose_song.compose(built.brief)
+                        warnings = _composition_warnings(song)
+                        warnings.extend(note for note in operational_notes if note not in warnings)
+                        return CompositionToolOutput(
+                            reference_id=profiles[0].reference_id,
+                            answer=_compose_tool_answer(song, source, warnings=warnings),
+                            song=song,
+                            source=source,
+                            intent="compose_from_reference",
+                            reference_transfer_intent=intent_result.intent.model_dump(mode="json"),
+                            instrument_requests_summary=_instrument_requests_summary(built.brief.instrument_requests),
+                            literal_applications=_literal_applications_summary(built.brief.instrument_requests),
+                            uncertainty_notes=list(built.brief.uncertainty_notes),
+                            warnings=warnings,
+                        )
                 built = BuildCompositionBrief().execute(
                     payload.composition_request,
                     [profile.knowledge for profile in profiles if profile.knowledge is not None],
@@ -284,17 +356,29 @@ class MusicTools:
                     )
                 if built.brief is not None:
                     song, source = self.compose_song.compose(built.brief)
+                    warnings = _composition_warnings(song)
                     return CompositionToolOutput(
                         reference_id=profiles[0].reference_id,
-                        answer=_compose_tool_answer(song, source),
+                        answer=_compose_tool_answer(song, source, warnings=warnings),
                         song=song,
                         source=source,
                         intent="compose_from_reference",
+                        instrument_requests_summary=_instrument_requests_summary(built.brief.instrument_requests),
+                        literal_applications=_literal_applications_summary(built.brief.instrument_requests),
+                        uncertainty_notes=list(built.brief.uncertainty_notes),
+                        warnings=warnings,
                     )
             song, source = self.compose_song.compose(payload.composition_request)
         except OffTopicRequest as refusal:
             return CompositionToolOutput(answer=refusal.message, error="off_topic", intent="compose")
-        return CompositionToolOutput(answer=_compose_tool_answer(song, source), song=song, source=source, intent="compose")
+        warnings = _composition_warnings(song)
+        return CompositionToolOutput(
+            answer=_compose_tool_answer(song, source, warnings=warnings),
+            song=song,
+            source=source,
+            intent="compose",
+            warnings=warnings,
+        )
 
     def _profile(self, reference_id: str) -> ReferenceProfile | None:
         return self.reference_store.get(reference_id)
@@ -343,6 +427,33 @@ def _profile_evidence_summary(profile: ReferenceProfile) -> list[str]:
     ]
 
 
+def _instrument_profile_summary(profile: ReferenceProfile, songsterr_tab_store: SongsterrTabStore | None) -> list[dict]:
+    summaries: list[dict] = []
+    for instrument_profile in ReferenceInstrumentProfileBuilder(songsterr_tab_store=songsterr_tab_store).build(profile).values():
+        memory = instrument_profile.musical_memory
+        summaries.append(
+            {
+                "instrument_family": instrument_profile.instrument_family,
+                "track_name": instrument_profile.track_name,
+                "confidence": instrument_profile.confidence,
+                "midi_program": instrument_profile.timbre.midi_program,
+                "note_packs": [
+                    {
+                        "note_pack_id": pack.pack_id,
+                        "section_name": pack.section_name,
+                        "bar_count": pack.bar_count,
+                        "note_count": len(pack.notes),
+                    }
+                    for pack in memory.note_packs
+                ],
+                "motif_count": len(memory.motifs),
+                "summary": memory.summary,
+                "uncertainty_notes": instrument_profile.uncertainty_notes,
+            }
+        )
+    return summaries
+
+
 def _unique_durations(events: list[Any]) -> list[str]:
     durations: list[str] = []
     for event in events:
@@ -357,8 +468,181 @@ def _normalize_instrument(value: str) -> str:
     return aliases.get(normalized, normalized)
 
 
-def _compose_tool_answer(song, source: str) -> str:
-    return (
+def _compose_tool_answer(song, source: str, *, warnings: list[str] | None = None) -> str:
+    answer = (
         f"Generated a {song.header.genre} sketch at {song.header.tempo_bpm} BPM in {song.header.key} "
         f"({len(song.roster)} instruments, source={source})."
     )
+    if warnings:
+        answer += f" Generated with partial failures: {'; '.join(warnings)}."
+    return answer
+
+
+def _composition_warnings(song) -> list[str]:
+    warnings: list[str] = []
+    for instrument_id, part in song.parts.items():
+        summary = part.notes_summary or ""
+        marker = "(failed to compose:"
+        if marker not in summary:
+            continue
+        reason = summary.split(marker, 1)[1].split(")", 1)[0].strip()
+        warnings.append(f"{instrument_id} failed to compose: {reason}")
+    warnings.extend(str(error) for error in getattr(song, "errors", []) if error)
+    return warnings
+
+
+def _default_reference_transfer_intent(
+    instrument_profiles: dict[str, dict[str, ReferenceInstrumentProfile]],
+) -> ReferenceTransferIntent:
+    items: list[ReferenceTransferItem] = []
+    for reference_id, profiles in instrument_profiles.items():
+        for family, profile in sorted(profiles.items()):
+            has_symbolic_notes = bool(profile.musical_memory.note_packs or profile.symbolic_seed)
+            items.append(
+                ReferenceTransferItem(
+                    instrument_family=family,  # type: ignore[arg-type]
+                    reference_id=reference_id,
+                    transfer_mode="literal" if has_symbolic_notes else "similar",
+                    fidelity=1.0 if has_symbolic_notes else 0.65,
+                )
+            )
+    return ReferenceTransferIntent(items=items)
+
+
+def _filter_transfer_intent_to_available_instruments(
+    intent: ReferenceTransferIntent,
+    instrument_profiles: dict[str, dict[str, ReferenceInstrumentProfile]],
+    message: str,
+) -> ReferenceTransferIntent:
+    available = _available_instrument_families(instrument_profiles)
+    explicit = _explicitly_requested_instrument_families(message)
+    items = [
+        item
+        for item in intent.items
+        if item.instrument_family in available or item.instrument_family in explicit
+    ]
+    return intent.model_copy(update={"items": items})
+
+
+def _operational_clarification_notes(
+    clarification: str,
+    instrument_profiles: dict[str, dict[str, ReferenceInstrumentProfile]],
+    message: str,
+) -> list[str]:
+    cleaned = clarification.strip()
+    if not cleaned or _is_blocking_clarification(cleaned):
+        return []
+    available = _available_instrument_families(instrument_profiles)
+    explicit = _explicitly_requested_instrument_families(message)
+    notes: list[str] = []
+    for sentence in _sentences(cleaned):
+        mentioned = _mentioned_instrument_families(sentence)
+        if mentioned and not mentioned.intersection(available | explicit):
+            continue
+        notes.append(sentence)
+    return notes
+
+
+def _is_blocking_clarification(text: str) -> bool:
+    normalized = text.strip().lower()
+    if "?" in normalized:
+        return True
+    blocking_prefixes = (
+        "which ",
+        "what ",
+        "please provide",
+        "provide ",
+        "i need",
+        "need ",
+        "necesito",
+        "a que ",
+        "a qué ",
+        "que cancion",
+        "qué canción",
+        "cual ",
+        "cuál ",
+    )
+    return normalized.startswith(blocking_prefixes)
+
+
+def _sentences(text: str) -> list[str]:
+    return [part.strip() for part in text.replace("\n", " ").split(".") if part.strip()]
+
+
+def _available_instrument_families(
+    instrument_profiles: dict[str, dict[str, ReferenceInstrumentProfile]],
+) -> set[str]:
+    return {
+        family
+        for profiles in instrument_profiles.values()
+        for family in profiles.keys()
+    }
+
+
+def _explicitly_requested_instrument_families(message: str) -> set[str]:
+    return _mentioned_instrument_families(message)
+
+
+def _mentioned_instrument_families(text: str) -> set[str]:
+    normalized = text.lower()
+    aliases = {
+        "drums": ["drum", "drums", "bateria", "batería"],
+        "bass": ["bass", "bajo"],
+        "guitar": ["guitar", "guitarra"],
+        "piano": ["piano", "keys", "keyboard", "teclado"],
+    }
+    return {
+        family
+        for family, words in aliases.items()
+        if any(word in normalized for word in words)
+    }
+
+
+def _instrument_requests_summary(instrument_requests: dict[str, dict]) -> list[dict]:
+    summaries: list[dict] = []
+    for family, request in instrument_requests.items():
+        intent = request.get("intent") if isinstance(request, dict) else {}
+        note_pack = request.get("note_pack") if isinstance(request, dict) else None
+        summaries.append(
+            {
+                "instrument_family": family,
+                "reference_id": intent.get("reference_id", "") if isinstance(intent, dict) else "",
+                "transfer_mode": intent.get("transfer_mode", "") if isinstance(intent, dict) else "",
+                "section_name": intent.get("section_name") if isinstance(intent, dict) else None,
+                "fidelity": intent.get("fidelity") if isinstance(intent, dict) else None,
+                "note_pack_id": request.get("note_pack_id", "") if isinstance(request, dict) else "",
+                "literal_application": bool(request.get("literal_application")) if isinstance(request, dict) else False,
+                "literal_mode": request.get("literal_mode", "") if isinstance(request, dict) else "",
+                "musical_memory_summary": request.get("musical_memory_summary", "") if isinstance(request, dict) else "",
+                "note_count": len(note_pack.get("notes", [])) if isinstance(note_pack, dict) else 0,
+                "bar_count": int(note_pack.get("bar_count", 0)) if isinstance(note_pack, dict) else 0,
+            }
+        )
+    return summaries
+
+
+def _literal_applications_summary(instrument_requests: dict[str, dict]) -> list[dict]:
+    summaries: list[dict] = []
+    for family, request in instrument_requests.items():
+        if not isinstance(request, dict):
+            continue
+        intent = request.get("intent")
+        if not isinstance(intent, dict) or intent.get("transfer_mode") != "literal":
+            continue
+        note_pack = request.get("note_pack")
+        applied = bool(request.get("literal_application") and request.get("note_pack_id"))
+        reason = ""
+        if not applied:
+            reason = f"literal {family} requested but no note pack is available"
+        summaries.append(
+            {
+                "instrument_family": family,
+                "note_pack_id": request.get("note_pack_id", ""),
+                "note_count": len(note_pack.get("notes", [])) if isinstance(note_pack, dict) else 0,
+                "bar_count": int(note_pack.get("bar_count", 0)) if isinstance(note_pack, dict) else 0,
+                "applied": applied,
+                "mode": request.get("literal_mode", ""),
+                "reason": reason,
+            }
+        )
+    return summaries

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,7 @@ from music_assistant.application.compose_song import ComposeSong
 from music_assistant.application.music_tool_models import (
     AnswerToolOutput,
     ChatAgentDecision as ChatToolDecision,
+    CompositionRequestToolInput,
     CompositionToolOutput,
 )
 from music_assistant.application.music_tools import MusicTools
@@ -45,6 +46,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     reference_id: Optional[str] = None
     reference_ids: list[str] = Field(default_factory=list)
+    reference_context: Optional[str] = None
 
 
 class ChatArtifacts(BaseModel):
@@ -56,6 +58,11 @@ class ChatComposeResult(BaseModel):
     song: SongState
     source: str
     artifacts: Optional[ChatArtifacts] = None
+    reference_transfer_intent: Optional[dict[str, Any]] = None
+    instrument_requests_summary: list[dict[str, Any]] = Field(default_factory=list)
+    literal_applications: list[dict[str, Any]] = Field(default_factory=list)
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class UsageInfo(BaseModel):
@@ -74,6 +81,7 @@ class ChatResponse(BaseModel):
     compose: Optional[ChatComposeResult] = None
     clarification: Optional[str] = None
     usage: Optional[UsageInfo] = None
+    error: Optional[dict[str, Any]] = None
 
 
 _COMPOSE_RE = re.compile(r"\b(compose|generate|make|write|create|sketch|produce)\b", re.IGNORECASE)
@@ -154,8 +162,27 @@ class ChatMusic:
             reference_store=self.reference_store,
             song_researcher=self.song_researcher,
             songsterr_tab_store=self.songsterr_tab_store,
+            chat_model=self.chat_model,
         )
-        agent_result = ChatAgent(chat_model=self.chat_model, tools=tools).run(request)
+        agent_request = request.model_copy(
+            update={"reference_context": _compact_profiles_context(profiles or ([profile] if profile else []))}
+        )
+        agent_result = ChatAgent(chat_model=self.chat_model, tools=tools).run(agent_request)
+        if profile is not None and _clarification_asks_for_existing_reference(agent_result.reply):
+            output = tools.request_composition(
+                CompositionRequestToolInput(
+                    composition_request=message,
+                    reference_id=profile.reference_id,
+                    reference_ids=request.reference_ids,
+                )
+            )
+            if isinstance(output, CompositionToolOutput) and output.song is not None and output.source is not None:
+                return ChatResponse(
+                    intent="compose_from_reference",
+                    reply=output.answer,
+                    reference_id=profile.reference_id,
+                    compose=_compose_result_from_tool_output(output),
+                )
         return self._response_from_agent_result(agent_result)
 
     def _response_from_agent_result(self, agent_result) -> ChatResponse:
@@ -163,7 +190,16 @@ class ChatMusic:
         answer = output.explanation if isinstance(output, AnswerToolOutput) else None
         compose = None
         if isinstance(output, CompositionToolOutput) and output.song is not None and output.source is not None:
-            compose = ChatComposeResult(song=output.song, source=output.source)
+            compose = _compose_result_from_tool_output(output)
+        if isinstance(output, CompositionToolOutput) and compose is None and output.error:
+            clarification = output.answer if output.error == "clarification_needed" else None
+            return ChatResponse(
+                intent="clarify" if clarification else "clarify",
+                reply=output.answer or "Composition could not be completed.",
+                reference_id=output.reference_id,
+                clarification=clarification,
+                error={"code": output.error, "message": output.answer or output.error},
+            )
         return ChatResponse(
             intent=agent_result.intent,  # type: ignore[arg-type]
             reply=agent_result.reply,
@@ -214,7 +250,7 @@ class ChatMusic:
         return ChatResponse(
             intent="compose",
             reply=_compose_reply(song, source),
-            compose=ChatComposeResult(song=song, source=source),
+            compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
         )
 
     def _compose_from_references(self, message: str, profiles: list[ReferenceProfile]) -> ChatResponse:
@@ -237,7 +273,7 @@ class ChatMusic:
             intent="compose_from_reference",
             reply=_compose_reply(song, source, reference=profiles[0]),
             reference_id=profiles[0].reference_id,
-            compose=ChatComposeResult(song=song, source=source),
+            compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
         )
 
     def _compose_from_reference(self, message: str, profile: ReferenceProfile) -> ChatResponse:
@@ -259,7 +295,7 @@ class ChatMusic:
                     intent="compose_from_reference",
                     reply=_compose_reply(song, source, reference=profile),
                     reference_id=profile.reference_id,
-                    compose=ChatComposeResult(song=song, source=source),
+                    compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
                 )
 
         style = _style_with_reference(message, profile)
@@ -271,7 +307,7 @@ class ChatMusic:
             intent="compose_from_reference",
             reply=_compose_reply(song, source, reference=profile),
             reference_id=profile.reference_id,
-            compose=ChatComposeResult(song=song, source=source),
+            compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
         )
 
     def _classify(self, message: str, *, has_reference: bool) -> Intent:
@@ -310,7 +346,36 @@ def _compose_reply(song: SongState, source: str, *, reference: Optional[Referenc
     )
     if reference is not None:
         base += f" Used reference {reference.source.label} as style guide."
+    warnings = _composition_warnings(song)
+    if warnings:
+        base += f" Generated with partial failures: {'; '.join(warnings)}."
     return base
+
+
+def _compose_result_from_tool_output(output: CompositionToolOutput) -> ChatComposeResult:
+    assert output.song is not None and output.source is not None
+    return ChatComposeResult(
+        song=output.song,
+        source=output.source,
+        reference_transfer_intent=output.reference_transfer_intent,
+        instrument_requests_summary=output.instrument_requests_summary,
+        literal_applications=output.literal_applications,
+        uncertainty_notes=output.uncertainty_notes,
+        warnings=output.warnings,
+    )
+
+
+def _composition_warnings(song: SongState) -> list[str]:
+    warnings: list[str] = []
+    for instrument_id, part in song.parts.items():
+        summary = part.notes_summary or ""
+        marker = "(failed to compose:"
+        if marker not in summary:
+            continue
+        reason = summary.split(marker, 1)[1].split(")", 1)[0].strip()
+        warnings.append(f"{instrument_id} failed to compose: {reason}")
+    warnings.extend(error for error in song.errors if error)
+    return warnings
 
 
 def _style_with_reference(message: str, profile: ReferenceProfile) -> str:
@@ -346,6 +411,20 @@ def _profiles_from_request(request: ChatRequest, store: ReferenceStore) -> list[
         if profile is not None:
             profiles.append(profile)
     return profiles
+
+
+def _clarification_asks_for_existing_reference(reply: str) -> bool:
+    normalized = reply.lower()
+    return (
+        ("reference" in normalized or "song" in normalized or "canción" in normalized or "cancion" in normalized)
+        and ("provide" in normalized or "which" in normalized or "what" in normalized or "qué" in normalized or "que" in normalized)
+    )
+
+
+def _compact_profiles_context(profiles: list[ReferenceProfile]) -> str:
+    if not profiles:
+        return "No current profile."
+    return "\n".join(_compact_profile_context(profile) for profile in profiles)
 
 
 def _chat_decision_messages(message: str, profile: ReferenceProfile | None) -> list[dict[str, str]]:

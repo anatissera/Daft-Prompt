@@ -130,6 +130,7 @@ def _required_reference(reference_id: str | None) -> str:
 
 def _decision_messages(request: Any) -> list[dict[str, str]]:
     reference_context = request.reference_id or ", ".join(request.reference_ids) or "none"
+    profile_context = getattr(request, "reference_context", "") or "No current profile."
     return [
         {
             "role": "system",
@@ -138,9 +139,12 @@ def _decision_messages(request: Any) -> list[dict[str, str]]:
                 "Use research_song before answering about an unresearched named song. "
                 "Use get_chords/get_sections/get_instruments/get_instrument_summary/get_tab_excerpt "
                 "for existing profiles. Use request_composition for composition and keep composition "
-                "delegated to the composer/orchestrator. Never answer from memory or request raw tabs/full lyrics."
+                "delegated to the composer/orchestrator. If the user says this song, this reference, "
+                "esta canción, or similar while a current reference is listed, use that current reference; "
+                "do not ask which song. Never answer from memory or request raw tabs/full lyrics."
             ),
         },
         {"role": "system", "content": f"Current reference ids: {reference_context}"},
+        {"role": "system", "content": f"Current reference profile context: {profile_context}"},
         {"role": "user", "content": request.message},
     ]

@@ -96,6 +96,7 @@ class ToolOutput(BaseModel):
 class ResearchSongToolOutput(ToolOutput):
     tool: str = "research_song"
     evidence_count: int = 0
+    instrument_profile_summary: list[dict] = Field(default_factory=list)
 
 
 class ProfileToolOutput(ToolOutput):
@@ -104,6 +105,7 @@ class ProfileToolOutput(ToolOutput):
     artist: Optional[str] = None
     sources: list[str] = Field(default_factory=list)
     songsterr_tab_index: dict = Field(default_factory=dict)
+    instrument_profile_summary: list[dict] = Field(default_factory=list)
 
 
 class AnswerToolOutput(ToolOutput):
@@ -144,3 +146,8 @@ class CompositionToolOutput(ToolOutput):
     intent: Literal["compose", "compose_from_reference"] = "compose"
     song: Optional[SongState] = None
     source: Optional[str] = None
+    reference_transfer_intent: dict | None = None
+    instrument_requests_summary: list[dict] = Field(default_factory=list)
+    literal_applications: list[dict] = Field(default_factory=list)
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
