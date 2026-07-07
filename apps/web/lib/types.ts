@@ -83,6 +83,40 @@ export interface ComposeResponse {
   harmonic_fit?: Record<string, number>;
 }
 
+export interface ChatErrorDetail {
+  type?: "error";
+  code: string;
+  message: string;
+  provider?: string | null;
+  model?: string | null;
+  partial?: boolean;
+}
+
+export interface ChatComposeResult {
+  song: SongState;
+  source: string;
+  artifacts?: {
+    midi: string;
+    musicxml: string;
+  } | null;
+  reference_transfer_intent?: Record<string, unknown> | null;
+  instrument_requests_summary?: Record<string, unknown>[];
+  literal_applications?: Record<string, unknown>[];
+  uncertainty_notes?: string[];
+  warnings?: string[];
+}
+
+export interface ChatResponse {
+  intent: "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
+  reply: string;
+  reference_id?: string | null;
+  answer?: { answer: string; confidence?: string } | null;
+  compose?: ChatComposeResult | null;
+  clarification?: string | null;
+  usage?: Record<string, number> | null;
+  error?: ChatErrorDetail | null;
+}
+
 export type ReferenceSourceKind = "upload" | "direct_url" | "youtube" | "metadata" | "local";
 export type ConfidenceLabel = "low" | "medium" | "high";
 export type AnalysisNoteSeverity = "info" | "warning" | "error";
@@ -91,6 +125,15 @@ export type MeterSource = "assumed" | "estimated";
 export type KeyMode = "major" | "minor" | "unknown";
 export type ChordQuality = "major" | "minor" | "diminished" | "unknown";
 export type StemRole = "percussion" | "bass" | "vocal" | "harmony" | "mix" | "other";
+export type InstrumentFamily = "drums" | "bass" | "guitar" | "piano";
+export type TransferMode =
+  | "similar"
+  | "literal"
+  | "timbre_only"
+  | "pattern_only"
+  | "energy_only"
+  | "avoid_copying"
+  | "clarify";
 export type EvidenceClaimType =
   | "tempo"
   | "key"
@@ -359,6 +402,116 @@ export interface InstrumentTrait {
   source_claim_ids: string[];
   confidence: number;
   confidence_label: ConfidenceLabel;
+}
+
+export interface InstrumentTimbreProfile {
+  instrument_name: string;
+  source_label: string;
+  midi_program: number;
+  midi_range: [number, number];
+  technique: string | null;
+  is_drum: boolean;
+  playback_note: string;
+}
+
+export interface InstrumentPatternProfile {
+  density: "low" | "medium" | "high";
+  subdivision: string;
+  accent_beats: number[];
+  contour: string;
+  fill_frequency: string;
+  section_variations: Record<string, string>;
+}
+
+export interface ReferenceNoteSeed {
+  bar: number;
+  start_beat: number;
+  duration_beats: number;
+  pitch: number | null;
+  velocity: number;
+  source_mode: "songsterr" | "audio" | "inferred";
+  section_name: string | null;
+}
+
+export interface ReferenceNotePack {
+  pack_id: string;
+  instrument_family: InstrumentFamily;
+  section_name: string;
+  start_bar: number;
+  bar_count: number;
+  notes: ReferenceNoteSeed[];
+}
+
+export interface ReferenceRhythmPattern {
+  pattern_id: string;
+  section_name: string;
+  density: "low" | "medium" | "high";
+  accent_beats: number[];
+  durations: number[];
+  subdivision: string;
+}
+
+export interface ReferencePitchPattern {
+  pattern_id: string;
+  section_name: string;
+  register: number[];
+  pitch_classes: number[];
+  intervals: number[];
+  contour: string;
+}
+
+export interface ReferenceMotif {
+  motif_id: string;
+  section_name: string;
+  start_bar: number;
+  bar_count: number;
+  repetitions: number;
+  rhythm_signature: string;
+  interval_signature: string;
+}
+
+export interface ReferenceHarmonicContext {
+  key: string | null;
+  chord_progression: string[];
+  roman_progression: string[];
+  harmonic_rhythm: string;
+}
+
+export interface MusicalMemoryProfile {
+  summary: string;
+  note_packs: ReferenceNotePack[];
+  rhythm_patterns: ReferenceRhythmPattern[];
+  pitch_patterns: ReferencePitchPattern[];
+  harmonic_context: ReferenceHarmonicContext;
+  motifs: ReferenceMotif[];
+}
+
+export interface ReferenceInstrumentProfile {
+  source_reference_id: string;
+  source_profile_id: string;
+  instrument_family: InstrumentFamily;
+  track_name: string;
+  confidence: number;
+  timbre: InstrumentTimbreProfile;
+  pattern: InstrumentPatternProfile;
+  symbolic_seed: ReferenceNoteSeed[];
+  musical_memory: MusicalMemoryProfile;
+  evidence: string[];
+  uncertainty_notes: string[];
+}
+
+export interface ReferenceTransferItem {
+  instrument_family: InstrumentFamily;
+  reference_id: string;
+  transfer_mode: TransferMode;
+  section_name: string | null;
+  fidelity: number;
+  constraints: string[];
+}
+
+export interface ReferenceTransferIntent {
+  items: ReferenceTransferItem[];
+  clarification: string | null;
 }
 
 export interface SongKnowledgeProfile {

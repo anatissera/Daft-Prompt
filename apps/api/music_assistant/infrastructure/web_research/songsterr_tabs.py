@@ -23,7 +23,7 @@ from music_assistant.ports.song_source_connector import ResolvedSongQuery
 
 class TabEvent(BaseModel):
     measure_index: int
-    beat_index: int
+    beat_index: float
     duration: str = ""
     rest: bool = False
     string: Optional[float] = None
@@ -299,7 +299,7 @@ def _track_from_payload(meta: dict[str, Any], payload: dict[str, Any], *, source
     is_piano = bool(meta.get("isPiano")) or "piano" in f"{instrument} {name}".lower() or "keyboard" in f"{instrument} {name}".lower()
     family = _track_family(instrument, name, is_bass=is_bass, is_drums=is_drums, is_guitar=is_guitar, is_piano=is_piano)
     measures = [
-        _measure_from_payload(index, measure, expose_string_fret=family in {"bass", "guitar"})
+        _measure_from_payload(index, measure, expose_string_fret=family in {"bass", "guitar", "drums"})
         for index, measure in enumerate(payload.get("measures") or [])
     ]
     note_count = sum(1 for measure in measures for event in measure.events if not event.rest)
@@ -327,25 +327,28 @@ def _measure_from_payload(index: int, measure: dict[str, Any], *, expose_string_
     marker = measure.get("marker", {}).get("text") if isinstance(measure.get("marker"), dict) else None
     events: list[TabEvent] = []
     for voice in measure.get("voices") or []:
-        for beat_index, beat in enumerate(voice.get("beats") or []):
+        beat_position = 0.0
+        for beat in voice.get("beats") or []:
             duration = _duration_label(beat.get("duration"), beat.get("type"))
+            duration_beats = _duration_beats(duration)
             notes = beat.get("notes") or []
             if not notes:
-                events.append(TabEvent(measure_index=index, beat_index=beat_index, duration=duration, rest=bool(beat.get("rest")), raw={}))
-            for note in notes:
+                events.append(TabEvent(measure_index=index, beat_index=beat_position, duration=duration, rest=bool(beat.get("rest")), raw={}))
+            for note in _flatten_notes(notes):
                 events.append(
                     TabEvent(
                         measure_index=index,
-                        beat_index=beat_index,
+                        beat_index=beat_position,
                         duration=duration,
                         rest=bool(note.get("rest") or beat.get("rest")),
-                        string=note.get("string") if expose_string_fret else None,
-                        fret=note.get("fret") if expose_string_fret else None,
+                        string=_number_or_none(note.get("string")) if expose_string_fret else None,
+                        fret=_int_or_none(note.get("fret")) if expose_string_fret else None,
                         tie=bool(note.get("tie")),
                         ghost=bool(note.get("ghost")),
                         raw=note,
                     )
                 )
+            beat_position += duration_beats
     return TabMeasure(
         index=index,
         marker=str(marker) if marker else None,
@@ -360,6 +363,54 @@ def _duration_label(duration: Any, beat_type: Any) -> str:
     if beat_type:
         return f"1/{beat_type}"
     return ""
+
+
+def _duration_beats(label: str) -> float:
+    match = re.match(r"^\s*(\d+(?:\.\d+)?)/(\d+(?:\.\d+)?)\s*$", label or "")
+    if not match:
+        return 1.0
+    numerator = float(match.group(1))
+    denominator = float(match.group(2))
+    if denominator <= 0:
+        return 1.0
+    return max(0.125, 4.0 * numerator / denominator)
+
+
+def _flatten_notes(notes: list[Any]) -> list[dict[str, Any]]:
+    flattened: list[dict[str, Any]] = []
+    for note in notes:
+        if not isinstance(note, dict):
+            continue
+        nested = note.get("notes")
+        if isinstance(nested, list):
+            flattened.extend(_flatten_notes(nested))
+        else:
+            flattened.append(note)
+    return flattened
+
+
+def _number_or_none(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value.strip()))
+        except ValueError:
+            return None
+    return None
 
 
 def _track_family(
