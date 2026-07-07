@@ -20,6 +20,7 @@ from music_assistant.application.analyze_reference import AnalyzeReference
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
 from music_assistant.application.chat_music import ChatMusic
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
+from music_assistant.application.reference_instruments import ReferenceInstrumentProfileBuilder
 from music_assistant.application.research_reference import ResearchReference
 from music_assistant.canned import canned_song
 from music_assistant.config import get_settings
@@ -128,6 +129,44 @@ def research_reference_stream(req: ResearchRequest) -> StreamingResponse:
             yield sse_data(AnalysisErrorEvent(message=f"could not research song: {exc}"))
 
     return StreamingResponse(sse(), media_type="text/event-stream")
+
+
+@app.get("/references/{reference_id}/instrument-profiles")
+def reference_instrument_profiles(reference_id: str) -> dict:
+    profile = REFERENCE_STORE.get(reference_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"reference_id not found: {reference_id}")
+    profiles = ReferenceInstrumentProfileBuilder(songsterr_tab_store=SONGSTERR_TAB_STORE).build(profile)
+    return {
+        "reference_id": reference_id,
+        "profiles": [_compact_instrument_profile(item) for item in profiles.values()],
+    }
+
+
+def _compact_instrument_profile(profile) -> dict:
+    memory = profile.musical_memory
+    return {
+        "instrument_family": profile.instrument_family,
+        "track_name": profile.track_name,
+        "confidence": profile.confidence,
+        "timbre": profile.timbre.model_dump(mode="json"),
+        "pattern": profile.pattern.model_dump(mode="json"),
+        "musical_memory_summary": memory.summary,
+        "note_packs": [
+            {
+                "note_pack_id": pack.pack_id,
+                "section_name": pack.section_name,
+                "start_bar": pack.start_bar,
+                "bar_count": pack.bar_count,
+                "note_count": len(pack.notes),
+            }
+            for pack in memory.note_packs
+        ],
+        "motifs": [motif.model_dump(mode="json") for motif in memory.motifs],
+        "harmonic_context": memory.harmonic_context.model_dump(mode="json"),
+        "evidence": profile.evidence,
+        "uncertainty_notes": profile.uncertainty_notes,
+    }
 
 
 def _song_researcher() -> ConnectorSongResearcher:

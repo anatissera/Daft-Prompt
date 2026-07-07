@@ -149,6 +149,102 @@ def test_songsterr_tab_loader_fetches_and_normalizes_all_available_tracks():
     assert bundle.tracks[1].is_drums is True
 
 
+def test_songsterr_tab_loader_uses_cumulative_beat_positions_for_subdivisions():
+    payload = {
+        "signature": [4, 4],
+        "marker": {"text": "Intro"},
+        "voices": [
+            {
+                "beats": [
+                    {"type": 8, "duration": [1, 8], "notes": [{"rest": True}]},
+                    {"type": 16, "duration": [1, 16], "notes": [{"string": "3", "fret": "5"}]},
+                    {"type": 16, "duration": [1, 16], "notes": [{"string": "3", "fret": "3"}]},
+                    {"type": 4, "duration": [1, 4], "notes": [{"string": "3", "fret": "0"}]},
+                ]
+            }
+        ],
+    }
+
+    bundle = SongsterrTabLoader(
+        fetcher=FixtureFetcher(
+            {
+                "https://www.songsterr.com/a/wsa/queen-another-one-bites-the-dust-bass-tab-s371": songsterr_state_html(
+                    tracks=[
+                        {
+                            "partId": 4,
+                            "name": "John Deacon | Fender Precision Bass",
+                            "instrument": "Electric Bass (finger)",
+                            "isBassGuitar": True,
+                            "isDrums": False,
+                            "isGuitar": False,
+                            "isPiano": False,
+                            "tuning": ["43", "38", "33", "28"],
+                        }
+                    ]
+                ),
+                "https://dqsljvtekg760.cloudfront.net/371/7564044/v0-test-image/4.json": json.dumps(
+                    {"name": "Bass", "measures": [payload]}
+                ),
+            }
+        )
+    ).load_from_tab_url(
+        "https://www.songsterr.com/a/wsa/queen-another-one-bites-the-dust-bass-tab-s371",
+        ResolvedSongQuery(title="Another One Bites the Dust", artist="Queen"),
+    )
+
+    assert bundle is not None
+    events = bundle.tracks[0].measures[0].events
+    assert [event.beat_index for event in events] == [0.0, 0.5, 0.75, 1.0]
+    assert events[1].string == 3
+    assert events[1].fret == 5
+
+
+def test_songsterr_tab_loader_exposes_drum_fret_as_gm_pitch_source():
+    drum_payload = {
+        "signature": [4, 4],
+        "marker": {"text": "Intro"},
+        "voices": [
+            {
+                "beats": [
+                    {"type": 8, "duration": [1, 8], "notes": [{"string": "-0.5", "fret": "42"}]},
+                    {"type": 8, "duration": [1, 8], "notes": [{"string": "1.5", "fret": "38"}]},
+                    {"type": 8, "duration": [1, 8], "notes": [{"string": "3.5", "fret": "36"}]},
+                ]
+            }
+        ],
+    }
+
+    bundle = SongsterrTabLoader(
+        fetcher=FixtureFetcher(
+            {
+                "https://www.songsterr.com/a/wsa/queen-another-one-bites-the-dust-drum-tab-s371": songsterr_state_html(
+                    tracks=[
+                        {
+                            "partId": 6,
+                            "name": "Roger Taylor | Drum Loops",
+                            "instrument": "Drums",
+                            "isBassGuitar": False,
+                            "isDrums": True,
+                            "isGuitar": False,
+                            "isPiano": False,
+                        }
+                    ]
+                ),
+                "https://dqsljvtekg760.cloudfront.net/371/7564044/v0-test-image/6.json": json.dumps(
+                    {"name": "Drums", "instrumentId": 1024, "measures": [drum_payload]}
+                ),
+            }
+        )
+    ).load_from_tab_url(
+        "https://www.songsterr.com/a/wsa/queen-another-one-bites-the-dust-drum-tab-s371",
+        ResolvedSongQuery(title="Another One Bites the Dust", artist="Queen"),
+    )
+
+    assert bundle is not None
+    events = bundle.tracks[0].measures[0].events
+    assert [event.fret for event in events] == [42, 38, 36]
+
+
 def test_songsterr_tab_loader_does_not_expose_string_fret_for_piano_tracks():
     piano_tracks = [
         {

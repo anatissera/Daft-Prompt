@@ -8,6 +8,16 @@ from pydantic import BaseModel, Field, computed_field
 
 
 ConfidenceLabel = Literal["low", "medium", "high"]
+InstrumentFamily = Literal["drums", "bass", "guitar", "piano"]
+TransferMode = Literal[
+    "similar",
+    "literal",
+    "timbre_only",
+    "pattern_only",
+    "energy_only",
+    "avoid_copying",
+    "clarify",
+]
 EvidenceClaimType = Literal[
     "tempo",
     "key",
@@ -132,6 +142,116 @@ class InstrumentTrait(BaseModel):
     @property
     def confidence_label(self) -> ConfidenceLabel:
         return confidence_label(self.confidence)
+
+
+class InstrumentTimbreProfile(BaseModel):
+    instrument_name: str = ""
+    source_label: str = ""
+    midi_program: int = Field(default=0, ge=0, le=127)
+    midi_range: tuple[int, int] = (0, 127)
+    technique: Optional[str] = None
+    is_drum: bool = False
+    playback_note: str = "General MIDI playback approximates this timbre."
+
+
+class InstrumentPatternProfile(BaseModel):
+    density: Literal["low", "medium", "high"] = "medium"
+    subdivision: str = ""
+    accent_beats: list[float] = Field(default_factory=list, max_length=16)
+    contour: str = ""
+    fill_frequency: str = ""
+    section_variations: dict[str, str] = Field(default_factory=dict)
+
+
+class ReferenceNoteSeed(BaseModel):
+    bar: int = Field(ge=0)
+    start_beat: float = Field(ge=0.0)
+    duration_beats: float = Field(gt=0.0)
+    pitch: Optional[int] = Field(default=None, ge=0, le=127)
+    velocity: int = Field(default=96, ge=1, le=127)
+    source_mode: Literal["songsterr", "audio", "inferred"] = "songsterr"
+    section_name: Optional[str] = None
+
+
+class ReferenceNotePack(BaseModel):
+    pack_id: str
+    instrument_family: InstrumentFamily
+    section_name: str = ""
+    start_bar: int = Field(default=0, ge=0)
+    bar_count: int = Field(default=1, ge=1)
+    notes: list[ReferenceNoteSeed] = Field(default_factory=list, max_length=128)
+
+
+class ReferenceRhythmPattern(BaseModel):
+    pattern_id: str
+    section_name: str = ""
+    density: Literal["low", "medium", "high"] = "medium"
+    accent_beats: list[float] = Field(default_factory=list, max_length=16)
+    durations: list[float] = Field(default_factory=list, max_length=16)
+    subdivision: str = ""
+
+
+class ReferencePitchPattern(BaseModel):
+    pattern_id: str
+    section_name: str = ""
+    register: list[int] = Field(default_factory=list, max_length=2)
+    pitch_classes: list[int] = Field(default_factory=list, max_length=12)
+    intervals: list[int] = Field(default_factory=list, max_length=32)
+    contour: str = ""
+
+
+class ReferenceMotif(BaseModel):
+    motif_id: str
+    section_name: str = ""
+    start_bar: int = Field(default=0, ge=0)
+    bar_count: int = Field(default=1, ge=1)
+    repetitions: int = Field(default=1, ge=1)
+    rhythm_signature: str = ""
+    interval_signature: str = ""
+
+
+class ReferenceHarmonicContext(BaseModel):
+    key: Optional[str] = None
+    chord_progression: list[str] = Field(default_factory=list, max_length=32)
+    roman_progression: list[str] = Field(default_factory=list, max_length=32)
+    harmonic_rhythm: str = ""
+
+
+class MusicalMemoryProfile(BaseModel):
+    summary: str = ""
+    note_packs: list[ReferenceNotePack] = Field(default_factory=list, max_length=16)
+    rhythm_patterns: list[ReferenceRhythmPattern] = Field(default_factory=list, max_length=16)
+    pitch_patterns: list[ReferencePitchPattern] = Field(default_factory=list, max_length=16)
+    harmonic_context: ReferenceHarmonicContext = Field(default_factory=ReferenceHarmonicContext)
+    motifs: list[ReferenceMotif] = Field(default_factory=list, max_length=16)
+
+
+class ReferenceInstrumentProfile(BaseModel):
+    source_reference_id: str
+    source_profile_id: str = ""
+    instrument_family: InstrumentFamily
+    track_name: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    timbre: InstrumentTimbreProfile = Field(default_factory=InstrumentTimbreProfile)
+    pattern: InstrumentPatternProfile = Field(default_factory=InstrumentPatternProfile)
+    symbolic_seed: list[ReferenceNoteSeed] = Field(default_factory=list, max_length=64)
+    musical_memory: MusicalMemoryProfile = Field(default_factory=MusicalMemoryProfile)
+    evidence: list[str] = Field(default_factory=list)
+    uncertainty_notes: list[str] = Field(default_factory=list)
+
+
+class ReferenceTransferItem(BaseModel):
+    instrument_family: InstrumentFamily
+    reference_id: str
+    transfer_mode: TransferMode = "similar"
+    section_name: Optional[str] = None
+    fidelity: float = Field(default=0.65, ge=0.0, le=1.0)
+    constraints: list[str] = Field(default_factory=list)
+
+
+class ReferenceTransferIntent(BaseModel):
+    items: list[ReferenceTransferItem] = Field(default_factory=list)
+    clarification: Optional[str] = None
 
 
 class SongKnowledgeProfile(BaseModel):
