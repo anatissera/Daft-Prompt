@@ -28,6 +28,7 @@ from .agents.arbiter import run_arbiter
 from .agents.instrument import NewRequest, RequestResolution, compose_part, run_instrument_turn
 from .domain.song_state import Header, NegotiationRequest, Part, RosterItem, SongState
 from .infrastructure.llm import LLMError
+from .music.reference_materialization import literal_parts_from_request
 from .state import BandState, InstrumentsState, merge_parts, merge_requests, merge_summaries, take_latest
 
 log = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ def _dispatch(state: BandState) -> list[Send]:
             },
         )
         for r in state["roster"]
+        if r.id not in state["parts"]
     ]
 
 
@@ -89,12 +91,15 @@ def run_instruments(song: SongState, llm=None) -> SongState:
     """Compose all roster parts in one shot and merge them onto `song`."""
     if not song.roster:
         return song
+    literal_parts, literal_warnings = literal_parts_from_request(
+        song.request, song.header, song.roster, include_warnings=True
+    )
     app = build_graph(llm=llm)
     result = app.invoke({
         "request": song.request,
         "header": song.header,
         "roster": song.roster,
-        "parts": dict(song.parts),
+        "parts": {**dict(song.parts), **literal_parts},
         "composition_groups": song.composition_groups,
         "current_group_index": 0,
         "batch_instrument_ids": [],
@@ -102,9 +107,11 @@ def run_instruments(song: SongState, llm=None) -> SongState:
         "negotiation_requests": [],
         "round": 0,
         "converged": False,
-        "peer_summaries": {},
+        "peer_summaries": {part_id: part.notes_summary for part_id, part in literal_parts.items() if part.notes_summary},
+        "errors": list(song.errors) + literal_warnings,
     })
     song.parts = result["parts"]
+    song.errors = result.get("errors", [])
     return song
 
 
@@ -169,7 +176,7 @@ def _build_instruments_subgraph(llm=None):
         peer_summaries = state.get("peer_summaries", {})
 
         if state["round"] == 0:
-            targets = [(r, []) for r in state["roster"] if r.id in batch_ids]
+            targets = [(r, []) for r in state["roster"] if r.id in batch_ids and r.id not in state["parts"]]
         else:
             pending = [r for r in state["negotiation_requests"] if r.status == "pending" and r.to in batch_ids]
             pending_by_to: dict[str, list[NegotiationRequest]] = {}
@@ -244,11 +251,21 @@ def _build_negotiation_graph(llm=None, max_rounds: Optional[int] = None):
     def _director_node(state: BandState) -> dict:
         from .agents.director import run_director
         song = run_director(state["request"], llm=llm)
+        literal_parts, literal_warnings = literal_parts_from_request(
+            state["request"], song.header, song.roster, include_warnings=True
+        )
         first_group = song.composition_groups[0] if song.composition_groups else None
         return {
             "header": song.header,
             "roster": song.roster,
+            "parts": literal_parts,
+            "peer_summaries": {
+                part_id: part.notes_summary
+                for part_id, part in literal_parts.items()
+                if part.notes_summary
+            },
             "composition_groups": song.composition_groups,
+            "errors": list(song.errors) + literal_warnings,
             "current_group_index": 0,
             "round": 0,
             "batch_instrument_ids": first_group.instrument_ids if first_group else [r.id for r in song.roster],
@@ -335,6 +352,7 @@ def _initial_band_state(request: str) -> dict:
         "round": 0,
         "converged": False,
         "peer_summaries": {},
+        "errors": [],
     }
 
 
@@ -355,6 +373,7 @@ def run_negotiation(style: str, llm=None, max_rounds: Optional[int] = None) -> S
         negotiation_requests=result.get("negotiation_requests", []),
         round=result.get("round", 0),
         converged=result.get("converged", True),
+        errors=result.get("errors", []),
     )
 
 
@@ -388,6 +407,8 @@ def iter_negotiation_events(
                 state["peer_summaries"] = merge_summaries(
                     state.get("peer_summaries", {}), update["peer_summaries"]
                 )
+            if "errors" in update:
+                state["errors"] = list(dict.fromkeys([*state.get("errors", []), *update["errors"]]))
             if "round" in update:
                 state["round"] = take_latest(state["round"], update["round"])
             if "converged" in update:
@@ -404,7 +425,8 @@ def iter_negotiation_events(
                     request=style,
                     header=update["header"],
                     roster=update["roster"],
-                    parts={},
+                    parts=state["parts"],
+                    errors=state["errors"],
                 )
                 yield {
                     "type": "director",
@@ -450,3 +472,4 @@ def iter_negotiation_events(
         song.negotiation_requests = state["negotiation_requests"]
         song.round = state["round"]
         song.converged = state["converged"]
+        song.errors = state["errors"]

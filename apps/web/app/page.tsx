@@ -38,6 +38,11 @@ interface ChatComposeResult {
   song: SongState;
   source: string;
   artifacts?: ChatArtifacts | null;
+  reference_transfer_intent?: Record<string, unknown> | null;
+  instrument_requests_summary?: Record<string, unknown>[];
+  literal_applications?: Record<string, unknown>[];
+  uncertainty_notes?: string[];
+  warnings?: string[];
 }
 
 interface ChatResponse {
@@ -48,6 +53,7 @@ interface ChatResponse {
   compose?: ChatComposeResult | null;
   clarification?: string | null;
   usage?: UsageInfo | null;
+  error?: { message?: string; code?: string; provider?: string | null; model?: string | null } | null;
 }
 
 export default function Home() {

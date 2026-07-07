@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
+import json
+from copy import deepcopy
 from collections.abc import Callable, Iterator
 from typing import Any
 
 from music_assistant.domain.audio_profile import CompositionBrief
 from music_assistant.domain.errors import OffTopicRequest
 from music_assistant.domain.song_state import SongState
+from music_assistant.music.reference_materialization import register_literal_note_pack
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +63,7 @@ class ComposeSong:
 
 def prompt_from_composition_brief(brief: CompositionBrief) -> str:
     data = brief.model_dump(mode="json")
+    instrument_requests = _prompt_safe_instrument_requests(data["instrument_requests"])
     return (
         "CompositionBrief\n"
         f"user_request: {data['user_request']}\n"
@@ -70,12 +74,32 @@ def prompt_from_composition_brief(brief: CompositionBrief) -> str:
         f"rhythmic_guidance: {data['rhythmic_guidance']}\n"
         f"form_guidance: {data['form_guidance']}\n"
         f"instrumentation: {data['instrumentation']}\n"
-        f"instrument_requests: {data['instrument_requests']}\n"
+        f"instrument_requests: {instrument_requests}\n"
+        f"instrument_requests_json: {json.dumps(instrument_requests, separators=(',', ':'))}\n"
         f"timbre_traits: {data['timbre_traits']}\n"
         f"forbidden_traits: {data['forbidden_traits']}\n"
         f"uncertainty_notes: {data['uncertainty_notes']}\n"
         "Use the structured brief as constraints. Preserve existing SongState output."
     )
+
+
+def _prompt_safe_instrument_requests(instrument_requests: dict[str, Any]) -> dict[str, Any]:
+    sanitized = deepcopy(instrument_requests)
+    for payload in sanitized.values():
+        if not isinstance(payload, dict):
+            continue
+        note_pack = payload.pop("note_pack", None)
+        if not isinstance(note_pack, dict):
+            continue
+        note_pack_id = str(payload.get("note_pack_id") or note_pack.get("pack_id") or "")
+        intent = payload.get("intent")
+        reference_id = str(intent.get("reference_id") or "") if isinstance(intent, dict) else ""
+        register_literal_note_pack(
+            reference_id=reference_id,
+            note_pack_id=note_pack_id,
+            note_pack=note_pack,
+        )
+    return sanitized
 
 
 def _style_prompt(style: str | CompositionBrief) -> str:

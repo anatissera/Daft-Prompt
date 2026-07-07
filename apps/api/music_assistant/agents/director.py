@@ -7,6 +7,7 @@ the ordered composition groups that control layering order.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Literal, Optional
 
@@ -118,6 +119,12 @@ Otherwise set off_topic=false and, given a style description, produce a complete
 
 5. COMPOSITION GROUPS: ordered batches specifying which instruments compose in which wave. Each instrument_id must appear in exactly one group. Put rhythmic foundation first (drums, bass), harmonic layer second, melodic/textural layer last. Set max_negotiation_rounds (0-2) — use 1 for rhythm section, 0 for texture layers.
 
+If the style description contains a CompositionBrief with instrument_requests, treat it as binding reference guidance:
+- Keep each requested instrument family in the roster unless the request explicitly says to avoid it.
+- Use the request's timbre midi_program, midi_range, and drum/percussion status when present.
+- Fold pattern, transfer_mode, fidelity, and any symbolic_seed summary into playing_style so the instrument agent can apply it.
+- For literal transfer, mention the seed as a starting motif/pattern, not raw tab text.
+
 Do not use a fixed genre-to-instrument mapping. Reason about what genuinely fits the requested style."""
 
 
@@ -223,6 +230,65 @@ def _collapse_drum_components(
     return collapsed, new_groups
 
 
+def _requested_instrument_families(style: str) -> list[str]:
+    match = re.search(r"^instrument_requests_json:\s*(\{.*\})\s*$", style, re.MULTILINE)
+    if not match:
+        return []
+    try:
+        parsed = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    families = []
+    for family in ["drums", "bass", "guitar", "piano"]:
+        if family in parsed:
+            families.append(family)
+    return families
+
+
+def _canonicalize_requested_instrument_ids(
+    style: str,
+    items: list[ArrangementInstrument],
+    groups: list[CompositionGroup],
+) -> tuple[list[ArrangementInstrument], list[CompositionGroup]]:
+    families = _requested_instrument_families(style)
+    if not families:
+        return items, groups
+    used_ids = {item.id for item in items}
+    id_map: dict[str, str] = {}
+    updated = list(items)
+    for family in families:
+        if family in used_ids:
+            continue
+        for index, item in enumerate(updated):
+            if item.id in id_map:
+                continue
+            if not _arrangement_item_matches_family(item, family):
+                continue
+            old_id = item.id
+            updated[index] = item.model_copy(update={"id": family})
+            used_ids.discard(old_id)
+            used_ids.add(family)
+            id_map[old_id] = family
+            break
+    if not id_map:
+        return updated, groups
+    return updated, _remap_groups(groups, id_map)
+
+
+def _arrangement_item_matches_family(item: ArrangementInstrument, family: str) -> bool:
+    haystack = f"{item.id} {item.instrument} {item.role}".lower()
+    if family == "drums":
+        return item.is_drum or any(alias in haystack for alias in ["drums", "drum_kit", "percussion"])
+    aliases = {
+        "bass": ["bass", "electric_bass", "low_end", "low end"],
+        "guitar": ["guitar", "electric_guitar", "acoustic_guitar", "rhythm_guitar", "lead_guitar"],
+        "piano": ["piano", "electric_piano", "keyboard", "keys", "rhodes"],
+    }
+    return any(alias in haystack for alias in aliases.get(family, [family]))
+
+
 def _clamp_roster(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
     return items[:MAX_ROSTER]
 
@@ -282,6 +348,7 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
     clamped_instruments, id_map = _repair_roster_ids(_clamp_roster(out.instruments))
     groups = _remap_groups(out.composition_groups, id_map)
     clamped_instruments, groups = _collapse_drum_components(clamped_instruments, groups)
+    clamped_instruments, groups = _canonicalize_requested_instrument_ids(style, clamped_instruments, groups)
     num_bars = _clamp_num_bars(out.num_bars)
     _validate_groups(groups, clamped_instruments)
     sections = _clamp_sections(out.sections, num_bars) or suggest_form(out.genre, num_bars)

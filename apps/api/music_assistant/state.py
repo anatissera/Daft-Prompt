@@ -19,6 +19,14 @@ def merge_summaries(left: dict[str, str], right: dict[str, str]) -> dict[str, st
     return merged
 
 
+def merge_errors(left: list[str], right: list[str]) -> list[str]:
+    merged = list(left)
+    for item in right:
+        if item not in merged:
+            merged.append(item)
+    return merged
+
+
 def merge_requests(
     left: list[NegotiationRequest], right: list[NegotiationRequest]
 ) -> list[NegotiationRequest]:
@@ -46,6 +54,7 @@ class BandState(TypedDict):
     round: Annotated[int, take_latest]
     converged: bool
     peer_summaries: Annotated[dict[str, str], merge_summaries]
+    errors: Annotated[list[str], merge_errors]
 
 
 class InstrumentsState(TypedDict):
@@ -58,3 +67,4 @@ class InstrumentsState(TypedDict):
     negotiation_requests: Annotated[list[NegotiationRequest], merge_requests]
     round: Annotated[int, take_latest]
     peer_summaries: Annotated[dict[str, str], merge_summaries]
+    errors: Annotated[list[str], merge_errors]
