@@ -308,9 +308,11 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
     try:
         response = _chat_music().handle(req)
     except ComposeConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=_compose_configuration_error_event(exc)) from exc
+        event = _compose_configuration_error_event(exc)
+        return ChatResponse(intent="clarify", reply=event["message"], clarification=event["message"], error=event)
     except LLMError as exc:
-        raise HTTPException(status_code=503, detail=_llm_error_event(exc, partial=False)) from exc
+        event = _llm_error_event(exc, partial=False)
+        return ChatResponse(intent="clarify", reply=event["message"], clarification=event["message"], error=event)
 
     # If the orchestrator composed a song, render audio/score artifacts and
     # attach URLs so the chat UI can play / score / download — same contract

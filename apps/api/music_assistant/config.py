@@ -12,7 +12,7 @@ Provider = Literal["gemini", "groq", "openrouter", "vertexai"]
 
 # sensible free-tier defaults per provider when MODEL_* isn't set explicitly
 DEFAULT_MODELS: dict[str, str] = {
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-3.5-flash",
     "groq": "llama-3.3-70b-versatile",
     "openrouter": "deepseek/deepseek-chat",
     "vertexai": "gemini-2.5-flash",

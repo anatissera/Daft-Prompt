@@ -164,6 +164,8 @@ pip install -e .
 
 # Optional: Add an LLM provider
 pip install -e ".[gemini]"    # or [groq], [openrouter]
+# For local fallback during long composition runs, install every provider you configure:
+pip install -e ".[gemini,openrouter]"
 
 # Set env
 export LLM_PROVIDER=gemini
@@ -294,7 +296,13 @@ pytest
 export LLM_PROVIDER=gemini
 export GOOGLE_API_KEY=your-key
 ```
-Fallback is no LLM (composition will fail gracefully).
+If you configure OpenRouter as fallback, make sure the extra is installed:
+```bash
+pip install -e ".[openrouter]"
+export OPENROUTER_API_KEY=your-key
+```
+Without the matching extra/API key, composition still fails gracefully and `/chat`
+returns a structured error response.
 
 ---
 
