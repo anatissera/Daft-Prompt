@@ -37,6 +37,7 @@ from music_assistant.ports.songsterr_tab_store import SongsterrTabStore
 
 Intent = Literal[
     "answer_reference",
+    "research_song",
     "compose",
     "compose_from_reference",
     "clarify",
@@ -86,7 +87,15 @@ class ChatResponse(BaseModel):
 
 _COMPOSE_RE = re.compile(r"\b(compose|generate|make|write|create|sketch|produce)\b", re.IGNORECASE)
 _REFERENCE_TOPIC_RE = re.compile(
-    r"\b(chord|chords|tempo|bpm|key|energy|section|sections|chorus|verse|analysis|analyze|profile|progression|harmony|harmonic)\b",
+    r"\b(chord|chords|tempo|bpm|key|energy|section|sections|chorus|verse|analysis|analyze|profile|progression|harmony|harmonic"
+    # deep-listening vocabulary — route these to the evidence-backed answer path
+    r"|swing|swings|swung|groove|syncopated|syncopation|shuffle|feel|build|builds|drop|drops|dynamics|loudness"
+    r"|timbre|bright|dark|warm|noisy|sound|sounds|arrangement|instrument|instruments|tab|tabs)\b",
+    re.IGNORECASE,
+)
+_RESEARCH_RE = re.compile(r"\b(research|look\s*up|search)\b", re.IGNORECASE)
+_RESEARCH_PREFIX_RE = re.compile(
+    r"^\s*(please\s+)?(can\s+you\s+)?(research|look\s*up|search)(\s+(on|the)\s+internet)?(\s+(for|about|and\s+analyze))?\s*",
     re.IGNORECASE,
 )
 _REFERENCE_GUIDE_RE = re.compile(
@@ -226,6 +235,25 @@ class ChatMusic:
                 clarification="Tell me whether to analyze, answer about the current reference, or compose.",
             )
 
+        if intent == "research_song":
+            if self.song_researcher is None:
+                return ChatResponse(
+                    intent="clarify",
+                    reply=(
+                        "Web research is not configured on this server, so I cannot look that up. "
+                        "You can still upload the audio file for analysis."
+                    ),
+                    clarification="Configure song research or attach an audio file instead.",
+                )
+            query = _RESEARCH_PREFIX_RE.sub("", message).strip() or message
+            researched = self.song_researcher.research(query)
+            self.reference_store.save(researched)
+            return ChatResponse(
+                intent="answer_reference",
+                reply=researched.summary or "Research ready from source-backed evidence.",
+                reference_id=researched.reference_id,
+            )
+
         if intent == "answer_reference":
             assert profile is not None
             answer = self.answer_music_question.execute(message, profile)
@@ -313,6 +341,12 @@ class ChatMusic:
     def _classify(self, message: str, *, has_reference: bool) -> Intent:
         if not message:
             return "clarify"
+
+        # Research is deterministic (no LLM needed) — check it before topic
+        # words so "look up and analyze X" researches instead of answering
+        # from whatever reference happens to be loaded.
+        if _RESEARCH_RE.search(message):
+            return "research_song"
 
         wants_compose = bool(_COMPOSE_RE.search(message))
         asks_about_reference = bool(_REFERENCE_TOPIC_RE.search(message))
