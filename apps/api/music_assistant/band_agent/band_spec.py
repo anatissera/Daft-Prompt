@@ -41,6 +41,12 @@ class NotePlan(BaseModel):
 
 
 class InstrumentPlan(BaseModel):
+    """Legacy one-shot schema: instrument declaration + inlined notes.
+
+    Still used by `compose_band` when we merge a `BandSkeleton` with per-
+    instrument `InstrumentFill`s (see `BandSpec.from_skeleton_and_fills`).
+    """
+
     id: str
     instrument: str
     patch: Patch
@@ -51,7 +57,7 @@ class InstrumentPlan(BaseModel):
 
 
 class BandSpec(BaseModel):
-    """Fully-specified plan emitted by the LLM in one structured-output call."""
+    """Fully-specified plan (skeleton + notes)."""
 
     genre: str
     key: str = "C major"
@@ -62,3 +68,81 @@ class BandSpec(BaseModel):
     sections: list[SectionPlan] = Field(default_factory=list)
     chord_progression: list[ChordSpanPlan] = Field(default_factory=list)
     instruments: list[InstrumentPlan] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------
+# Split schemas: skeleton + per-instrument fills. Used by the parallel plan
+# pipeline. Each is intentionally small so structured-output stays reliable
+# on the local llama-server (which flakes on very large JSON outputs).
+# --------------------------------------------------------------------------
+
+
+class InstrumentDecl(BaseModel):
+    """One instrument in the roster, no notes."""
+
+    id: str
+    instrument: str
+    patch: Patch
+    role: str = ""
+    is_drum: bool = False
+    playing_style: str = ""
+
+
+class BandSkeleton(BaseModel):
+    """Header + roster + harmonic plan, WITHOUT per-instrument notes.
+
+    Emitted by the first (skeleton) LLM call. Small enough that the local
+    llama-server returns it quickly and reliably even for structured output.
+    """
+
+    genre: str
+    key: str = "C major"
+    tempo_bpm: float = Field(default=120.0, gt=20.0, lt=300.0)
+    time_signature_numerator: int = Field(default=4, ge=1, le=12)
+    time_signature_denominator: int = Field(default=4, ge=1, le=16)
+    num_bars: int = Field(default=16, ge=4, le=128)
+    sections: list[SectionPlan] = Field(default_factory=list)
+    chord_progression: list[ChordSpanPlan] = Field(default_factory=list)
+    instruments: list[InstrumentDecl] = Field(default_factory=list)
+
+
+class InstrumentFill(BaseModel):
+    """One instrument's notes, emitted by a per-instrument LLM call."""
+
+    id: str
+    notes: list[NotePlan] = Field(default_factory=list)
+
+
+def spec_from_skeleton(
+    skeleton: BandSkeleton,
+    fills: dict[str, list[NotePlan]],
+) -> BandSpec:
+    """Merge a skeleton + per-instrument fills into a full `BandSpec`.
+
+    Missing fills default to an empty note list — that keeps `compose_band`
+    working when a fill call failed (its instrument plays no notes; the rest
+    of the song is intact). Drums always get an empty list on the LLM side
+    because they're synthesised deterministically downstream.
+    """
+    return BandSpec(
+        genre=skeleton.genre,
+        key=skeleton.key,
+        tempo_bpm=skeleton.tempo_bpm,
+        time_signature_numerator=skeleton.time_signature_numerator,
+        time_signature_denominator=skeleton.time_signature_denominator,
+        num_bars=skeleton.num_bars,
+        sections=skeleton.sections,
+        chord_progression=skeleton.chord_progression,
+        instruments=[
+            InstrumentPlan(
+                id=decl.id,
+                instrument=decl.instrument,
+                patch=decl.patch,
+                role=decl.role,
+                is_drum=decl.is_drum,
+                playing_style=decl.playing_style,
+                notes=fills.get(decl.id, []),
+            )
+            for decl in skeleton.instruments
+        ],
+    )

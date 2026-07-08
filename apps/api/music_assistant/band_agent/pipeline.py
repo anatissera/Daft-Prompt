@@ -1,22 +1,27 @@
-"""Research → Plan → Compose pipeline, implemented as a LangGraph state graph.
+"""Research → Skeleton → Fill (parallel) → Compose pipeline.
 
-Emits SSE-compatible dict events that the FastAPI layer wraps with `sse_data`.
-The event shapes are identical to those the frontend already consumes from
-the legacy negotiation stream:
+Implemented as a LangGraph state graph. Emits SSE-compatible dict events
+that the FastAPI layer wraps with `sse_data`. The event shapes are
+identical to those the frontend already consumes.
 
-  - `{"type": "director", "source": "director", "header": ..., "roster": ...}`
-  - `{"type": "progress", "stage": ..., "message": ...}`   (new, optional UI)
-  - final: caller yields a `DoneEvent` after `render_artifacts`.
+Nodes:
 
-The graph nodes are:
+  1. `do_research`  — deterministic: DDG search + corpus retrieval. No LLM.
+  2. `do_skeleton`  — small LLM call: header + roster + chord progression.
+  3. `do_fills`     — one LLM call per non-drum instrument, in parallel.
+                      Drums are left empty (synthesised in compose).
+  4. `do_compose`   — deterministic: BandSpec (skeleton + fills) → SongState.
 
-  1. `research` — deterministic: DDG search + corpus retrieval. No LLM.
-  2. `plan`     — LLM structured-output call producing a `BandSpec`.
-  3. `compose`  — deterministic: `BandSpec` → `SongState`.
+Rationale for splitting: the local llama-server flakes when asked to emit a
+single 500+-note structured output, and the total decode time scales with
+the largest single call, not the sum. Splitting into ~4 smaller parallel
+calls both keeps each response reliable and hides the per-instrument
+decode behind the slowest one (with `-np N` slots on llama-server).
 """
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Iterator, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -25,8 +30,20 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from music_assistant.domain.song_state import SongState
 from music_assistant.infrastructure.llm import make_llm
 
-from .band_spec import BandSpec
-from .prompts import SYSTEM_PROMPT, user_prompt
+from .band_spec import (
+    BandSkeleton,
+    BandSpec,
+    InstrumentDecl,
+    InstrumentFill,
+    NotePlan,
+    spec_from_skeleton,
+)
+from .prompts import (
+    FILL_SYSTEM_PROMPT,
+    SKELETON_SYSTEM_PROMPT,
+    fill_user_prompt,
+    skeleton_user_prompt,
+)
 from .tools import (
     compose_band,
     infer_genre_from_titles,
@@ -39,6 +56,8 @@ class _AgentState(TypedDict, total=False):
     style: str
     research: list[dict[str, Any]]
     corpus: dict[str, Any]
+    skeleton: BandSkeleton
+    fills: dict[str, list[NotePlan]]
     spec: BandSpec
     song: SongState
     events: list[dict[str, Any]]
@@ -89,47 +108,108 @@ def _research_node(state: _AgentState) -> _AgentState:
     return {"research": research, "corpus": corpus, "events": events}
 
 
-def _plan_node(state: _AgentState) -> _AgentState:
-    llm = make_llm(role="director").with_structured_output(BandSpec)
+def _skeleton_node(state: _AgentState) -> _AgentState:
+    llm = make_llm(role="director").with_structured_output(BandSkeleton)
     messages = [
-        SystemMessage(content=SYSTEM_PROMPT),
+        SystemMessage(content=SKELETON_SYSTEM_PROMPT),
         HumanMessage(
-            content=user_prompt(
+            content=skeleton_user_prompt(
                 state.get("style", ""),
                 {"results": state.get("research", [])},
                 state.get("corpus", {}),
             )
         ),
     ]
-    spec: BandSpec = llm.invoke(messages)
+    skeleton: BandSkeleton = llm.invoke(messages)
     events = state.get("events", []) + [
         {
             "type": "progress",
-            "stage": "planned",
+            "stage": "skeleton",
             "message": (
-                f"{spec.genre} @ {spec.tempo_bpm:.0f} BPM in {spec.key}, "
-                f"{len(spec.instruments)} instruments, {spec.num_bars} bars"
+                f"{skeleton.genre} @ {skeleton.tempo_bpm:.0f} BPM in {skeleton.key}, "
+                f"{len(skeleton.instruments)} instruments, {skeleton.num_bars} bars"
             ),
         }
     ]
-    return {"spec": spec, "events": events}
+    return {"skeleton": skeleton, "events": events}
+
+
+# How many per-instrument fill calls to run concurrently. Local llama-server
+# usually has 1-2 slots (`-np 1|2`); above that it serialises internally.
+# Kept small so we don't oversubscribe the model.
+_FILL_MAX_WORKERS = 4
+
+
+def _fills_node(state: _AgentState) -> _AgentState:
+    skeleton = state["skeleton"]
+    skeleton_ctx = skeleton.model_dump(mode="json", exclude={"instruments"})
+    targets: list[InstrumentDecl] = [
+        i for i in skeleton.instruments if not i.is_drum
+    ]
+
+    fills: dict[str, list[NotePlan]] = {}
+    if targets:
+        with ThreadPoolExecutor(max_workers=min(_FILL_MAX_WORKERS, len(targets))) as pool:
+            futures = {
+                pool.submit(_fill_one, skeleton_ctx, inst): inst.id
+                for inst in targets
+            }
+            for fut in as_completed(futures):
+                inst_id = futures[fut]
+                try:
+                    fill: InstrumentFill = fut.result()
+                    fills[inst_id] = fill.notes
+                except Exception:
+                    # A single failed fill leaves that instrument silent
+                    # instead of crashing the whole song. The rest of the
+                    # arrangement is still musically coherent.
+                    fills[inst_id] = []
+
+    events = state.get("events", []) + [
+        {
+            "type": "progress",
+            "stage": "fills",
+            "message": (
+                f"filled {sum(1 for v in fills.values() if v)} / {len(targets)} instruments"
+            ),
+        }
+    ]
+    return {"fills": fills, "events": events}
+
+
+def _fill_one(skeleton_ctx: dict[str, Any], instrument: InstrumentDecl) -> InstrumentFill:
+    llm = make_llm(role="instrument").with_structured_output(InstrumentFill)
+    messages = [
+        SystemMessage(content=FILL_SYSTEM_PROMPT),
+        HumanMessage(
+            content=fill_user_prompt(
+                skeleton_ctx,
+                instrument.model_dump(mode="json"),
+            )
+        ),
+    ]
+    return llm.invoke(messages)
 
 
 def _compose_node(state: _AgentState) -> _AgentState:
-    spec = state["spec"]
+    skeleton = state["skeleton"]
+    fills = state.get("fills", {})
+    spec = spec_from_skeleton(skeleton, fills)
     groove = (state.get("corpus") or {}).get("groove")
     song = compose_band(spec, request=state.get("style", ""), groove=groove)
-    return {"song": song}
+    return {"spec": spec, "song": song}
 
 
 def _build_graph():
     g = StateGraph(_AgentState)
     g.add_node("do_research", _research_node)
-    g.add_node("do_plan", _plan_node)
+    g.add_node("do_skeleton", _skeleton_node)
+    g.add_node("do_fills", _fills_node)
     g.add_node("do_compose", _compose_node)
     g.set_entry_point("do_research")
-    g.add_edge("do_research", "do_plan")
-    g.add_edge("do_plan", "do_compose")
+    g.add_edge("do_research", "do_skeleton")
+    g.add_edge("do_skeleton", "do_fills")
+    g.add_edge("do_fills", "do_compose")
     g.add_edge("do_compose", END)
     return g.compile()
 
@@ -159,9 +239,10 @@ def stream_compose(style: str) -> Iterator[tuple[dict[str, Any], Optional[SongSt
 
     Order:
       1. `progress[research]` — research is done, no song yet.
-      2. `progress[planned]`  — LLM has returned a BandSpec.
-      3. `director`           — header + roster; carries the final song snapshot.
-      4. sentinel `({}, song)` so the caller renders artifacts + emits `done`.
+      2. `progress[skeleton]` — skeleton LLM call finished.
+      3. `progress[fills]`    — per-instrument fills finished.
+      4. `director`           — header + roster; carries the final song snapshot.
+      5. sentinel `({}, song)` so the caller renders artifacts + emits `done`.
     """
     initial: _AgentState = {"style": style, "events": []}
     final: _AgentState = _graph().invoke(initial)  # type: ignore[assignment]
