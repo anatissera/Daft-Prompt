@@ -32,7 +32,7 @@ class _NoLLMCfg:
 
 def _make_fake_song(style: str) -> SongState:
     header = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=8)
-    roster = [RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove")]
+    roster = [RosterItem(id="bass", instrument="electric_bass", role="groove")]
     return SongState(request=style, header=header, roster=roster)
 
 

@@ -8,10 +8,13 @@ Phase 5: full negotiation via `run_instrument_turn`, called once per round per
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from langsmith import get_current_run_tree, traceable
 from pydantic import BaseModel, Field
+
+log = logging.getLogger(__name__)
 
 from ..config import get_settings
 from ..corpus.retrieve import (
@@ -130,6 +133,16 @@ def _system_prompt(header: Header, roster_item: RosterItem) -> str:
         f"\nPlaying style: {roster_item.playing_style}" if roster_item.playing_style else ""
     )
     reference_block = _style_reference_block(header, roster_item)
+    register_note = "" if roster_item.is_drum else (
+        "\n\nRegister: YOU decide the MIDI pitch range for this part. Read your "
+        "playing_style + role + the genre and pick the register a real player of "
+        "this instrument would use for THIS idiom. Examples: metal rhythm guitar "
+        'chugging "low E string" → notes around MIDI 28-40; a soprano choir line → '
+        "60-84; a sub bass → 24-36; a jazz walking bass → 28-52; a violin melody → "
+        "55-96. Do NOT default to a textbook mid-register (~55-80) — that is "
+        "usually wrong for rhythm/bass/lead specialisation. Match the described "
+        "technique."
+    )
     return (
         f"/no_think You are the {roster_item.instrument} player ({roster_item.role}) in a "
         f"{header.genre} ensemble.\n\n"
@@ -137,8 +150,9 @@ def _system_prompt(header: Header, roster_item: RosterItem) -> str:
         f"- key: {header.key}, tempo: {header.tempo_bpm} BPM, "
         f"time signature {header.time_signature[0]}/{header.time_signature[1]} "
         f"({bpb} beats/bar)\n"
-        f"- song length: {header.num_bars} bars (bar indices 0..{header.num_bars - 1})\n"
-        f"- your MIDI pitch range: {roster_item.midi_range[0]}-{roster_item.midi_range[1]}{drum_note}\n\n"
+        f"- song length: {header.num_bars} bars (bar indices 0..{header.num_bars - 1})"
+        f"{drum_note}"
+        f"{register_note}\n\n"
         f"{_section_map_text(header.sections)}\n\n"
         f"{_chord_map_text(header.chord_progression)}"
         f"{playing_style_block}"
@@ -146,8 +160,8 @@ def _system_prompt(header: Header, roster_item: RosterItem) -> str:
         "Compose your full part for the whole song: a list of notes with absolute bar "
         "+ start_beat (0-indexed within the bar), MIDI pitch (null = rest), duration in "
         "beats, and velocity (0-127). Shape your dynamics to the section energy levels "
-        "(low = quieter/sparser, high = louder/fuller). Stay within your pitch range and "
-        "bar/beat bounds. Also return a short notes_summary other musicians can read. "
+        "(low = quieter/sparser, high = louder/fuller). Stay within bar/beat bounds. "
+        "Also return a short notes_summary other musicians can read. "
         "Respond directly with the structured output only. Do not think out loud or write any reasoning."
     )
 
@@ -282,6 +296,15 @@ def compose_part(
             return _fallback_part(roster_item)
         part = _to_part(roster_item, out)
 
+    if not any(n.pitch is not None for n in part.notes):
+        # Repair loop exhausted (or validator missed it) with the LLM still
+        # returning zero sounding notes. This is exactly the "no sound on that
+        # track" bug — surface it in logs so future runs can be correlated
+        # instead of silently shipping a dead instrument to the mixer.
+        log.warning(
+            "instrument produced empty part after repair: id=%s instrument=%r role=%r",
+            roster_item.id, roster_item.instrument, roster_item.role,
+        )
     return part
 
 
@@ -366,4 +389,9 @@ def run_instrument_turn(
             return _fallback_part(roster_item), [], []
         part = _to_part(roster_item, out)
 
+    if not any(n.pitch is not None for n in part.notes):
+        log.warning(
+            "instrument produced empty part after repair (turn): id=%s instrument=%r role=%r",
+            roster_item.id, roster_item.instrument, roster_item.role,
+        )
     return part, out.request_resolutions, out.new_requests

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
-import ChatThread from "@/components/ChatThread";
+import ChatThread, { type PipelineState, type PipelineStageIdx } from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
 import type { AnalysisEvent, ReferenceProfile, SongState } from "@/lib/types";
 import {
@@ -44,6 +44,23 @@ interface ChatResponse {
   usage?: UsageInfo | null;
 }
 
+interface ChatDoneEvent {
+  type: "done";
+  job_id?: string;
+  source?: string;
+  song?: SongState & { header?: SongState["header"]; roster?: unknown[] };
+  artifacts?: ChatArtifacts | null;
+}
+
+type ChatStreamEvent =
+  | { type: "intent"; intent: Intent }
+  | { type: "reply"; response: ChatResponse }
+  | { type: "director"; source: string; header?: SongState["header"]; roster?: unknown[] }
+  | { type: "agent_pass"; round: number; instrument_id: string; notes_summary?: string }
+  | { type: "convergence"; round: number; converged: boolean }
+  | ChatDoneEvent
+  | { type: "error"; code: string; message: string; provider: string | null; model: string | null; partial: boolean };
+
 export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messageIndexRef = useRef(1);
@@ -61,6 +78,7 @@ export default function Home() {
   const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
   const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineState | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
   const sessionTitledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -91,6 +109,7 @@ export default function Home() {
   function stopWork() {
     setActiveWork(null);
     setBusyStartedAt(null);
+    setPipeline(null);
     abortRef.current = null;
   }
 
@@ -127,8 +146,17 @@ export default function Home() {
     const controller = new AbortController();
     abortRef.current = controller;
     const startedAt = performance.now();
+
+    // Real-time compose state accumulated from SSE events. When the backend
+    // classifies the turn as a non-compose intent it emits a single `reply`
+    // event and we skip the pipeline entirely.
+    let intent: Intent | null = null;
+    let replyResponse: ChatResponse | null = null;
+    let doneEvent: (ChatDoneEvent) | null = null;
+    let composeAgentEvents = 0;
+
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "content-type": "application/json" },
         signal: controller.signal,
@@ -138,31 +166,97 @@ export default function Home() {
         }),
       });
       if (!res.ok) throw new Error(await readApiError(res));
-      const data = (await res.json()) as ChatResponse;
-      const meta = formatMeta(data, performance.now() - startedAt);
-      const idx = nextMessageIndex();
-      // Title the session from the first user message (client-side, no LLM).
+      if (!res.body) throw new Error("backend did not return a stream");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      readLoop: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() ?? "";
+        for (const chunk of chunks) {
+          const line = chunk.split("\n").find((entry) => entry.startsWith("data:"));
+          if (!line) continue;
+          const ev = JSON.parse(line.slice(5).trim()) as ChatStreamEvent;
+
+          if (ev.type === "intent") {
+            intent = ev.intent;
+            if (ev.intent === "compose" || ev.intent === "compose_from_reference") {
+              setPipeline({ stageIdx: 0, substep: null });
+            }
+          } else if (ev.type === "reply") {
+            replyResponse = ev.response;
+          } else if (ev.type === "director") {
+            const header = ev.header;
+            setActiveWork(
+              header
+                ? `Composing ${header.genre || "sketch"} · ${Math.round(header.tempo_bpm ?? 0)} BPM · ${header.key || "?"}`
+                : "Composing…",
+            );
+            setPipeline({ stageIdx: 1, substep: "roster picked, instruments starting…" });
+          } else if (ev.type === "agent_pass") {
+            composeAgentEvents += 1;
+            setPipeline({
+              stageIdx: 1,
+              substep: `${ev.instrument_id || "instrument"} composing (round ${ev.round ?? 1})…`,
+            });
+          } else if (ev.type === "convergence") {
+            setPipeline({ stageIdx: 2, substep: "arbiter validating harmonic fit…" });
+            // Arbiter finishes synchronously before render_artifacts runs; nudge
+            // the visual to the rendering step so the UI doesn't sit on arbiter
+            // for the full render span (which is silent from the backend side).
+            setTimeout(() => {
+              setPipeline((prev) =>
+                prev && prev.stageIdx === 2
+                  ? { stageIdx: 3, substep: "writing MIDI + score…" }
+                  : prev,
+              );
+            }, 400);
+          } else if (ev.type === "done") {
+            doneEvent = ev;
+            setPipeline({ stageIdx: 3, substep: "done" });
+          } else if (ev.type === "error") {
+            throw new Error(ev.message || "backend error");
+          }
+        }
+        if (controller.signal.aborted) break readLoop;
+      }
+
       maybeTitleSession(message);
-      if (data.compose && data.compose.artifacts) {
+      const idx = nextMessageIndex();
+
+      if (doneEvent) {
         const composeResponse = {
-          job_id: "chat",
-          source: data.compose.source as "director" | "canned",
-          song: data.compose.song,
-          artifacts: data.compose.artifacts,
+          job_id: doneEvent.job_id ?? "chat",
+          source: (doneEvent.source ?? "director") as "director" | "canned",
+          song: doneEvent.song,
+          artifacts: doneEvent.artifacts,
         };
+        const header = doneEvent.song?.header;
+        const reply = header
+          ? `Generated a ${header.genre || "sketch"} at ${Math.round(header.tempo_bpm ?? 0)} BPM in ${header.key || "?"} (${doneEvent.song?.roster?.length ?? 0} instruments, ${composeAgentEvents} agent passes).`
+          : "Sketch ready.";
+        const elapsed = performance.now() - startedAt;
+        const meta = `${(elapsed / 1000).toFixed(1)}s · ${composeAgentEvents} agent passes`;
         const msg = createCompositionMessage(
           "assistant",
-          data.reply,
+          reply,
           composeResponse,
           [],
-          data.compose.song.header,
+          header,
           composeResponse.source,
           idx,
         );
         appendMessage({ ...msg, meta });
-      } else {
-        const msg = createTextMessage("assistant", data.reply, idx);
+      } else if (replyResponse) {
+        const meta = formatMeta(replyResponse, performance.now() - startedAt);
+        const msg = createTextMessage("assistant", replyResponse.reply, idx);
         appendMessage({ ...msg, meta });
+      } else if (intent) {
+        appendMessage(createTextMessage("assistant", "(no response)", idx));
       }
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -283,7 +377,7 @@ export default function Home() {
           </div>
           <span className="app-topbar-meta">TWILIGHT · OUTPUT MIDI</span>
         </header>
-        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} />
+        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} pipeline={pipeline} />
         {error ? (
           <p className="error-banner" role="alert">{error}</p>
         ) : null}

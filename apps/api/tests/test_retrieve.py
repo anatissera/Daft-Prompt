@@ -9,22 +9,37 @@ from music_assistant.corpus import retrieve
 from music_assistant.corpus.retrieve import (
     LakhExample,
     GroovePattern,
-    normalize_genre,
     retrieve_groove,
     retrieve_style_examples,
 )
 
 
-def test_normalize_genre_maps_common_terms():
-    assert "reggaeton" in normalize_genre("reggaeton perreo")
-    assert "bossa" in normalize_genre("bossa nova triste")
-    assert "rock" in normalize_genre("90s grunge")
-    assert normalize_genre("") == []
+def test_retrieve_prefers_higher_token_overlap():
+    # A row matching both "rock" and "metal" outranks one matching only "rock",
+    # regardless of energy — overlap dominates the sort key.
+    rows = [
+        {"track_id": "T1", "genre": "rock", "key": "E minor", "tempo": 130,
+         "progression": ["E"], "density_by_role": {"bass": 5, "drums": 6},
+         "roles": ["bass", "drums", "guitar"]},
+        {"track_id": "T2", "genre": "rock metal", "key": "E minor", "tempo": 140,
+         "progression": ["Em"], "density_by_role": {"bass": 9, "drums": 12},
+         "roles": ["bass", "drums", "guitar"]},
+    ]
+    got = retrieve_style_examples("rock metal", "medium", n=1, _rows=rows)
+    assert len(got) == 1
+    assert got[0].track_id == "T2"
 
 
-def test_normalize_genre_unknown_falls_back_to_first_token():
-    tags = normalize_genre("weird xyz music")
-    assert tags == ["weird"]
+def test_retrieve_falls_back_to_single_token_match_when_no_full_overlap():
+    # "rock metal" but corpus only has rock rows — still returns them.
+    rows = [
+        {"track_id": "T1", "genre": "rock", "key": "E minor", "tempo": 130,
+         "progression": ["E"], "density_by_role": {"bass": 5, "drums": 8},
+         "roles": ["bass", "drums", "guitar"]},
+    ]
+    got = retrieve_style_examples("rock metal", "medium", n=1, _rows=rows)
+    assert len(got) == 1
+    assert got[0].track_id == "T1"
 
 
 def test_retrieve_style_examples_returns_empty_when_index_missing():

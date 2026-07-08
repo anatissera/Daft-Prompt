@@ -51,8 +51,8 @@ def _output(n: int = 4) -> DirectorOutput:
         chord_progression=[ChordSpan(bar=i, chord="Am7") for i in range(32)],
         instruments=[
             ArrangementInstrument(
-                id=f"inst{k}", instrument="electric_bass", midi_program=33,
-                midi_low=28, midi_high=55, role="groove", playing_style="Root notes.", is_drum=(k == 0),
+                id=f"inst{k}", patch="electric_bass",
+                role="groove", playing_style="Root notes.", is_drum=(k == 0),
             )
             for k in range(n)
         ],
@@ -76,14 +76,6 @@ def test_run_director_maps_to_songstate():
 def test_roster_is_capped():
     song = run_director("huge orchestra", llm=FakeLLM(_output(12)))
     assert len(song.roster) == MAX_ROSTER
-
-
-def test_midi_range_is_normalized():
-    out = _output(3)
-    out.instruments[0].midi_low = 60
-    out.instruments[0].midi_high = 40  # backwards on purpose
-    song = arrangement_to_song("x", out)
-    assert song.roster[0].midi_range == (40, 60)
 
 
 def test_director_clamps_bar_count_and_sections():
@@ -160,16 +152,16 @@ def _full_output() -> DirectorOutput:
         chord_progression=[ChordSpan(bar=i, chord="Dm7") for i in range(16)],
         instruments=[
             ArrangementInstrument(
-                id="drums", instrument="Acoustic Drums", midi_program=0,
-                midi_low=0, midi_high=127, role="groove", playing_style="Four on the floor kick.", is_drum=True,
+                id="drums",
+                role="groove", playing_style="Four on the floor kick.", is_drum=True,
             ),
             ArrangementInstrument(
-                id="bass", instrument="Electric Bass", midi_program=34,
-                midi_low=28, midi_high=55, role="melodic bass", playing_style="Anchor beat 1.",
+                id="bass", patch="pick_bass",
+                role="melodic bass", playing_style="Anchor beat 1.",
             ),
             ArrangementInstrument(
-                id="epiano", instrument="Rhodes", midi_program=5,
-                midi_low=48, midi_high=72, role="harmony", playing_style="Chord stabs on 2 and 4.",
+                id="epiano", patch="electric_piano_dx",
+                              role="harmony", playing_style="Chord stabs on 2 and 4.",
             ),
         ],
         composition_groups=[
@@ -256,16 +248,13 @@ def _split_drums_output() -> DirectorOutput:
     """A director that wrongly split the kit into separate kick/snare/hat entries."""
     out = _full_output()
     out.instruments = [
-        ArrangementInstrument(id="kick", instrument="Kick", midi_program=0,
-                              midi_low=35, midi_high=36, role="kick", playing_style="x", is_drum=True),
-        ArrangementInstrument(id="snare", instrument="Snare", midi_program=0,
-                              midi_low=38, midi_high=40, role="snare", playing_style="x", is_drum=True),
-        ArrangementInstrument(id="hat", instrument="Hi-hat", midi_program=0,
-                              midi_low=42, midi_high=46, role="hat", playing_style="x", is_drum=True),
-        ArrangementInstrument(id="bass", instrument="Electric Bass", midi_program=34,
-                              midi_low=28, midi_high=55, role="bass", playing_style="x"),
-        ArrangementInstrument(id="epiano", instrument="Rhodes", midi_program=5,
-                              midi_low=48, midi_high=72, role="harmony", playing_style="x"),
+        ArrangementInstrument(id="kick", role="kick", playing_style="x", is_drum=True),
+        ArrangementInstrument(id="snare", role="snare", playing_style="x", is_drum=True),
+        ArrangementInstrument(id="hat", role="hat", playing_style="x", is_drum=True),
+        ArrangementInstrument(id="bass", patch="pick_bass",
+                              role="bass", playing_style="x"),
+        ArrangementInstrument(id="epiano", patch="electric_piano_dx",
+                              role="harmony", playing_style="x"),
     ]
     out.composition_groups = [
         CompositionGroup(name="rhythm", instrument_ids=["kick", "snare", "hat", "bass"], max_negotiation_rounds=1),
@@ -298,7 +287,7 @@ def test_single_drum_kit_is_left_unchanged():
     drum_items = [r for r in song.roster if r.is_drum]
     assert len(drum_items) == 1
     assert drum_items[0].id == "drums"
-    assert drum_items[0].instrument == "Acoustic Drums"  # not replaced by the canonical kit
+    assert drum_items[0].instrument == "drum_kit"  # canonical drum label; no free-text instrument field anymore
 
 
 def test_director_prompt_contains_key_musical_concepts():
@@ -329,12 +318,17 @@ def test_director_prompt_includes_style_card_when_examples_present():
     ]
     messages = _prompt("reggaeton perreo", examples)
     joined = "\n".join(m for role, m in messages if role == "human")
-    assert "Canonical examples" in joined
+    assert "Canonical progressions" in joined
     assert "Am" in joined and "F" in joined
     assert "reggaeton perreo" in joined  # user prompt still there
+    # Instrumentation must NOT leak from corpus roles: it caused generic-genre
+    # bleed (rock metal → violin because a "rock" segment had string ensemble).
+    # The word "instrumentation" can still appear in a "don't derive it from
+    # these" instruction — what must be absent is the raw role tokens.
+    assert "synth_lead" not in joined
 
 
 def test_director_prompt_omits_style_card_when_no_examples():
     messages = _prompt("funk", [])
     joined = "\n".join(m for role, m in messages if role == "human")
-    assert "Canonical examples" not in joined
+    assert "Canonical progressions" not in joined

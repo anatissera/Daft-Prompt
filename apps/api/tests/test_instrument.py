@@ -42,7 +42,7 @@ class FakeLLM:
 
 
 HEADER = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
-BASS = RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove")
+BASS = RosterItem(id="bass", instrument="electric_bass", role="groove")
 ROSTER = [BASS, RosterItem(id="drums", instrument="kit", role="beat", is_drum=True)]
 
 
@@ -53,10 +53,14 @@ def _valid_output() -> InstrumentOutput:
     )
 
 
-def _out_of_range_output() -> InstrumentOutput:
+def _invalid_output() -> InstrumentOutput:
+    # bar 99 is outside the fixture's num_bars — triggers the bar_oob
+    # validation issue, which drives the repair loop the same way the old
+    # pitch-range check used to. We can't rely on pitch clamping anymore now
+    # that the instrument agent picks its own register.
     return InstrumentOutput(
-        notes=[Note(bar=0, start_beat=0.0, pitch=10, dur=1.0, velocity=100)],  # below bass range
-        notes_summary="too low",
+        notes=[Note(bar=99, start_beat=0.0, pitch=40, dur=1.0, velocity=100)],
+        notes_summary="wrong bar",
     )
 
 
@@ -69,16 +73,16 @@ def test_compose_part_accepts_valid_output_first_try():
 
 
 def test_compose_part_repairs_after_validation_failure():
-    llm = FakeLLM([_out_of_range_output(), _valid_output()])
+    llm = FakeLLM([_invalid_output(), _valid_output()])
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
-    assert part.notes[0].pitch == 40
+    assert part.notes[0].bar == 0  # the valid retry landed
     assert llm.structured.calls == 2  # one repair round-trip
 
 
 def test_compose_part_never_crashes_when_repairs_exhausted():
-    llm = FakeLLM([_out_of_range_output()])  # always invalid
+    llm = FakeLLM([_invalid_output()])  # always invalid
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
-    assert part.notes[0].pitch == 10  # shipped as-is
+    assert part.notes[0].bar == 99  # shipped as-is even though bar is out of range
     assert llm.structured.calls == 1 + MAX_REPAIRS
 
 
@@ -183,7 +187,7 @@ def test_system_prompt_includes_chord_map_and_section_map():
         sections=[Section(name="Verse", start_bar=0, end_bar=8, energy="medium")],
     )
     roster_item = RosterItem(
-        id="bass", instrument="Electric Bass", midi_range=(28, 55),
+        id="bass", instrument="Electric Bass",
         role="groove", playing_style="Lock to the kick.",
     )
     text = _system_prompt(header, roster_item)
@@ -209,7 +213,7 @@ def test_run_instrument_turn_accepts_batch_peer_ids():
             )
 
     header = Header(genre="funk", key="D minor", tempo_bpm=110, num_bars=4)
-    bass = RosterItem(id="bass", instrument="Electric Bass", midi_range=(28, 55), role="groove")
+    bass = RosterItem(id="bass", instrument="Electric Bass", role="groove")
     roster = [bass, RosterItem(id="drums", instrument="kit", role="beat", is_drum=True)]
 
     part, resolutions, new_requests = run_instrument_turn(

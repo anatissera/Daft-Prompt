@@ -132,7 +132,6 @@ def validate_song(song: SongState) -> list[ValidationIssue]:
                     instrument_id=part_id, severity="error", code="note_overlap", bar=bar,
                     message=f"{roster.instrument} is monophonic; {msg}"))
 
-        lo, hi = roster.midi_range
         for n in part.notes:
             # bar index
             if n.bar < 0 or n.bar >= num_bars:
@@ -175,11 +174,10 @@ def validate_song(song: SongState) -> list[ValidationIssue]:
             if roster.is_drum:
                 continue  # drums: skip range + key checks
 
-            # instrument range
-            if not (lo <= n.pitch <= hi):
-                issues.append(ValidationIssue(
-                    instrument_id=part_id, severity="error", code="pitch_out_of_range", bar=n.bar,
-                    message=f"pitch {n.pitch} outside {roster.instrument} range [{lo}, {hi}]"))
+            # instrument range: no per-roster clamp anymore — the instrument
+            # agent picks its own register from playing_style + role instead of
+            # the director declaring midi_low/midi_high. Absolute MIDI [0, 127]
+            # is still enforced above.
 
             # harmony membership (warning only). Chord-aware: a note that is a tone of
             # the bar's active chord is fine even when it's outside the key (e.g. the

@@ -83,11 +83,11 @@ def canned_song(request: str = "demo") -> SongState:
     )
     roster = [
         RosterItem(id="lead", instrument="acoustic_grand_piano", midi_program=0,
-                   midi_range=(48, 84), role="melody", is_drum=False),
+                   role="melody", is_drum=False),
         RosterItem(id="bass", instrument="electric_bass", midi_program=33,
-                   midi_range=(28, 55), role="root motion", is_drum=False),
+                   role="root motion", is_drum=False),
         RosterItem(id="drums", instrument="drum_kit", midi_program=0,
-                   midi_range=(35, 81), role="four-on-the-floor", is_drum=True),
+                   role="four-on-the-floor", is_drum=True),
     ]
     parts = {
         "lead": _melody_part(),

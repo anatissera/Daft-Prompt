@@ -14,7 +14,9 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from ..corpus.retrieve import LakhExample, retrieve_style_examples
+from ..domain.audio_profile import ReferenceProfile
 from ..domain.errors import OffTopicRequest
+from ..domain.patch import PATCH_SPEC, Patch, resolve_patch
 from ..domain.song_state import (
     ChordSpan,
     CompositionGroup,
@@ -37,10 +39,55 @@ MAX_BARS = 32
 
 class ArrangementInstrument(BaseModel):
     id: str = Field(description="short unique id, e.g. 'bass', 'lead_synth'")
-    instrument: str = Field(description="human name, e.g. 'electric_bass'")
-    midi_program: int = Field(0, ge=0, le=127, description="General MIDI program")
-    midi_low: int = Field(0, ge=0, le=127)
-    midi_high: int = Field(127, ge=0, le=127)
+    # `instrument` used to be a free-text field alongside `patch`, and the LLM
+    # kept desynchronising them (instrument='electric_guitar' + patch=
+    # 'electric_grand_piano', instrument='synth_lead' + patch='soprano_sax').
+    # The two carried the same signal so we dropped the free field: `patch`
+    # from the closed vocab is now the single source of truth for the sound
+    # AND the display name. Drums use `is_drum=True` with patch=None.
+    # `patch` replaces the old (midi_program, synth_preset) pair. The LLM used
+    # to memorise the 128-entry GM table and slip constantly ("Strings 1" →
+    # program 101 which is FX 6 Goblins). Now the LLM picks a semantic name
+    # from a closed vocabulary and the backend deterministically maps it to a
+    # sampler patch or a Tone.js synth preset. There is no way to slip.
+    patch: Optional[Patch] = Field(
+        None,
+        description=(
+            "Semantic timbre for this instrument. Pick the one CLOSEST to the "
+            "sound you want. Naming reflects the sound, not the GM number.\n"
+            "Guitar family: 'distortion_guitar' (metal/hard-rock rhythm+lead), "
+            "'overdriven_guitar' (crunchy rock), 'clean_electric_guitar' "
+            "(clean Strat/Tele), 'muted_electric_guitar' (short-decay muted, "
+            "NOT palm-muted-with-distortion), 'jazz_electric_guitar' (hollow-"
+            "body clean), 'acoustic_guitar_steel', 'acoustic_guitar_nylon'.\n"
+            "Bass: 'electric_bass' (finger), 'pick_bass', 'fretless_bass', "
+            "'slap_bass', 'acoustic_bass', 'sub_bass' (synth 808/sine sub).\n"
+            "Piano/keys: 'acoustic_grand_piano', 'bright_acoustic_piano', "
+            "'honky_tonk_piano', 'electric_piano_rhodes', 'electric_piano_dx', "
+            "'harpsichord', 'clavinet'.\n"
+            "Organ: 'hammond_organ', 'rock_organ', 'church_organ'.\n"
+            "Solo strings: 'violin', 'viola', 'cello', 'contrabass'.\n"
+            "Section strings/choir: 'string_ensemble' (sustained orchestral "
+            "strings), 'tremolo_strings', 'pizzicato_strings', 'choir_aahs', "
+            "'voice_oohs'.\n"
+            "Brass: 'trumpet', 'trombone', 'french_horn', 'tuba', "
+            "'muted_trumpet', 'brass_section'.\n"
+            "Reed / winds: 'alto_sax', 'tenor_sax', 'soprano_sax', "
+            "'baritone_sax', 'clarinet', 'oboe', 'flute', 'piccolo', "
+            "'pan_flute'.\n"
+            "Chromatic perc: 'marimba', 'vibraphone', 'xylophone', "
+            "'glockenspiel', 'music_box', 'celesta', 'tubular_bells'.\n"
+            "Ethnic: 'sitar', 'banjo', 'kalimba', 'steel_drums'.\n"
+            "Modern EDM synths (Tone.js native, NOT GM samples): "
+            "'supersaw_lead' (detuned saw lead / hoover), 'sub_bass' (sine "
+            "sub 808), 'pluck' (short staccato synth pluck / arp), "
+            "'warm_pad' (sustained slow-attack pad), 'vocal_fx' (chopped "
+            "pitched vocal fragments). Use these for EDM, future bass, trap, "
+            "synthwave, house — they sound modern; GM synth patches sound "
+            "8-bit.\n"
+            "Leave null ONLY if the drum kit (set is_drum=true instead)."
+        ),
+    )
     role: str = Field(description="this instrument's musical role in the arrangement")
     playing_style: str = Field(
         description=(
@@ -69,6 +116,24 @@ class DirectorOutput(BaseModel):
         "",
         description="when off_topic, a short friendly message (in the user's language) "
         "stating you only handle music tasks and listing what you can do",
+    )
+    # Structured chain-of-thought slot. The model must first commit to the
+    # canonical instrumentation / tempo / mood of the requested style BEFORE
+    # picking chords or a roster. This is emitted first in the JSON so the
+    # generation is autoregressively conditioned on it: whatever roster it
+    # writes downstream has to line up with what it just claimed is
+    # idiomatic. Empty when off_topic.
+    style_analysis: str = Field(
+        "",
+        description=(
+            "2-4 sentences committing to the CANONICAL instrumentation, tempo range, "
+            "key/mode tendency, and mood of the requested style — the way a musician "
+            "who plays this genre every day would describe it. Be concrete about "
+            "which instrument families actually appear on records of this style "
+            "(and which ones would sound out of place). This field is a commitment: "
+            "your later `instruments` roster must line up with it. Empty only when "
+            "off_topic=true."
+        ),
     )
     genre: str = ""
     key: str = Field("", description="e.g. 'F# minor', 'C major'")
@@ -100,7 +165,9 @@ class DirectorOutput(BaseModel):
 
 _SYSTEM = f"""You are the musical director of an ensemble. You ONLY handle music-composition tasks. If the request is not asking you to compose a music sketch (e.g. chit-chat, trivia, coding, weather, recommendations, or writing lyrics/text only), set off_topic=true and put a short friendly message in `refusal` (in the user's language) saying you only handle music tasks and listing what you can do: compose a sketch, analyze an uploaded audio file, or answer questions about a reference already shared. In that case leave the arrangement fields empty.
 
-Otherwise set off_topic=false and, given a style description, produce a complete arrangement plan with the following required outputs:
+Otherwise set off_topic=false and, given a style description, produce a complete arrangement plan with the following required outputs.
+
+Before anything else, fill `style_analysis` with 2-4 sentences committing to the canonical instrumentation, tempo range, key/mode tendency, and mood of the requested style. Be concrete about which instrument families actually appear on records of this genre (and which ones would sound out of place). Everything you emit afterwards MUST be consistent with what you just committed to here — do not pick a roster that contradicts your own analysis.
 
 1. ARRANGEMENT: key, tempo, time signature, num_bars ({MIN_BARS}-{MAX_BARS}). Reason about what genuinely fits the style.
 
@@ -109,12 +176,13 @@ Otherwise set off_topic=false and, given a style description, produce a complete
 3. CHORD PROGRESSION: one ChordSpan per bar covering every bar (0..num_bars-1). Use chord names like "Dm7", "G7", "Cm9". Chords must fit the key and genre idiom.
 
 4. INSTRUMENTATION: {MIN_ROSTER}-{MAX_ROSTER} instruments. For each instrument:
-   - A General MIDI program number and a sensible MIDI pitch range for that instrument in that register (e.g. bass: 28-55, not 0-127).
+   - A `patch` chosen from the closed vocabulary (see the field description on ArrangementInstrument.patch). The patch IS the instrument's identity — its value (e.g. 'distortion_guitar', 'electric_bass', 'warm_pad') is what the audience will hear AND how the instrument will be labelled downstream. Do NOT pick a patch that contradicts the role you have in mind: if you want a rock rhythm guitar, the patch must be a guitar-family value (`distortion_guitar`, `overdriven_guitar`, `clean_electric_guitar`, …), never a piano or a sax. Cross-check every patch against your `style_analysis` before finalising.
    - Its musical role. All percussion must be a single drum-kit roster item with is_drum=true — do NOT create separate entries for kick, snare, hi-hat, cymbals, or toms; those are MIDI pitches inside the one kit.
    - A playing_style: 1-2 sentences of idiomatic technique a real musician of this instrument in this genre would immediately recognise. Be specific about rhythm, articulation, and register. Examples:
      * Funk bass: "Anchor beat 1 firmly. Use ghost notes between the 2 and 4. Slap on the upbeat 16th just before beat 3 in bar-ending phrases."
      * Funk guitar: "Short 16th-note chord stabs on beats 2 and 4 with percussive muting between hits. Wah on fill bars. Stay in the mid register."
      * String pad: "Sustained whole-note pads below the melody register. Swell into the chorus. Avoid the top octave to leave room for the lead."
+   - (No separate synth_preset field — modern EDM archetypes are patch values like 'supersaw_lead', 'sub_bass', 'pluck', 'warm_pad', 'vocal_fx'. Choose them for EDM / future bass / trap / synthwave / house; use acoustic-family patch names for everything else.)
 
 5. COMPOSITION GROUPS: ordered batches specifying which instruments compose in which wave. Each instrument_id must appear in exactly one group. Put rhythmic foundation first (drums, bass), harmonic layer second, melodic/textural layer last. Set max_negotiation_rounds (0-2) — use 1 for rhythm section, 0 for texture layers.
 
@@ -125,26 +193,62 @@ def _style_card(examples: list[LakhExample]) -> str:
     """Compact formatting of retrieved corpus exemplars for injection into the
     Director prompt. Guidance only — the Director still emits its own final
     arrangement. When `examples` is empty (no corpus present), returns "" so
-    the prompt is unchanged from today's behaviour."""
+    the prompt is unchanged from today's behaviour.
+
+    We deliberately inject only progression + key + tempo. The corpus also
+    carries per-segment role tags (bass/drums/reed/ensemble/…) but those bled
+    generic-genre instrumentation into specific requests (rock metal → violin
+    because a "rock" Lakh segment happened to include a string ensemble).
+    Instrumentation is left entirely to the director's own reasoning plus the
+    web-research card, which carry better signal for artist/style idiom."""
     if not examples:
         return ""
-    lines = ["Canonical examples for this style (guidance, not override):"]
+    lines = ["Canonical progressions for this style (guidance, not override):"]
     for i, ex in enumerate(examples, 1):
         prog = " | ".join(ex.progression) if ex.progression else "(none)"
-        roles = ", ".join(ex.roles) if ex.roles else "(unknown)"
-        lines.append(
-            f"  {i}. key={ex.key}, tempo={ex.tempo:.0f}, progression: {prog}, "
-            f"instrumentation: {roles}"
-        )
+        lines.append(f"  {i}. key={ex.key}, tempo={ex.tempo:.0f}, progression: {prog}")
     lines.append(
-        "Use these as reference for progression idiom and instrumentation. "
-        "Do not copy verbatim; adapt to the requested style."
+        "Use these as reference for progression idiom only. "
+        "Do not copy verbatim; adapt to the requested style. "
+        "Instrumentation is your own call — do not derive it from these examples."
     )
     return "\n".join(lines)
 
 
-def _prompt(style: str, examples: list[LakhExample]) -> list[tuple[str, str]]:
+def _research_card(profile: ReferenceProfile | None) -> str:
+    """Compact formatting of web-research findings (tempo, key, per-site claims)
+    for injection into the Director prompt. Empty when the researcher returned
+    nothing usable, so the prompt is unchanged from today's behaviour."""
+    if profile is None or not profile.research_evidence:
+        return ""
+    lines = ["Web research on the requested style (evidence, not override):"]
+    audio = profile.audio
+    if audio is not None:
+        if audio.tempo_bpm:
+            lines.append(f"  fused tempo ≈ {audio.tempo_bpm:g} BPM")
+        if audio.key:
+            lines.append(f"  fused key ≈ {audio.key}")
+    for ev in profile.research_evidence[:6]:
+        snippet = ev.snippet.replace("\n", " ").strip()
+        if len(snippet) > 140:
+            snippet = snippet[:137] + "…"
+        lines.append(f"  [{ev.site}] {ev.claim_type}={ev.value}  — {snippet}")
+    lines.append(
+        "Use this as background on the artist/song idiom. "
+        "Adapt to the requested style; do not overfit to any single source."
+    )
+    return "\n".join(lines)
+
+
+def _prompt(
+    style: str,
+    examples: list[LakhExample],
+    research: ReferenceProfile | None = None,
+) -> list[tuple[str, str]]:
     messages: list[tuple[str, str]] = [("system", _SYSTEM)]
+    research_card = _research_card(research)
+    if research_card:
+        messages.append(("human", research_card))
     card = _style_card(examples)
     if card:
         messages.append(("human", card))
@@ -153,11 +257,24 @@ def _prompt(style: str, examples: list[LakhExample]) -> list[tuple[str, str]]:
 
 
 _ID_SAFE_RE = re.compile(r"[^a-z0-9]+")
+_ID_TRAILING_NUM_RE = re.compile(r"^(.*?)_?(\d+)$")
 
 
 def _slug(value: str, fallback: str) -> str:
     cleaned = _ID_SAFE_RE.sub("_", (value or "").strip().lower()).strip("_")
     return cleaned or fallback
+
+
+def _canonical_id(value: str) -> str:
+    """Collapse zero-padded numeric suffixes so `inst_09` and `inst_9` match.
+    The director LLM inconsistently pads roster ids vs the ids it emits inside
+    composition_groups; normalising here lets `_remap_groups` reconcile them."""
+    slug = _slug(value, "")
+    m = _ID_TRAILING_NUM_RE.match(slug)
+    if not m:
+        return slug
+    prefix, num = m.groups()
+    return f"{prefix}_{int(num)}" if prefix else str(int(num))
 
 
 def _repair_roster_ids(
@@ -172,7 +289,7 @@ def _repair_roster_ids(
     repaired: list[ArrangementInstrument] = []
     id_map: dict[str, str] = {}
     for idx, item in enumerate(items):
-        base = _slug(item.id, "") or _slug(item.instrument, "") or _slug(item.role, "") or f"agent_{idx}"
+        base = _slug(item.id, "") or _slug(str(item.patch or ""), "") or _slug(item.role, "") or f"agent_{idx}"
         candidate = base
         suffix = 2
         while candidate in seen:
@@ -181,15 +298,20 @@ def _repair_roster_ids(
         seen.add(candidate)
         repaired.append(item.model_copy(update={"id": candidate}))
         id_map.setdefault(item.id, candidate)  # first occurrence wins
+        id_map.setdefault(_canonical_id(item.id), candidate)
+        id_map.setdefault(_canonical_id(candidate), candidate)
     return repaired, id_map
 
 
 def _remap_groups(
     groups: list[CompositionGroup], id_map: dict[str, str]
 ) -> list[CompositionGroup]:
+    def lookup(iid: str) -> str:
+        return id_map.get(iid) or id_map.get(_canonical_id(iid)) or iid
+
     return [
         group.model_copy(
-            update={"instrument_ids": [id_map.get(iid, iid) for iid in group.instrument_ids]}
+            update={"instrument_ids": [lookup(iid) for iid in group.instrument_ids]}
         )
         for group in groups
     ]
@@ -212,10 +334,7 @@ def _collapse_drum_components(
 
     kit = ArrangementInstrument(
         id=_DRUM_KIT_ID,
-        instrument="drum_kit",
-        midi_program=0,
-        midi_low=35,
-        midi_high=81,
+        patch=None,  # drums route via is_drum=True, no patch lookup
         role="full percussion kit",
         playing_style="One coherent kit: kick on the downbeats, snare on the backbeat, "
         "steady hi-hat subdivision with fills into section changes.",
@@ -303,18 +422,30 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
         sections=_clamp_sections(out.sections, num_bars),
         chord_progression=list(out.chord_progression),
     )
-    roster = [
-        RosterItem(
-            id=i.id,
-            instrument=i.instrument,
-            midi_program=i.midi_program,
-            midi_range=(min(i.midi_low, i.midi_high), max(i.midi_low, i.midi_high)),
-            role=i.role,
-            playing_style=i.playing_style,
-            is_drum=i.is_drum,
+    roster = []
+    for i in clamped_instruments:
+        # Derive numeric fields from the semantic patch. Drums bypass the
+        # lookup and keep the mapping empty — playback uses the fixed
+        # channel-10 percussion map instead of a program.
+        if i.is_drum:
+            program, preset = 0, None
+            patch = None
+        else:
+            program, preset = resolve_patch(i.patch or "acoustic_grand_piano")
+            patch = i.patch
+        display = "drum_kit" if i.is_drum else str(i.patch or "acoustic_grand_piano")
+        roster.append(
+            RosterItem(
+                id=i.id,
+                instrument=display,
+                patch=patch,
+                midi_program=program,
+                synth_preset=preset,
+                role=i.role,
+                playing_style=i.playing_style,
+                is_drum=i.is_drum,
+            )
         )
-        for i in clamped_instruments
-    ]
     return SongState(
         request=style,
         header=header,
@@ -324,10 +455,32 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
     )
 
 
+def _research_style(query: str, *, timeout_seconds: float) -> ReferenceProfile | None:
+    """Run the web researcher on the compose prompt with a hard time budget.
+
+    Style prompts often name an artist or song ("como los Beatles", "tipo Radiohead");
+    a quick DDG-backed lookup surfaces tempo/key/idiom evidence the director can lean
+    on. Always safe: any failure or timeout returns None and the prompt falls back to
+    LLM parametric knowledge.
+    """
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+    from ..infrastructure.web_research.researcher import DefaultSongResearcher
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(DefaultSongResearcher().research, query)
+            return future.result(timeout=timeout_seconds)
+    except (FuturesTimeout, Exception):
+        return None
+
+
 @traceable(run_type="chain", name="director")
-def run_director(style: str, llm=None) -> SongState:
+def run_director(style: str, llm=None, *, trace=None) -> SongState:
     """Run the director. Pass `llm` (a chat model) to inject a fake in tests;
-    otherwise a provider model is built from settings."""
+    otherwise a provider model is built from settings. Pass `trace` (a
+    :class:`RunTrace`) to persist an audit record of the director's input and
+    output — the trace is optional so tests and older callers keep working."""
     if llm is None:
         from music_assistant.infrastructure.gemini.llm import make_llm
 
@@ -337,7 +490,16 @@ def run_director(style: str, llm=None) -> SongState:
         examples = retrieve_style_examples(style, energy="medium", n=3)
     except Exception:
         examples = []
-    out: DirectorOutput = structured.invoke(_prompt(style, examples))
+    research = _research_style(style, timeout_seconds=15.0)
+    messages = _prompt(style, examples, research)
+    out: DirectorOutput = structured.invoke(messages)
+    if trace is not None:
+        trace.write_director(
+            prompt_messages=messages,
+            corpus_examples=examples,
+            research=research,
+            output=out,
+        )
     if out.off_topic:
         raise OffTopicRequest(out.refusal.strip() or _DEFAULT_REFUSAL)
     return arrangement_to_song(style, out)

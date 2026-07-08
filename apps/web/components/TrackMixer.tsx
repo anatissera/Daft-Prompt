@@ -20,6 +20,7 @@ import {
   resolveIsDrum,
   resolveProgram,
 } from "@/lib/gmInstruments";
+import { makeSynth, resolveSynthPreset } from "@/lib/synthPresets";
 
 interface TrackRow {
   id: string;
@@ -40,8 +41,21 @@ async function loadTone(): Promise<typeof ToneType> {
   return (await import("tone")) as unknown as typeof ToneType;
 }
 
-// 5 sparse base notes give Tone.Sampler enough anchors to pitch-shift smoothly.
-const MELODIC_ANCHORS = ["C2", "C3", "C4", "C5", "C6"];
+// Dense anchor set — three natural notes per octave (C, F, A) across the
+// playable range. FluidR3 ships all of these for every melodic patch, so
+// Tone.Sampler never has to pitch-shift more than ~2 semitones from an
+// anchor. With the old one-per-octave set (C2..C6) the sampler was
+// stretching up to ~6 semitones on notes in the middle of each octave; on
+// long-sustain patches (electric guitar jazz, pads) that produced the
+// bell-like "8-bit" timbre the user reported.
+const MELODIC_ANCHORS = [
+  "A0",
+  "C2", "F2", "A2",
+  "C3", "F3", "A3",
+  "C4", "F4", "A4",
+  "C5", "F5", "A5",
+  "C6", "F6", "A6",
+];
 // FluidR3 percussion folder uses letter-note names mapped to drum keys.
 const DRUM_KEYS: number[] = [];
 for (let n = PERCUSSION_MIN; n <= PERCUSSION_MAX; n++) DRUM_KEYS.push(n);
@@ -54,10 +68,12 @@ function melodicUrls(): Record<string, string> {
 }
 
 function drumUrls(): Record<string, string> {
-  const urls: Record<string, string> = {};
-  // Tone needs `C#2`-style keys; FluidR3 ships `Cs2.mp3` files.
-  for (const k of DRUM_KEYS) urls[midiToName(k)] = `${midiToFileName(k)}.mp3`;
-  return urls;
+  // FluidR3's `percussion-mp3/` folder was removed from the gleitz CDN, so
+  // every load 404'd and crashed Tone.Sampler at construction time. Instead
+  // point the drum sampler at `synth_drum-mp3/`, which ships a single B1.mp3
+  // Tone.Sampler will pitch-shift to every drum key. Result: no external
+  // assets, no 404s, one shared synth-drum timbre for the whole kit.
+  return { B1: "B1.mp3" };
 }
 
 export default function TrackMixer({
@@ -81,9 +97,11 @@ export default function TrackMixer({
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const toneRef = useRef<typeof ToneType | null>(null);
-  // One sampler + gain per ROW (not per samplerKey) so two channels with the
-  // same MIDI program still get independent mute/solo control.
-  const samplersRef = useRef<Map<string, ToneType.Sampler>>(new Map());
+  // One instrument + gain per ROW (not per samplerKey) so two channels with
+  // the same MIDI program still get independent mute/solo control. Values can
+  // be a Tone.Sampler (FluidR3 patch) OR a Tone.Synth preset — both expose
+  // triggerAttackRelease with the same signature, so scheduling stays uniform.
+  const samplersRef = useRef<Map<string, ToneType.Sampler | ToneType.PolySynth | ToneType.MonoSynth>>(new Map());
   const gainsRef = useRef<Map<string, ToneType.Gain>>(new Map());
   const timerRef = useRef<number | null>(null);
 
@@ -128,7 +146,12 @@ export default function TrackMixer({
       Tone.Transport.pause();
       Tone.Transport.cancel(0);
       for (const s of samplersRef.current.values()) {
-        try { s.releaseAll(); } catch { /* noop */ }
+        // Sampler and PolySynth expose releaseAll; MonoSynth doesn't (single
+        // voice), and triggerRelease with no args cuts its held note.
+        try {
+          if ("releaseAll" in s) (s as { releaseAll: () => void }).releaseAll();
+          else (s as ToneType.MonoSynth).triggerRelease();
+        } catch { /* noop */ }
       }
     }
     if (resetPosition && Tone) Tone.Transport.seconds = 0;
@@ -156,7 +179,12 @@ export default function TrackMixer({
         const sampler = makeSampler(Tone, row.roster).connect(gain);
         samplersRef.current.set(row.id, sampler);
         gainsRef.current.set(row.id, gain);
-        created.push((sampler.loaded as unknown as Promise<unknown>) ?? Tone.loaded());
+        // Sampler exposes a `.loaded` Promise for async sample-buffer fetch;
+        // Tone.Synth is ready synchronously, so fall through to Tone.loaded().
+        const loadedProm = ("loaded" in sampler ? (sampler as ToneType.Sampler).loaded : undefined) as
+          | Promise<unknown>
+          | undefined;
+        created.push(loadedProm ?? Tone.loaded());
       }
       await Promise.all(created);
       await Tone.loaded();
@@ -277,17 +305,36 @@ function samplerKey(r: RosterItem): string {
   return `prog_${resolveProgram(r)}`;
 }
 
-function makeSampler(Tone: typeof ToneType, r: RosterItem): ToneType.Sampler {
+function makeSampler(
+  Tone: typeof ToneType,
+  r: RosterItem,
+): ToneType.Sampler | ToneType.PolySynth | ToneType.MonoSynth {
+  // First: does the roster item describe a modern-EDM timbre the FluidR3 GM
+  // patches can't render (supersaw lead, sub bass, pluck, warm pad)? If yes,
+  // route through a Tone.Synth preset. Drums always stay on the drum sampler.
+  if (!resolveIsDrum(r)) {
+    const preset = resolveSynthPreset(r);
+    if (preset) return makeSynth(Tone, preset);
+  }
+  // onerror keeps a missing sample from throwing at Sampler construction, so
+  // one 404 (e.g. if a folder gets moved on the CDN again) doesn't take the
+  // whole player down. The Sampler stays usable with whatever samples did load.
+  const onerror = (err: Error) => {
+    // eslint-disable-next-line no-console
+    console.warn("Sampler load error (continuing without it):", err);
+  };
   if (resolveIsDrum(r)) {
     return new Tone.Sampler({
       urls: drumUrls(),
-      baseUrl: `${FLUIDR3_BASE}percussion-mp3/`,
+      baseUrl: `${FLUIDR3_BASE}synth_drum-mp3/`,
+      onerror,
     });
   }
   const folder = folderForProgram(resolveProgram(r));
   return new Tone.Sampler({
     urls: melodicUrls(),
     baseUrl: `${FLUIDR3_BASE}${folder}-mp3/`,
+    onerror,
   });
 }
 
@@ -297,7 +344,7 @@ function buildRows(song: SongState): TrackRow[] {
   return Object.entries(song.parts).map(([partId]) => {
     const roster = rosterById.get(partId) ?? {
       id: partId, instrument: partId, is_drum: false,
-      midi_program: 0, midi_range: [0, 127] as [number, number], role: "",
+      midi_program: 0, role: "",
     };
     return { id: partId, roster, events: events[partId] ?? [] };
   });

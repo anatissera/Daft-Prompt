@@ -25,7 +25,7 @@ class FakeLLM:
 def _song(n_instruments: int) -> SongState:
     header = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
     roster = [
-        RosterItem(id=f"inst{i}", instrument="synth", midi_range=(0, 127), role="x")
+        RosterItem(id=f"inst{i}", instrument="synth", role="x")
         for i in range(n_instruments)
     ]
     return SongState(request="x", header=header, roster=roster)

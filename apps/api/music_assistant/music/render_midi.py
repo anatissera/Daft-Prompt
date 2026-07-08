@@ -10,7 +10,28 @@ from __future__ import annotations
 import pretty_midi
 
 from .theory import beats_per_bar as _beats_per_bar
-from ..domain.song_state import SongState
+from ..domain.song_state import RosterItem, SongState
+
+# Frontend synth presets have no GM program (they route through Tone.js), so
+# `RosterItem.midi_program` is 0 for them. Left as-is, the exported .mid opens
+# in any DAW / external player as acoustic grand piano on every synth track.
+# Map each preset to its closest GM approximation so the file is standalone-
+# playable and doesn't just sound like "five different pianos".
+_SYNTH_PRESET_GM_FALLBACK: dict[str, int] = {
+    "supersaw_lead": 81,  # lead_2_sawtooth
+    "sub_bass": 38,       # synth_bass_1
+    "pluck": 80,          # lead_1_square
+    "warm_pad": 89,       # pad_2_warm
+    "vocal_fx": 54,       # synth_choir
+}
+
+
+def _midi_program_for(roster: RosterItem | None) -> int:
+    if roster is None:
+        return 0
+    if roster.synth_preset and roster.midi_program == 0:
+        return _SYNTH_PRESET_GM_FALLBACK.get(roster.synth_preset, 0)
+    return roster.midi_program
 
 
 def song_to_pretty_midi(song: SongState) -> pretty_midi.PrettyMIDI:
@@ -23,7 +44,7 @@ def song_to_pretty_midi(song: SongState) -> pretty_midi.PrettyMIDI:
 
     for part_id, part in song.parts.items():
         roster = roster_by_id.get(part_id)
-        program = roster.midi_program if roster else 0
+        program = _midi_program_for(roster)
         is_drum = roster.is_drum if roster else False
         inst = pretty_midi.Instrument(program=program, is_drum=is_drum, name=part_id)
 

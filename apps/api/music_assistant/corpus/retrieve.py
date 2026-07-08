@@ -106,43 +106,23 @@ def _decode_json_columns(row: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-_GENRE_SYNONYMS = {
-    "reggaeton": ("reggaeton", "latin urban", "latin"),
-    "bossa": ("bossa", "brazilian", "latin", "jazz"),
-    "bossa nova": ("bossa", "brazilian", "latin", "jazz"),
-    "funk": ("funk", "soul"),
-    "rock": ("rock", "hard rock", "alt rock"),
-    "grunge": ("rock", "alt rock", "grunge"),
-    "pop": ("pop", "dance"),
-    "hip hop": ("hip hop", "rap"),
-    "electronic": ("electronic", "electronica", "edm"),
-    "house": ("house", "electronic", "dance"),
-    "techno": ("techno", "electronic"),
-    "jazz": ("jazz",),
-    "blues": ("blues", "rhythm and blues"),
-    "country": ("country",),
-    "metal": ("metal", "heavy metal"),
-    "soul": ("soul", "r&b", "rnb"),
-    "afrobeat": ("afrobeat", "afro", "latin"),
-    "salsa": ("salsa", "latin"),
-    "cumbia": ("cumbia", "latin"),
-    "classical": ("classical", "orchestral"),
-    "ambient": ("ambient", "electronic"),
-}
+_STOPWORDS = frozenset({
+    "a", "an", "the", "and", "or", "of", "with", "in", "on", "at",
+    "for", "to", "un", "una", "el", "la", "los", "las", "de", "del", "con",
+    "y", "o", "en", "como", "tipo", "estilo", "style", "song", "track",
+    "music", "musica", "música", "genre",
+})
 
 
-def normalize_genre(user_style: str) -> list[str]:
-    """Map a free-form style string to a list of coarse tags used in the corpus
-    indices. First hit wins; unknown → single-element list with the lowercased
-    string so filters still work by substring."""
-    s = (user_style or "").strip().lower()
-    if not s:
-        return []
-    for keyword, tags in _GENRE_SYNONYMS.items():
-        if keyword in s:
-            return list(tags)
-    # Fall back to substring of the raw string.
-    return [s.split()[0]]
+def _tokens(s: str) -> list[str]:
+    """Cheap tokenizer: lowercase, split on non-alphanumerics, drop stopwords
+    and very short tokens. Used for fuzzy genre matching against the corpus
+    without maintaining a closed synonym list."""
+    import re as _re
+    return [
+        t for t in _re.split(r"[^a-z0-9]+", (s or "").lower())
+        if t and len(t) >= 3 and t not in _STOPWORDS
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -161,14 +141,24 @@ def retrieve_style_examples(
     rows = _rows if _rows is not None else _load_lakh()
     if not rows:
         return []
-    tags = normalize_genre(genre) or [genre.lower()]
-    matches = [
-        r for r in rows if any(tag in (r.get("genre") or "").lower() for tag in tags)
-    ]
+    query_tokens = _tokens(genre)
+    if not query_tokens:
+        return []
+
+    def _overlap(row: dict) -> int:
+        row_tokens = set(_tokens(row.get("genre") or ""))
+        return sum(1 for t in query_tokens if t in row_tokens)
+
+    scored = [(r, _overlap(r)) for r in rows]
+    matches = [r for r, s in scored if s > 0]
     if not matches:
         return []
 
-    ranked = sorted(matches, key=lambda r: _energy_distance(r, energy))
+    # Highest overlap first, then closest energy density.
+    ranked = sorted(
+        matches,
+        key=lambda r: (-_overlap(r), _energy_distance(r, energy)),
+    )
     picked = ranked[: max(1, n)]
     return [_row_to_lakh(r) for r in picked]
 
@@ -185,10 +175,13 @@ def retrieve_groove(
     rows = _rows if _rows is not None else _load_groove()
     if not rows:
         return None
-    tags = normalize_genre(style) or [style.lower()]
+    query_tokens = _tokens(style)
+    if not query_tokens:
+        return None
     prefer_type = "fill" if energy == "high" else "beat"
     matches = [
-        r for r in rows if any(tag in (r.get("style") or "").lower() for tag in tags)
+        r for r in rows
+        if any(t in (r.get("style") or "").lower() for t in query_tokens)
     ]
     if not matches:
         return None

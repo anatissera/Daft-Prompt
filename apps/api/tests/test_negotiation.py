@@ -14,8 +14,8 @@ from music_assistant.domain.song_state import (
 
 HEADER = Header(genre="funk", key="D minor", tempo_bpm=110, num_bars=4)
 DRUMS = RosterItem(id="drums", instrument="kit", role="beat", is_drum=True)
-BASS = RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove")
-EPIANO = RosterItem(id="epiano", instrument="rhodes", midi_range=(48, 72), role="harmony")
+BASS = RosterItem(id="bass", instrument="electric_bass", role="groove")
+EPIANO = RosterItem(id="epiano", instrument="rhodes", role="harmony")
 
 GROUPS = [
     CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"], max_negotiation_rounds=2),
@@ -24,6 +24,13 @@ GROUPS = [
 
 
 def _make_director_output(roster, groups):
+    from music_assistant.domain.patch import PATCH_SPEC
+
+    def _patch_for(r):
+        if r.is_drum:
+            return None
+        return r.instrument if r.instrument in PATCH_SPEC else "acoustic_grand_piano"
+
     return DirectorOutput(
         genre="funk", key="D minor", tempo_bpm=110,
         time_sig_numerator=4, time_sig_denominator=4, num_bars=4,
@@ -31,8 +38,8 @@ def _make_director_output(roster, groups):
         chord_progression=[ChordSpan(bar=i, chord="Dm7") for i in range(4)],
         instruments=[
             ArrangementInstrument(
-                id=r.id, instrument=r.instrument, midi_program=0,
-                midi_low=r.midi_range[0], midi_high=r.midi_range[1],
+                id=r.id,
+                patch=_patch_for(r),
                 role=r.role, playing_style="play your role", is_drum=r.is_drum,
             )
             for r in roster
@@ -185,15 +192,16 @@ def test_cross_batch_requests_are_not_dispatched_within_batch():
 
         def invoke(self, messages):
             system_text = next((m for role, m in messages if role == "system"), "")
-            instrument_calls.append(system_text[:40])
+            instrument_calls.append(system_text[:120])
             if len(instrument_calls) <= 2:
                 # drums raises a cross-batch request to epiano — should be ignored within rhythm batch
                 return _turn(36, "rhythm", requests=[NewRequest(to="epiano", bars=[0], request="support me", rationale="texture")])
             return _turn(60, "epiano part")
 
     result = run_negotiation("funk", llm=TrackingLLM())
-    # epiano should only get called once (in its own batch), not dragged into rhythm batch negotiation
-    epiano_calls = sum(1 for s in instrument_calls if "epiano" in s.lower() or "rhodes" in s.lower())
+    # epiano is the only "harmony"-role player in this test; that's how we identify
+    # its turn regardless of which patch/label the roster ends up carrying.
+    epiano_calls = sum(1 for s in instrument_calls if "(harmony)" in s.lower())
     assert epiano_calls == 1
 
 
