@@ -92,8 +92,14 @@ const NAME_TO_PROGRAM: Array<[RegExp, number]> = [
   [/electric bass|\bbass guitar\b|\be\.?bass\b/i, 33],
   [/acoustic bass/i, 32],
   [/\bbass\b|\bsub\b|\b808\b/i, 33],
-  // guitar family
+  // guitar family — order matters. Match the rock/metal-ish qualifiers before
+  // the plain "guitar" fallback so a Director-LLM roster like "Rhythm Guitar"
+  // in a metal arrangement doesn't silently downgrade to program 24 (Acoustic
+  // Guitar nylon), which on a pitch-shifted one-anchor sampler sounds like a
+  // harp — the exact complaint the user hit.
   [/distortion guitar|distorted/i, 30],
+  [/metal guitar|\bmetal\b.*guitar|guitar.*\bmetal\b/i, 30],
+  [/rhythm guitar|lead guitar|power chord|riff guitar/i, 30],
   [/overdriven|overdrive/i, 29],
   [/electric guitar.*muted/i, 28],
   [/electric guitar.*clean|clean guitar/i, 27],
@@ -139,12 +145,29 @@ interface RosterLike {
   role?: string;
   is_drum?: boolean;
   midi_program?: number;
+  synth_preset?: string | null;
 }
 
-/** Trust midi_program when non-zero; otherwise infer from instrument/role name.
- *  Same logic shared by playback (TrackMixer) and MIDI export. */
+// Synth presets play through Tone.js in-page, so their `midi_program` is 0.
+// For the exported .mid to sound sensible in a DAW / external player instead
+// of "all pianos", pick each preset's closest GM approximation. Kept in sync
+// with `apps/api/music_assistant/music/render_midi.py::_SYNTH_PRESET_GM_FALLBACK`.
+const SYNTH_PRESET_GM_FALLBACK: Record<string, number> = {
+  supersaw_lead: 81, // lead_2_sawtooth
+  sub_bass: 38,      // synth_bass_1
+  pluck: 80,         // lead_1_square
+  warm_pad: 89,      // pad_2_warm
+  vocal_fx: 54,      // synth_choir
+};
+
+/** Trust midi_program when non-zero; otherwise map a synth preset to its GM
+ *  equivalent, or infer from instrument/role name. Same logic shared by
+ *  playback (TrackMixer) and MIDI export. */
 export function resolveProgram(r: RosterLike): number {
   if (r.midi_program && r.midi_program > 0) return r.midi_program;
+  if (r.synth_preset && SYNTH_PRESET_GM_FALLBACK[r.synth_preset] !== undefined) {
+    return SYNTH_PRESET_GM_FALLBACK[r.synth_preset];
+  }
   const inferred = inferProgramFromName(r.instrument || r.role || r.id || "");
   return inferred ?? 0;
 }

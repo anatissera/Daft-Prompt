@@ -10,7 +10,7 @@ from inspect import signature
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
-from typing import Iterator
+from typing import AsyncIterator, Iterator, Optional
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +18,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from music_assistant.application.analyze_reference import AnalyzeReference
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
-from music_assistant.application.chat_music import ChatMusic
+from music_assistant.application.chat_music import ChatMusic, _style_with_reference
+from music_assistant.domain.cancellation import (
+    CancelToken,
+    CancelledCompose,
+    set_cancel_token,
+)
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
 from music_assistant.application.research_reference import ResearchReference
 from music_assistant.canned import canned_song
@@ -264,6 +269,156 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
     return response
 
 
+@app.post("/chat/stream")
+async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
+    """Streaming variant of /chat. Emits SSE events so the UI can drive a real
+    pipeline visualisation from actual backend milestones instead of a fake
+    time-based one:
+
+      - ``intent``       — classifier result (``compose``, ``answer_reference``, …)
+      - ``director``     — director produced a header + roster
+      - ``agent_pass``   — one instrument turn completed
+      - ``convergence``  — arbiter finalised the arrangement
+      - ``done``         — artifacts rendered (with URLs)
+      - ``reply``        — for non-compose intents, the full ChatResponse
+      - ``error``        — LLM or config failure
+    """
+    # Scope a CancelToken for this request so any LLM call inside the sync
+    # generator (which runs in a threadpool) can be aborted mid-flight when
+    # the browser hits Stop and the SSE connection drops.
+    token = CancelToken()
+    set_cancel_token(token)
+
+    def sse_body() -> Iterator[str]:
+        profile = None
+        if req.reference_id:
+            profile = REFERENCE_STORE.get(req.reference_id)
+            if profile is None:
+                yield sse_data(
+                    ErrorEvent(
+                        code="reference_not_found",
+                        message=f"reference_id not found: {req.reference_id}",
+                        provider=None,
+                        model=None,
+                        partial=False,
+                    ).model_dump(mode="json")
+                )
+                return
+
+        chat_music = _chat_music()
+        message = req.message.strip()
+        intent = chat_music._classify(message, has_reference=profile is not None)
+        yield sse_data({"type": "intent", "intent": intent})
+
+        if intent not in ("compose", "compose_from_reference"):
+            try:
+                response = chat_music.handle(req)
+            except ComposeConfigurationError as exc:
+                yield sse_data(_compose_configuration_error_event(exc))
+                return
+            except LLMError as exc:
+                yield sse_data(_llm_error_event(exc, partial=False))
+                return
+            yield sse_data({"type": "reply", "response": response.model_dump(mode="json")})
+            return
+
+        if intent == "compose_from_reference":
+            assert profile is not None
+            style = _style_with_reference(message, profile)
+        else:
+            style = message or "demo"
+
+        job = ARTIFACTS.create_job()
+        base = str(request.base_url).rstrip("/")
+        compose_req = ComposeRequest(style=style)
+        try:
+            for event in _compose_stream_events(compose_req, job.job_id, job.path, base):
+                yield sse_data(event)
+        except CancelledCompose:
+            yield sse_data({
+                "type": "error",
+                "code": "cancelled",
+                "message": "compose cancelled by client",
+                "provider": None,
+                "model": None,
+                "partial": True,
+            })
+
+    return StreamingResponse(
+        _sse_with_cancel(request, sse_body(), token),
+        media_type="text/event-stream",
+    )
+
+
+async def _sse_with_cancel(
+    request: Request,
+    body: Iterator[str],
+    token: CancelToken,
+) -> AsyncIterator[str]:
+    """Bridge sync SSE generator → async iterator, polling the client socket
+    in parallel. When the browser disconnects the CancelToken fires, which
+    tears down any in-flight LLM socket via the httpx clients we registered.
+    """
+    import asyncio
+
+    queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def pump() -> None:
+        try:
+            for chunk in body:
+                loop.call_soon_threadsafe(queue.put_nowait, chunk)
+                if token.cancelled:
+                    break
+        except Exception as exc:
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                sse_data({
+                    "type": "error",
+                    "code": "compose_crashed",
+                    "message": str(exc),
+                    "provider": None,
+                    "model": None,
+                    "partial": True,
+                }),
+            )
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    producer = asyncio.create_task(asyncio.to_thread(pump))
+
+    async def watch_disconnect() -> None:
+        try:
+            while not producer.done():
+                if await request.is_disconnected():
+                    token.cancel()
+                    return
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            return
+
+    watcher = asyncio.create_task(watch_disconnect())
+
+    try:
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield chunk
+    finally:
+        token.cancel()  # idempotent — belt-and-suspenders for the finally path
+        watcher.cancel()
+        try:
+            await watcher
+        except Exception:
+            pass
+        try:
+            await producer
+        except Exception:
+            pass
+        set_cancel_token(None)
+
+
 def _chat_music() -> ChatMusic:
     return ChatMusic(
         compose_song=_compose_song(),
@@ -339,6 +494,8 @@ def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base
                 by_alias=True, mode="json"
             )
             return
+    except CancelledCompose:
+        raise
     except ComposeConfigurationError as exc:
         yield _compose_configuration_error_event(exc)
         return

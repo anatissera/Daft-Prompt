@@ -29,7 +29,16 @@ export default function ChatComposer({
           id="prompt-input"
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
-          placeholder="Describe the track you want the studio to compose…"
+          onKeyDown={(event) => {
+            // Enter submits, Shift+Enter still inserts a newline. IME
+            // composition (nativeEvent.isComposing) is ignored so people
+            // typing accented chars / kana don't send half-composed text.
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              if (!busy) event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder="Describe the track you want the studio to compose… (Enter to send, Shift+Enter for newline)"
           className="chat-input"
           rows={1}
         />

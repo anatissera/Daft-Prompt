@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any, Optional, TypeVar
 
 from music_assistant.config import DEFAULT_MODELS, Settings, get_settings
+from music_assistant.domain.cancellation import CancelledCompose, current_cancel_token
 from music_assistant.domain.usage import USAGE_TRACKER, UsageTracker
 
 T = TypeVar("T")
@@ -168,22 +169,34 @@ def _import_openrouter_chat():
     return ChatOpenAI
 
 
-def _build_chat_model(provider: str, model: str, settings: Settings):
+# Per-role sampling temperature. The director picks style-defining fields
+# (key, tempo, roster) that should converge to the genre mode; high temp made
+# it slip into off-genre patches (clean_guitar/orchestral_harp on dark metal
+# runs). Instrument agents stay expressive at the default.
+_ROLE_TEMPERATURE = {"director": 0.3, "arbiter": 0.2}
+
+
+def _temperature_for(role: str) -> float:
+    return _ROLE_TEMPERATURE.get(role, 0.7)
+
+
+def _build_chat_model(provider: str, model: str, settings: Settings, role: str = "director"):
     key = settings.api_key_for(provider)
+    temperature = _temperature_for(role)
     if provider == "gemini":
         ChatGoogleGenerativeAI = _import_gemini_chat()
 
         return ChatGoogleGenerativeAI(
             model=model,
             google_api_key=key,
-            temperature=0.7,
+            temperature=temperature,
             retries=max(0, settings.llm_max_retries),
         )
 
     if provider == "groq":
         from langchain_groq import ChatGroq
 
-        return ChatGroq(model=model, api_key=key, temperature=0.7)
+        return ChatGroq(model=model, api_key=key, temperature=temperature)
 
     if provider == "openrouter":
         try:
@@ -195,13 +208,31 @@ def _build_chat_model(provider: str, model: str, settings: Settings):
                 detail='Install backend extra: pip install -e ".[openrouter]"',
             ) from exc
 
-        return ChatOpenAI(
+        # Give the ChatOpenAI a dedicated httpx.Client we control so that when
+        # the request-scoped CancelToken fires we can .close() this client and
+        # tear the socket down mid-request.
+        #
+        # `streaming` is auto-toggled: only real openrouter.ai supports the
+        # exact streaming tool-call chunk format langchain_openai expects.
+        # Any other base_url (llama-server, vLLM, LiteLLM, LAN IP, custom
+        # hostname) makes langchain_openai raise "Error in input stream"
+        # while parsing structured output, so we default those to
+        # streaming=False and let it read the full JSON response.
+        # For real OpenRouter we keep streaming=True to preserve the mid-token
+        # GPU kill (peer-disconnect stops the remote decode).
+        base_url = settings.openrouter_base_url or ""
+        is_openrouter_cloud = "openrouter.ai" in base_url
+        chat = ChatOpenAI(
             model=model,
             api_key=key,
-            base_url=settings.openrouter_base_url,
-            temperature=0.7,
+            base_url=base_url,
+            temperature=temperature,
             max_retries=max(0, settings.llm_max_retries),
+            http_client=_new_cancellable_http_client(),
+            streaming=is_openrouter_cloud,
         )
+        _register_openai_client_for_cancel(chat)
+        return chat
 
     if provider == "vertexai":
         try:
@@ -215,7 +246,7 @@ def _build_chat_model(provider: str, model: str, settings: Settings):
         return ChatVertexAI(
             model=model,
             project=settings.google_cloud_project,
-            temperature=0.7,
+            temperature=temperature,
         )
 
     raise LLMProviderUnavailable(provider=provider, model=model, detail="unknown provider")
@@ -282,6 +313,32 @@ def _usage_callbacks() -> list:
     return [_UsageCB()]
 
 
+def _new_cancellable_http_client():
+    """Fresh httpx.Client with no read timeout (local Qwen composes can take
+    minutes). Registered with the current CancelToken so a client-side abort
+    can .close() it and drop the in-flight socket."""
+    import httpx
+
+    return httpx.Client(timeout=httpx.Timeout(connect=10.0, read=None, write=None, pool=None))
+
+
+def _register_openai_client_for_cancel(chat) -> None:
+    """Best-effort: locate the httpx.Client the ChatOpenAI's OpenAI SDK client
+    is using and register it so a client cancel can force-close its sockets.
+    Silent if the internal layout differs from what we expect — the
+    between-call event check still catches cancellation."""
+    token = current_cancel_token()
+    if token is None:
+        return
+    # ChatOpenAI.root_client is openai.OpenAI; openai.OpenAI._client is
+    # httpx.Client — that's the object whose sockets we need to reach.
+    for attr in ("root_client", "root_async_client"):
+        openai_client = getattr(chat, attr, None)
+        httpx_client = getattr(openai_client, "_client", None)
+        if httpx_client is not None:
+            token.register_closable(httpx_client)
+
+
 class _FallbackStructuredInvoker:
     def __init__(self, role: str, schema: type, settings: Settings):
         self.role = role
@@ -290,13 +347,26 @@ class _FallbackStructuredInvoker:
 
     def invoke(self, messages):
         def operation(provider: str, model: str):
+            token = current_cancel_token()
+            if token is not None:
+                token.raise_if_cancelled()
             _RATE_LIMITER.wait(self.settings.llm_rpm_limit)
-            chat = _build_chat_model(provider, model, self.settings)
+            chat = _build_chat_model(provider, model, self.settings, role=self.role)
             structured = chat.with_structured_output(self.schema)
             callbacks = _usage_callbacks()
-            if callbacks:
-                return structured.invoke(messages, config={"callbacks": callbacks})
-            return structured.invoke(messages)
+            try:
+                if callbacks:
+                    return structured.invoke(messages, config={"callbacks": callbacks})
+                return structured.invoke(messages)
+            except CancelledCompose:
+                raise
+            except Exception as exc:
+                # If the token fired mid-request, the httpx close raises a
+                # generic transport error; surface it as CancelledCompose so the
+                # generator unwinds without triggering fallback providers.
+                if token is not None and token.cancelled:
+                    raise CancelledCompose("compose was cancelled by the client") from exc
+                raise
 
         return with_fallbacks(self.role, self.settings, operation)
 

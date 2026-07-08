@@ -47,8 +47,8 @@ def _song(*, key="C major", num_bars=4, tempo=120) -> SongState:
             chord_progression=[ChordSpan(bar=b, chord="C") for b in range(num_bars)],
         ),
         roster=[
-            RosterItem(id="bass", instrument="bass", midi_program=33, midi_range=(28, 55), is_drum=False),
-            RosterItem(id="drums", instrument="drums", midi_program=0, midi_range=(35, 81), is_drum=True),
+            RosterItem(id="bass", instrument="bass", midi_program=33, is_drum=False),
+            RosterItem(id="drums", instrument="drums", midi_program=0, is_drum=True),
         ],
         parts={
             "bass": Part(
