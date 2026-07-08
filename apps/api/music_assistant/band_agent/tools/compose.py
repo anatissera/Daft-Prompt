@@ -7,6 +7,8 @@ returns, so this tool is trivial to test.
 
 from __future__ import annotations
 
+from typing import Any, Optional
+
 from music_assistant.domain.patch import resolve_patch
 from music_assistant.domain.song_state import (
     ChordSpan,
@@ -18,12 +20,25 @@ from music_assistant.domain.song_state import (
     SongState,
 )
 from music_assistant.music.finalize import enforce_bass_downbeats
+from music_assistant.music.theory import beats_per_bar as _beats_per_bar
 
 from ..band_spec import BandSpec
+from .drums import synthesize_drum_notes
 
 
-def compose_band(spec: BandSpec, *, request: str = "") -> SongState:
+def compose_band(
+    spec: BandSpec,
+    *,
+    request: str = "",
+    groove: Optional[dict[str, Any]] = None,
+) -> SongState:
     """Build a `SongState` from a fully-specified `BandSpec`.
+
+    Drum instruments (`is_drum=True`) with an empty note list are filled from
+    `groove["pattern_by_channel"]` when supplied; otherwise a default
+    four-on-the-floor is used. This is how we keep drums out of the LLM
+    token budget without losing musicality — the corpus groove is a real
+    DAW-recorded pattern.
 
     Bass downbeat harmonic enforcement is applied so the exported .mid has a
     grounded bass foundation regardless of any planner drift.
@@ -64,19 +79,26 @@ def compose_band(spec: BandSpec, *, request: str = "") -> SongState:
                 is_drum=inst.is_drum,
             )
         )
-        parts[inst.id] = Part(
-            instrument_id=inst.id,
-            notes=[
-                Note(
-                    bar=n.bar,
-                    start_beat=n.start_beat,
-                    pitch=n.pitch,
-                    dur=n.dur,
-                    velocity=n.velocity,
-                )
-                for n in inst.notes
-            ],
-        )
+        notes: list[Note] = [
+            Note(
+                bar=n.bar,
+                start_beat=n.start_beat,
+                pitch=n.pitch,
+                dur=n.dur,
+                velocity=n.velocity,
+            )
+            for n in inst.notes
+        ]
+        if inst.is_drum and not notes:
+            pattern = (groove or {}).get("pattern_by_channel")
+            notes = synthesize_drum_notes(
+                pattern,
+                num_bars=spec.num_bars,
+                beats_per_bar=_beats_per_bar(
+                    (spec.time_signature_numerator, spec.time_signature_denominator)
+                ),
+            )
+        parts[inst.id] = Part(instrument_id=inst.id, notes=notes)
 
     song = SongState(
         request=request or spec.genre,
