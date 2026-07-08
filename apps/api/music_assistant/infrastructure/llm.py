@@ -222,6 +222,13 @@ def _build_chat_model(provider: str, model: str, settings: Settings, role: str =
         # GPU kill (peer-disconnect stops the remote decode).
         base_url = settings.openrouter_base_url or ""
         is_openrouter_cloud = "openrouter.ai" in base_url
+        # llama-server accepts a non-OpenAI-standard `cache_prompt` field;
+        # sending it here is a no-op on real openrouter.ai (it drops unknown
+        # keys) but tells llama.cpp to keep the KV-cache warm across our
+        # parallel per-instrument fills, which share a stable system prefix.
+        # Combined with server-side `--cache-reuse N`, this gives cross-call
+        # prefix reuse. See docs/perf notes.
+        extra_body = {} if is_openrouter_cloud else {"cache_prompt": True}
         chat = ChatOpenAI(
             model=model,
             api_key=key,
@@ -230,6 +237,7 @@ def _build_chat_model(provider: str, model: str, settings: Settings, role: str =
             max_retries=max(0, settings.llm_max_retries),
             http_client=_new_cancellable_http_client(),
             streaming=is_openrouter_cloud,
+            extra_body=extra_body,
         )
         _register_openai_client_for_cancel(chat)
         return chat
