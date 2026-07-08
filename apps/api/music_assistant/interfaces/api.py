@@ -31,6 +31,7 @@ from music_assistant.config import get_settings
 from music_assistant.domain.audio_profile import ReferenceProfile, ReferenceSource
 from music_assistant.domain.song_state import Part
 from music_assistant.graph import iter_negotiation_events, run_negotiation
+from music_assistant.band_agent import stream_compose as band_agent_stream
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
@@ -460,12 +461,22 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
 
 
 def _compose_song() -> ComposeSong:
+    # Non-stream path (`/compose`) still uses the legacy negotiator so a POST
+    # that expects a full ComposeResponse keeps working. All streaming clients
+    # (the UI's `/chat/stream`) go through the from-scratch band agent below.
     return ComposeSong(
         llm_configured=lambda: get_settings().llm_configured,
         negotiator=run_negotiation,
-        event_streamer=iter_negotiation_events,
+        event_streamer=_band_agent_event_streamer,
         canned=canned_song,
     )
+
+
+def _band_agent_event_streamer(style: str) -> Iterator[tuple[dict, Optional[Part]]]:
+    """Adapter: bridge `band_agent.stream_compose` (yields `(event, SongState)`)
+    to the `ComposeSong.event_streamer` signature. The wrapper's contract is
+    "any snapshot object", so passing SongState through is fine."""
+    yield from band_agent_stream(style)
 
 
 def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base: str) -> Iterator[dict]:
