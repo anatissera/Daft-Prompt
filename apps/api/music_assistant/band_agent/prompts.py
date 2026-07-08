@@ -36,9 +36,12 @@ RULES — non-negotiable:
    pads, subs, plucks, vocal fx):
 {_bullet_list(_SYNTH_PATCHES)}
 
-2. For drums, set `is_drum=true` and pick a drum-ish `patch` from the list
-   above (e.g. `synth_bass_1` is fine as a placeholder — drums route through
-   GM channel 10 regardless of patch).
+2. For drums, set `is_drum=true`, pick any patch from the list above as a
+   placeholder (drums route through GM channel 10 regardless), and LEAVE
+   `notes` EMPTY (`[]`). The backend fills the drum track from a real DAW
+   groove pattern — you must not emit drum notes yourself. This saves you
+   from spending tokens on a pattern the backend does better anyway.
+   Include exactly ONE drum roster item (id `drums`).
 
 3. `chord_progression` covers every bar from 0 to `num_bars-1`. Emit a chord
    at bar 0 and at every point it changes. Use plain symbols: `Cmaj7`, `Am7`,
@@ -53,10 +56,7 @@ RULES — non-negotiable:
 5. Bass notes on beat 0 of each bar should be the ROOT of that bar's chord
    (dropped by an octave into MIDI 28-48 range).
 
-6. Drums typically use these GM pitches on `is_drum=true` tracks:
-   36=kick, 38=snare, 42=closed hat, 46=open hat, 49=crash, 51=ride.
-
-7. Give at least 4 distinct instruments in the roster (bass, drums, and two
+6. Give at least 4 distinct instruments in the roster (bass, drums, and two
    melodic/harmonic voices at minimum).
 """
 

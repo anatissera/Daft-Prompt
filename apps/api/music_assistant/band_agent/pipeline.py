@@ -84,7 +84,8 @@ def _plan_node(state: _AgentState) -> _AgentState:
 
 def _compose_node(state: _AgentState) -> _AgentState:
     spec = state["spec"]
-    song = compose_band(spec, request=state.get("style", ""))
+    groove = (state.get("corpus") or {}).get("groove")
+    song = compose_band(spec, request=state.get("style", ""), groove=groove)
     return {"song": song}
 
 
