@@ -18,14 +18,19 @@ _DEFAULT_LIMIT = 6
 _SUFFIX = " music production style tempo key instruments"
 
 
-def search_web(query: str, *, limit: int = _DEFAULT_LIMIT) -> list[dict[str, Any]]:
+def search_web(
+    query: str, *, limit: int = _DEFAULT_LIMIT, decorate: bool = True
+) -> list[dict[str, Any]]:
     """Return up to `limit` DDG results for a style/artist query.
 
-    The suffix nudges DDG toward pages that name tempo/key/instrument info
-    rather than lyrics or streaming links.
+    `decorate=True` (default) appends a production-focused suffix that biases
+    DDG toward tempo/key/instrument pages. Pass `decorate=False` when you
+    want the raw query — useful for a follow-up genre lookup where the plain
+    "<artist> genre" phrasing has to reach Wikipedia intros untouched.
     """
     q = (query or "").strip()
     if not q:
         return []
-    results = DuckDuckGoSearch().search(q + _SUFFIX, limit=limit)
+    q_full = q + _SUFFIX if decorate else q
+    results = DuckDuckGoSearch().search(q_full, limit=limit)
     return [{"title": r.title, "url": r.url, "site": r.site} for r in results]

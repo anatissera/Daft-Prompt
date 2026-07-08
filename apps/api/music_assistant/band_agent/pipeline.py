@@ -27,7 +27,12 @@ from music_assistant.infrastructure.llm import make_llm
 
 from .band_spec import BandSpec
 from .prompts import SYSTEM_PROMPT, user_prompt
-from .tools import compose_band, retrieve_corpus, search_web
+from .tools import (
+    compose_band,
+    infer_genre_from_titles,
+    retrieve_corpus,
+    search_web,
+)
 
 
 class _AgentState(TypedDict, total=False):
@@ -39,10 +44,37 @@ class _AgentState(TypedDict, total=False):
     events: list[dict[str, Any]]
 
 
+def _text_signals(hits: list[dict[str, Any]]) -> list[str]:
+    """Flatten titles + host names from a search-hit list so `infer_genre_from_titles`
+    can scan both. URLs of curated sites (e.g. `edm.com`) often carry the genre
+    keyword even when the title doesn't."""
+    out: list[str] = []
+    for h in hits:
+        out.append(h.get("title", "") or "")
+        out.append(h.get("site", "") or "")
+    return out
+
+
 def _research_node(state: _AgentState) -> _AgentState:
     style = state.get("style", "")
     research = search_web(style)
     corpus = retrieve_corpus(style)
+    inferred_genre: str | None = None
+    # The Lakh index is genre-tagged, not artist-tagged, so a prompt like
+    # "marshmello" scores 0 overlap. Scan the web-result titles for a known
+    # genre keyword and re-query — this typically recovers a real groove and
+    # tempo prior without adding an LLM call.
+    if not corpus.get("examples"):
+        # Try titles from the original search first; if that's silent, do a
+        # cheap second query biased toward genre pages ("<query> genre").
+        inferred_genre = infer_genre_from_titles(
+            _text_signals(research + [{"title": style}])
+        )
+        if inferred_genre is None:
+            extra = search_web(f"{style} genre", decorate=False)
+            inferred_genre = infer_genre_from_titles(_text_signals(extra))
+        if inferred_genre:
+            corpus = retrieve_corpus(inferred_genre)
     events = state.get("events", []) + [
         {
             "type": "progress",
@@ -50,6 +82,7 @@ def _research_node(state: _AgentState) -> _AgentState:
             "message": (
                 f"found {len(research)} web hits; "
                 f"{len(corpus.get('examples', []))} corpus exemplars"
+                + (f" (via inferred genre: {inferred_genre})" if inferred_genre else "")
             ),
         }
     ]
