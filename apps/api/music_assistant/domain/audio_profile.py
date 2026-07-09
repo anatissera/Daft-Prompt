@@ -461,6 +461,30 @@ class StemDynamics(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
+class MelodyEvent(BaseModel):
+    """One bounded, representative event from an audio transcription.
+
+    This deliberately carries musical timing rather than model-specific output
+    arrays, so it remains useful to chat and future symbolic tools.
+    """
+
+    bar: int = Field(ge=0)
+    start_beat: float = Field(ge=0.0)
+    duration_beats: float = Field(gt=0.0)
+    pitch: int = Field(ge=0, le=127)
+
+
+class MelodyProfile(BaseModel):
+    """Compact, provisional melodic evidence extracted from local audio."""
+
+    note_count: int = Field(ge=0)
+    pitch_low: Optional[int] = Field(default=None, ge=0, le=127)
+    pitch_high: Optional[int] = Field(default=None, ge=0, le=127)
+    contour: Literal["rising", "falling", "static", "mixed", "unknown"] = "unknown"
+    representative_events: list[MelodyEvent] = Field(default_factory=list, max_length=32)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class StemProfile(BaseModel):
     name: str
     artifact_uri: Optional[str] = None
@@ -516,6 +540,7 @@ class AudioProfile(BaseModel):
     structure: Optional[StructureProfile] = None
     mix_timbre: Optional[TimbreProfile] = None
     ensemble: Optional[EnsembleProfile] = None
+    melody: Optional[MelodyProfile] = None
     analysis_notes: list[AnalysisNote] = Field(default_factory=list)
 
 

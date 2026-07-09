@@ -210,3 +210,11 @@ def test_reference_analyzer_wires_development_stem_cache(tmp_path, monkeypatch):
 
     assert analyzer.separator.cache_enabled is True
     assert analyzer.separator.cache_root == tmp_path / "stem-cache"
+
+
+def test_reference_transcriber_is_opt_in(monkeypatch):
+    monkeypatch.setattr(api, "get_settings", lambda: SimpleNamespace(enable_melody_transcription=False))
+    assert api._reference_transcriber() is None
+
+    monkeypatch.setattr(api, "get_settings", lambda: SimpleNamespace(enable_melody_transcription=True))
+    assert isinstance(api._reference_transcriber(), api.BasicPitchTranscriber)

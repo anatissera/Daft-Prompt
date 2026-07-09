@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     reference_upload_max_bytes: int = 50 * 1024 * 1024
     reference_stem_cache_enabled: bool = False
     reference_stem_cache_dir: Optional[str] = None
+    enable_melody_transcription: bool = False
     enable_web_research: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
