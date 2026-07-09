@@ -99,12 +99,16 @@ class ChatResponse(BaseModel):
     error: Optional[dict[str, Any]] = None
 
 
-_COMPOSE_RE = re.compile(r"\b(compose|generate|make|write|create|sketch|produce)\b", re.IGNORECASE)
+_COMPOSE_RE = re.compile(
+    r"\b(compose|generate|make|write|create|sketch|produce|compon[eé]|componer|gener[aá]|generar|cre[aá]|crear)\b",
+    re.IGNORECASE,
+)
 _REFERENCE_TOPIC_RE = re.compile(
     r"\b(chord|chords|tempo|bpm|key|energy|section|sections|chorus|verse|analysis|analyze|profile|progression|harmony|harmonic"
     # deep-listening vocabulary — route these to the evidence-backed answer path
     r"|swing|swings|swung|groove|syncopated|syncopation|shuffle|feel|build|builds|drop|drops|dynamics|loudness"
-    r"|timbre|bright|dark|warm|noisy|sound|sounds|arrangement|instrument|instruments|tab|tabs|melody|melodic|riff|solo|lead)\b",
+    r"|timbre|bright|dark|warm|noisy|sound|sounds|arrangement|instrument|instruments|tab|tabs|melody|melodic|riff|solo|lead"
+    r"|acorde|acordes|tonalidad|energ[ií]a|secci[oó]n|secciones|coro|estrofa|ritmo|bater[ií]a|bajo|guitarra|teclado|piano|melod[ií]a|fraseo|instrumentos|estructura)\b",
     re.IGNORECASE,
 )
 _RESEARCH_RE = re.compile(r"\b(research|look\s*up|search|buscar|busc[aá])\b", re.IGNORECASE)
@@ -115,7 +119,8 @@ _RESEARCH_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _REFERENCE_GUIDE_RE = re.compile(
-    r"\b(like\s+this|like\s+the\s+(reference|song|track)|based\s+on\s+(this|the\s+(reference|song|track))|using\s+(this|the)\s+(reference|song|track)|inspired\s+by\s+(this|the\s+(reference|song|track))|same\s+(vibe|feel|energy)|in\s+this\s+style)\b",
+    r"\b(like\s+this|like\s+the\s+(reference|song|track)|based\s+on\s+(this|the\s+(reference|song|track))|using\s+(this|the)\s+(reference|song|track)|inspired\s+by\s+(this|the\s+(reference|song|track))|same\s+(vibe|feel|energy)|in\s+this\s+style"
+    r"|como\s+(esta|ésta|la)\s+(referencia|canci[oó]n|tema)|basad[oa]\s+en\s+(esta|la)\s+(referencia|canci[oó]n|tema)|usando\s+(esta|la)\s+(referencia|canci[oó]n|tema)|con\s+la\s+misma\s+(energ[ií]a|onda|vibra|estilo)|en\s+este\s+estilo)\b",
     re.IGNORECASE,
 )
 

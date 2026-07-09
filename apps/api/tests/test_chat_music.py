@@ -568,6 +568,30 @@ def test_spanish_song_edit_routes_to_the_named_instrument():
     ]
 
 
+def test_spanish_reference_question_routes_to_evidence_backed_answer():
+    profile = _make_profile()
+    chat, _, explainer, store = _make_chat()
+    store.save(profile)
+
+    response = chat.handle(ChatRequest(message="¿Qué acordes tiene esta canción?", reference_id=profile.reference_id))
+
+    assert response.intent == "answer_reference"
+    assert explainer.calls == [("¿Qué acordes tiene esta canción?", profile.reference_id)]
+
+
+def test_spanish_composition_request_uses_current_reference():
+    profile = _make_profile()
+    chat, composer, _, store = _make_chat()
+    store.save(profile)
+
+    response = chat.handle(
+        ChatRequest(message="Componé un solo usando esta referencia.", reference_id=profile.reference_id)
+    )
+
+    assert response.intent == "compose_from_reference"
+    assert composer.calls
+
+
 def test_listening_questions_route_to_the_answer_path():
     profile = _make_profile()
     chat, composer, explainer, store = _make_chat()
