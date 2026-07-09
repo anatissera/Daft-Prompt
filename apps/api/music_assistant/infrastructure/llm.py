@@ -221,23 +221,44 @@ def _build_chat_model(provider: str, model: str, settings: Settings, role: str =
         # For real OpenRouter we keep streaming=True to preserve the mid-token
         # GPU kill (peer-disconnect stops the remote decode).
         base_url = settings.openrouter_base_url or ""
-        is_openrouter_cloud = "openrouter.ai" in base_url
-        # llama-server accepts a non-OpenAI-standard `cache_prompt` field;
-        # sending it here is a no-op on real openrouter.ai (it drops unknown
-        # keys) but tells llama.cpp to keep the KV-cache warm across our
-        # parallel per-instrument fills, which share a stable system prefix.
-        # Combined with server-side `--cache-reuse N`, this gives cross-call
-        # prefix reuse. See docs/perf notes.
-        extra_body = {} if is_openrouter_cloud else {"cache_prompt": True}
+        # Classify the target: real cloud OpenAI-compat gateway (openrouter.ai,
+        # opencode.ai) vs. a local llama.cpp / vLLM. The three flags differ:
+        #  - `is_local`: send `cache_prompt: true` so llama.cpp reuses KV cache.
+        #  - `is_metered_openrouter`: cap `max_tokens` because openrouter.ai
+        #    reserves credits against it up-front; opencode.ai is a flat-fee
+        #    subscription and doesn't charge per-token, so no cap.
+        #  - streaming: on for real cloud gateways, off for llama.cpp
+        #    (langchain_openai flakes on llama.cpp's SSE format).
+        is_local = ("localhost" in base_url) or ("127.0.0.1" in base_url) or ("0.0.0.0" in base_url)
+        is_metered_openrouter = "openrouter.ai" in base_url
+        extra_body = {"cache_prompt": True} if is_local else {}
+        # OpenRouter reserves credits against max_tokens up-front, so we cap
+        # tight there. Opencode-go is a flat subscription — no credit issue,
+        # but we still request a generous budget explicitly so tool-call
+        # arguments (structured-output JSON) never get truncated mid-note.
+        # Local llama-server: unbounded.
+        if is_metered_openrouter:
+            max_tokens = 6000
+        elif is_local:
+            max_tokens = None
+        else:
+            max_tokens = 8000
+        # Streaming ON only for real openrouter.ai — everything else
+        # (llama.cpp, opencode.ai) mangles the OpenAI SSE format enough that
+        # `with_structured_output` fails at the incremental JSON parse
+        # ("expected value at line 1 column 1"). Non-streaming gives us the
+        # full response body and lets langchain parse it once at the end.
+        streaming = is_metered_openrouter
         chat = ChatOpenAI(
             model=model,
             api_key=key,
             base_url=base_url,
             temperature=temperature,
             max_retries=max(0, settings.llm_max_retries),
-            http_client=_new_cancellable_http_client(),
-            streaming=is_openrouter_cloud,
+            http_client=_new_cancellable_http_client(read_timeout=None if is_local else 180.0),
+            streaming=streaming,
             extra_body=extra_body,
+            max_tokens=max_tokens,
         )
         _register_openai_client_for_cancel(chat)
         return chat
@@ -321,13 +342,17 @@ def _usage_callbacks() -> list:
     return [_UsageCB()]
 
 
-def _new_cancellable_http_client():
-    """Fresh httpx.Client with no read timeout (local Qwen composes can take
-    minutes). Registered with the current CancelToken so a client-side abort
-    can .close() it and drop the in-flight socket."""
+def _new_cancellable_http_client(read_timeout: Optional[float] = None):
+    """Fresh httpx.Client. Local llama-server calls pass `read_timeout=None`
+    so a long Qwen decode never trips the client. Cloud gateways (opencode-go,
+    openrouter.ai) pass a bounded value so a dropped mid-response doesn't
+    stall the whole compose graph on `as_completed` — the failed fill returns
+    a silent instrument instead of hanging forever."""
     import httpx
 
-    return httpx.Client(timeout=httpx.Timeout(connect=10.0, read=None, write=None, pool=None))
+    return httpx.Client(timeout=httpx.Timeout(
+        connect=10.0, read=read_timeout, write=read_timeout, pool=read_timeout
+    ))
 
 
 def _register_openai_client_for_cancel(chat) -> None:
@@ -360,7 +385,28 @@ class _FallbackStructuredInvoker:
                 token.raise_if_cancelled()
             _RATE_LIMITER.wait(self.settings.llm_rpm_limit)
             chat = _build_chat_model(provider, model, self.settings, role=self.role)
-            structured = chat.with_structured_output(self.schema)
+            # OpenAI-compat gateways that expose reasoning models (MiniMax M3,
+            # DeepSeek R1, etc.) emit `<think>...</think>` before the JSON
+            # payload — the default `json_schema` parser can't skip that and
+            # errors with "expected value at line 1 column 1". Tool-calling
+            # (`method="function_calling"`) works because the reasoning goes
+            # into the message body while the structured output travels as a
+            # tool call. Only openrouter (our name for any OpenAI-compat
+            # gateway) needs this — Gemini uses its own native path.
+            if provider == "openrouter":
+                # `tool_choice="required"` forces the model to actually
+                # call the tool. Without this MiniMax M3 sometimes returns
+                # a plain assistant reply (with reasoning) and no tool
+                # call, which `with_structured_output` surfaces as `None`
+                # → our fills node crashed with `NoneType has no attribute
+                # notes` and silently produced empty tracks.
+                structured = chat.with_structured_output(
+                    self.schema,
+                    method="function_calling",
+                    tool_choice="required",
+                )
+            else:
+                structured = chat.with_structured_output(self.schema)
             callbacks = _usage_callbacks()
             try:
                 if callbacks:

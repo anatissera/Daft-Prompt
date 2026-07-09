@@ -2264,6 +2264,7 @@ source = { editable = "." }
 dependencies = [
     { name = "demucs" },
     { name = "fastapi" },
+    { name = "langchain-google-genai" },
     { name = "langgraph" },
     { name = "langsmith" },
     { name = "librosa" },
@@ -2302,6 +2303,7 @@ requires-dist = [
     { name = "demucs", specifier = ">=4.0" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "langchain-google-genai", specifier = ">=2.1.12" },
     { name = "langchain-google-genai", marker = "extra == 'gemini'", specifier = ">=2.0" },
     { name = "langchain-google-vertexai", marker = "extra == 'vertexai'", specifier = ">=2.0" },
     { name = "langchain-groq", marker = "extra == 'groq'", specifier = ">=0.2" },

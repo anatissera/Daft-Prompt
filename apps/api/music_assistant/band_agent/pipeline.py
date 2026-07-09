@@ -21,8 +21,11 @@ decode behind the slowest one (with `-np N` slots on llama-server).
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Iterator, Optional, TypedDict
+
+_log = logging.getLogger(__name__)
 
 from langgraph.graph import END, StateGraph
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -35,31 +38,40 @@ from .band_spec import (
     BandSpec,
     InstrumentDecl,
     InstrumentFill,
+    IntentDecision,
     NotePlan,
     spec_from_skeleton,
 )
 from .prompts import (
     FILL_SYSTEM_PROMPT,
+    INTENT_SYSTEM_PROMPT,
     SKELETON_SYSTEM_PROMPT,
     fill_user_prompt,
+    intent_user_prompt,
     skeleton_user_prompt,
 )
 from .tools import (
     compose_band,
+    deterministic_fill,
+    download_midi,
+    import_midi,
     infer_genre_from_titles,
     retrieve_corpus,
+    search_midi_online,
     search_web,
 )
 
 
 class _AgentState(TypedDict, total=False):
     style: str
+    intent: IntentDecision
     research: list[dict[str, Any]]
     corpus: dict[str, Any]
     skeleton: BandSkeleton
     fills: dict[str, list[NotePlan]]
     spec: BandSpec
     song: SongState
+    replicate_failed: bool
     events: list[dict[str, Any]]
 
 
@@ -134,9 +146,10 @@ def _skeleton_node(state: _AgentState) -> _AgentState:
     return {"skeleton": skeleton, "events": events}
 
 
-# How many per-instrument fill calls to run concurrently. Local llama-server
-# usually has 1-2 slots (`-np 1|2`); above that it serialises internally.
-# Kept small so we don't oversubscribe the model.
+# How many per-instrument fill calls to run concurrently. 4 works well on
+# Gemini free-tier (15 RPM headroom) and llama-server (4 slots). Drop to
+# 1-2 on tight OpenRouter accounts where each in-flight call reserves
+# max_tokens against the credit budget.
 _FILL_MAX_WORKERS = 4
 
 
@@ -148,6 +161,8 @@ def _fills_node(state: _AgentState) -> _AgentState:
     ]
 
     fills: dict[str, list[NotePlan]] = {}
+    fallback_ids: list[str] = []
+    targets_by_id = {inst.id: inst for inst in targets}
     if targets:
         with ThreadPoolExecutor(max_workers=min(_FILL_MAX_WORKERS, len(targets))) as pool:
             futures = {
@@ -158,19 +173,29 @@ def _fills_node(state: _AgentState) -> _AgentState:
                 inst_id = futures[fut]
                 try:
                     fill: InstrumentFill = fut.result()
+                    if not fill.notes:
+                        raise ValueError("empty note list")
                     fills[inst_id] = fill.notes
-                except Exception:
-                    # A single failed fill leaves that instrument silent
-                    # instead of crashing the whole song. The rest of the
-                    # arrangement is still musically coherent.
-                    fills[inst_id] = []
+                except Exception as exc:
+                    _log.warning(
+                        "band_agent: fill for %s failed (%s: %s) — using deterministic fallback",
+                        inst_id, type(exc).__name__, exc,
+                    )
+                    fills[inst_id] = deterministic_fill(skeleton, targets_by_id[inst_id])
+                    fallback_ids.append(inst_id)
 
+    llm_ok = sum(1 for iid, v in fills.items() if v and iid not in fallback_ids)
     events = state.get("events", []) + [
         {
             "type": "progress",
             "stage": "fills",
             "message": (
                 f"filled {sum(1 for v in fills.values() if v)} / {len(targets)} instruments"
+                + (
+                    f" ({llm_ok} by LLM, {len(fallback_ids)} deterministic fallback: "
+                    f"{', '.join(fallback_ids)})"
+                    if fallback_ids else ""
+                )
             ),
         }
     ]
@@ -200,13 +225,124 @@ def _compose_node(state: _AgentState) -> _AgentState:
     return {"spec": spec, "song": song}
 
 
+# --------------------------------------------------------------------------
+# Intent classification: one small LLM call decides whether the user is
+# asking to reproduce a specific song ("replicate") or to compose in a style
+# ("compose"). This replaces a brittle regex router: users write prompts in
+# Spanish/English/mixed, with typos, quoted titles, weird verb choices, and
+# implicit references ("hazme viva la vida" is replicate; "hazme algo como
+# viva la vida" is compose). A tiny LLM handles that space; a regex can't.
+# --------------------------------------------------------------------------
+
+
+def _intent_node(state: _AgentState) -> _AgentState:
+    prompt = state.get("style", "")
+    llm = make_llm(role="director").with_structured_output(IntentDecision)
+    messages = [
+        SystemMessage(content=INTENT_SYSTEM_PROMPT),
+        HumanMessage(content=intent_user_prompt(prompt)),
+    ]
+    try:
+        decision: IntentDecision = llm.invoke(messages)
+    except Exception:
+        # If the classifier hiccups, fall through to compose — replicate is
+        # the more expensive path (external HTTP + no re-generation), so
+        # failing safe means we still produce a song.
+        decision = IntentDecision(intent="compose", target=None)
+    events = state.get("events", []) + [
+        {
+            "type": "progress",
+            "stage": "intent",
+            "message": (
+                f"intent={decision.intent}"
+                + (f" target='{decision.target}'" if decision.target else "")
+            ),
+        }
+    ]
+    return {"intent": decision, "events": events}
+
+
+# --------------------------------------------------------------------------
+# Replicate path: agent decided this is a "reproduce specific song" ask →
+# search Bitmidi, download, import verbatim. Skips skeleton + fills — the
+# LLM has nothing to add on top of a real transcription.
+# --------------------------------------------------------------------------
+
+
+def _replicate_node(state: _AgentState) -> _AgentState:
+    prompt = state.get("style", "")
+    decision = state.get("intent")
+    query = (decision.target if decision else "") or prompt
+    events = list(state.get("events", []))
+    hits = search_midi_online(query, limit=3)
+    if not hits:
+        events.append({
+            "type": "progress",
+            "stage": "replicate_miss",
+            "message": f"no MIDI found on Bitmidi for '{query}' — falling back to compose",
+        })
+        # Signal to the router: no song yet, and skeleton/fills should run.
+        return {"events": events, "replicate_failed": True}
+    chosen = hits[0]
+    events.append({
+        "type": "progress",
+        "stage": "replicate_hit",
+        "message": f"downloading '{chosen.title}' from Bitmidi",
+    })
+    path = download_midi(chosen)
+    if path is None:
+        events.append({
+            "type": "progress",
+            "stage": "replicate_miss",
+            "message": "download failed — falling back to compose",
+        })
+        return {"events": events, "replicate_failed": True}
+    song = import_midi(path, request=prompt)
+    events.append({
+        "type": "progress",
+        "stage": "replicate_done",
+        "message": (
+            f"imported {len(song.roster)} tracks, "
+            f"{sum(len(p.notes) for p in song.parts.values())} notes"
+        ),
+    })
+    return {"song": song, "events": events}
+
+
+def _route_after_intent(state: _AgentState) -> str:
+    """LangGraph conditional edge: use the classifier's decision to pick
+    between the replicate flow and the from-scratch compose flow."""
+    decision = state.get("intent")
+    if decision and decision.intent == "replicate" and decision.target:
+        return "do_replicate"
+    return "do_research"
+
+
+def _route_after_replicate(state: _AgentState) -> str:
+    """If Bitmidi missed, fall through to compose (research → skeleton → …)
+    so the user still gets a song. Otherwise we're done."""
+    if state.get("replicate_failed"):
+        return "do_research"
+    return END
+
+
 def _build_graph():
     g = StateGraph(_AgentState)
+    g.add_node("do_intent", _intent_node)
+    g.add_node("do_replicate", _replicate_node)
     g.add_node("do_research", _research_node)
     g.add_node("do_skeleton", _skeleton_node)
     g.add_node("do_fills", _fills_node)
     g.add_node("do_compose", _compose_node)
-    g.set_entry_point("do_research")
+    g.set_entry_point("do_intent")
+    g.add_conditional_edges("do_intent", _route_after_intent, {
+        "do_replicate": "do_replicate",
+        "do_research": "do_research",
+    })
+    g.add_conditional_edges("do_replicate", _route_after_replicate, {
+        "do_research": "do_research",
+        END: END,
+    })
     g.add_edge("do_research", "do_skeleton")
     g.add_edge("do_skeleton", "do_fills")
     g.add_edge("do_fills", "do_compose")

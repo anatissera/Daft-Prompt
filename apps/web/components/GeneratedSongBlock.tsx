@@ -7,6 +7,7 @@ import type { Part, RosterItem, SongState } from "@/lib/types";
 import { getAudibleTrackIds } from "@/lib/trackMixerLogic.mjs";
 import { harmonicFitView, harmonicFitLabel } from "@/lib/harmonicFitView.mjs";
 import { triggerMidiDownload } from "@/lib/midiExport";
+import { triggerMp3Download } from "@/lib/mp3Export";
 import NegotiationFeed from "@/components/NegotiationFeed";
 import RosterView from "@/components/RosterView";
 
@@ -66,6 +67,8 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
   // share the same Mute/Solo state.
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(() => new Set());
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
+  const [mp3State, setMp3State] = useState<"idle" | "rendering" | "error">("idle");
+  const [mp3Error, setMp3Error] = useState<string | null>(null);
 
   return (
     <section className="song-deck" aria-label="Generated song">
@@ -115,17 +118,38 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             onMutedChange={setMutedTrackIds}
             onSoloChange={setSoloTrackIds}
           />
-          <button
-            type="button"
-            className="artifact-link"
-            onClick={() => {
-              const partIds = Object.keys(song.parts);
-              const audible = getAudibleTrackIds(partIds, mutedTrackIds, soloTrackIds);
-              triggerMidiDownload(song, audible);
-            }}
-          >
-            ↓ Download MIDI ({hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full"})
-          </button>
+          <div className="artifact-link-row">
+            <button
+              type="button"
+              className="artifact-link"
+              onClick={() => {
+                const partIds = Object.keys(song.parts);
+                const audible = getAudibleTrackIds(partIds, mutedTrackIds, soloTrackIds);
+                triggerMidiDownload(song, audible);
+              }}
+            >
+              ↓ Download MIDI ({hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full"})
+            </button>
+            <button
+              type="button"
+              className="artifact-link"
+              disabled={mp3State === "rendering"}
+              onClick={async () => {
+                setMp3State("rendering");
+                setMp3Error(null);
+                try {
+                  await triggerMp3Download(song);
+                  setMp3State("idle");
+                } catch (e) {
+                  setMp3Error(String((e as Error).message ?? e));
+                  setMp3State("error");
+                }
+              }}
+            >
+              {mp3State === "rendering" ? "Rendering MP3…" : "↓ Download MP3"}
+            </button>
+          </div>
+          {mp3Error ? <p className="empty-note">MP3 render failed: {mp3Error}</p> : null}
         </>
       ) : (
         <p className="empty-note">
