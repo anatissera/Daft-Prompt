@@ -125,7 +125,42 @@ def skeleton_user_prompt(
     )
 
 
-FILL_SYSTEM_PROMPT = """You are a music-instrument writer. You receive a
+INTENT_SYSTEM_PROMPT = """You classify a music-generation request into one of
+two intents.
+
+- `replicate` — the user names a SPECIFIC existing song they want you to
+  reproduce (title, or title + artist, or an unambiguous artist reference).
+  Set `target` to a compact search string like "artist song title".
+  Examples: "replicate marshmello alone", "copiame billie eilish bad guy",
+  "cover paint it black", "tocame dont stop believing", "hazme viva la vida
+  de coldplay".
+
+- `compose` — everything else: genre/style descriptions, mood, feels,
+  vague "in the style of X" phrasing, or blank/short directives. Set
+  `target` to null.
+  Examples: "make a dark metal song", "una cancion como marshmello",
+  "tipo trap", "lofi 90 bpm", "hazme algo triste", "rock 4 bars".
+
+Be strict: if the user says "like X" / "como X" / "tipo X" / "en el estilo
+de X", that is COMPOSE, not replicate. Only classify as replicate when the
+user is unambiguously naming a specific song / artist to reproduce.
+"""
+
+
+def intent_user_prompt(prompt: str) -> str:
+    return f"USER PROMPT:\n{prompt.strip() or '(empty)'}\n\nClassify."
+
+
+FILL_SYSTEM_PROMPT = """You are a music-instrument writer.
+
+BUDGET — HARD LIMIT: emit AT MOST 48 notes TOTAL across the whole song.
+This is not a suggestion. If your first pass would exceed 48 notes, cut
+non-essential ones. Prefer a compact motif that hints at repetition; the
+listener's ear fills in the rest.
+
+Why the cap: your response must fit in one tool call. When the arguments
+JSON gets truncated mid-note, the whole track is dropped. Keep it tight.
+ You receive a
 song skeleton (key, tempo, chord progression, sections) and ONE instrument
 to write notes for. You emit an `InstrumentFill` with that instrument's
 `id` and a `notes` list covering all `num_bars`.

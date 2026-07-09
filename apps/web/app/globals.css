@@ -1413,6 +1413,17 @@ code, pre, .mono { font-family: var(--font-mono); }
   align-self: flex-start;
 }
 
+/* Row that holds the MIDI + MP3 download buttons side by side */
+.song-deck > .artifact-link-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 18px 0;
+}
+.song-deck > .artifact-link-row > .artifact-link {
+  margin: 0;
+}
+
 /* ═══ SCORE PARCHMENT ═════════════════════════════════════════════════════ */
 
 .song-deck .score-frame,

@@ -21,22 +21,33 @@ from music_assistant.domain.patch import Patch
 
 
 class SectionPlan(BaseModel):
-    name: str
-    start_bar: int = Field(ge=0)
-    end_bar: int = Field(ge=0)
+    """Defaults on every field: MiniMax M3 sometimes emits partial section slots
+    (e.g. `{"$text": "medium"}` — the energy value hoisted to the parent). We
+    don't want a chatty planner blowing up the entire skeleton over an aux
+    field. Sections are cosmetic downstream anyway."""
+
+    name: str = "section"
+    start_bar: int = Field(default=0, ge=0)
+    end_bar: int = Field(default=0, ge=0)
     energy: Literal["low", "medium", "high"] = "medium"
 
 
 class ChordSpanPlan(BaseModel):
-    bar: int = Field(ge=0)
-    chord: str
+    bar: int = Field(default=0, ge=0)
+    chord: str = "C"
 
 
 class NotePlan(BaseModel):
-    bar: int = Field(ge=0)
-    start_beat: float = Field(ge=0.0)
+    """One note or rest. Field bounds intentionally loose so a chatty LLM can't
+    fail a whole fill on one out-of-range value. `compose_band` clamps `dur`
+    to a minimum audible length so a 0-duration note becomes a short click
+    rather than silently dropping the fill via a 64-validation-error cascade
+    (seen with MiniMax M3, which loves emitting dur:0)."""
+
+    bar: int = Field(default=0, ge=0)
+    start_beat: float = Field(default=0.0, ge=0.0)
     pitch: Optional[int] = Field(default=None, ge=0, le=127)
-    dur: float = Field(default=1.0, gt=0.0)
+    dur: float = Field(default=1.0, ge=0.0)
     velocity: int = Field(default=96, ge=1, le=127)
 
 
@@ -75,6 +86,19 @@ class BandSpec(BaseModel):
 # pipeline. Each is intentionally small so structured-output stays reliable
 # on the local llama-server (which flakes on very large JSON outputs).
 # --------------------------------------------------------------------------
+
+
+class IntentDecision(BaseModel):
+    """Small classifier output that steers the pipeline router.
+
+    `replicate` means the user is asking to reproduce a specific existing
+    song they name explicitly (title and/or artist). `compose` means
+    everything else — genre/style descriptions, mood requests, ambiguous
+    "in the style of X" phrasing, or bare directives.
+    """
+
+    intent: Literal["replicate", "compose"]
+    target: Optional[str] = None  # "<artist> <title>" search query when replicate
 
 
 class InstrumentDecl(BaseModel):

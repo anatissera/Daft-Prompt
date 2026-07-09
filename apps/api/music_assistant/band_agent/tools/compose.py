@@ -66,25 +66,14 @@ def compose_band(
     roster: list[RosterItem] = []
     parts: dict[str, Part] = {}
     for inst in spec.instruments:
-        program, preset = resolve_patch(inst.patch)
-        roster.append(
-            RosterItem(
-                id=inst.id,
-                instrument=inst.instrument,
-                patch=inst.patch,
-                midi_program=program,
-                synth_preset=preset,
-                role=inst.role,
-                playing_style=inst.playing_style,
-                is_drum=inst.is_drum,
-            )
-        )
+        # Floor duration so a stray dur=0 from a chatty LLM still produces
+        # an audible note (0.05 quarter-note ≈ a 64th-note staccato).
         notes: list[Note] = [
             Note(
                 bar=n.bar,
                 start_beat=n.start_beat,
                 pitch=n.pitch,
-                dur=n.dur,
+                dur=max(0.05, n.dur),
                 velocity=n.velocity,
             )
             for n in inst.notes
@@ -98,6 +87,23 @@ def compose_band(
                     (spec.time_signature_numerator, spec.time_signature_denominator)
                 ),
             )
+        # Skip silent non-drum instruments: their fill call failed and the
+        # roster would otherwise lie to the frontend about what's playing.
+        if not notes and not inst.is_drum:
+            continue
+        program, preset = resolve_patch(inst.patch)
+        roster.append(
+            RosterItem(
+                id=inst.id,
+                instrument=inst.instrument,
+                patch=inst.patch,
+                midi_program=program,
+                synth_preset=preset,
+                role=inst.role,
+                playing_style=inst.playing_style,
+                is_drum=inst.is_drum,
+            )
+        )
         parts[inst.id] = Part(instrument_id=inst.id, notes=notes)
 
     song = SongState(
