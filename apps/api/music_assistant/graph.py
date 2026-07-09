@@ -25,6 +25,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from .agents.arbiter import run_arbiter
+from .agents.bandleader import BandleaderReviewOutput, run_bandleader_review
 from .agents.instrument import NewRequest, RequestResolution, compose_part, run_instrument_turn
 from .domain.song_state import Header, NegotiationRequest, Part, RosterItem, SongState
 from .infrastructure.llm import LLMError
@@ -364,7 +365,7 @@ def run_negotiation(style: str, llm=None, max_rounds: Optional[int] = None) -> S
         _initial_band_state(style),
         config={"recursion_limit": 4 * rounds_for_limit * 8 + 20},
     )
-    return SongState(
+    song = SongState(
         request=style,
         header=result["header"],
         roster=result["roster"],
@@ -374,6 +375,93 @@ def run_negotiation(style: str, llm=None, max_rounds: Optional[int] = None) -> S
         round=result.get("round", 0),
         converged=result.get("converged", True),
         errors=result.get("errors", []),
+    )
+    return _run_bandleader_rehearsal(song, llm=llm)
+
+
+def _run_bandleader_rehearsal(song: SongState, llm=None) -> SongState:
+    guitar_ids = [
+        item.id
+        for item in song.roster
+        if item.id in song.parts and "guitar" in f"{item.id} {item.instrument} {item.role}".lower()
+    ]
+    if not guitar_ids:
+        return song
+    if llm is None:
+        try:
+            from music_assistant.infrastructure.gemini.llm import make_llm
+
+            llm = make_llm("arbiter")
+        except Exception as exc:  # noqa: BLE001 - review is advisory only
+            log.info("bandleader review unavailable: %s", exc)
+            return song
+    try:
+        review: BandleaderReviewOutput = run_bandleader_review(song, llm)
+    except Exception as exc:  # noqa: BLE001 - review is advisory only
+        log.info("bandleader review skipped: %s", exc)
+        return song
+    for request in review.revision_requests[:1]:
+        if request.instrument_id not in guitar_ids:
+            continue
+        instruction = request.instruction.strip()
+        if not instruction:
+            continue
+        try:
+            revised = revise_instrument_part(song, instruction, request.instrument_id, llm=llm)
+        except Exception as exc:  # noqa: BLE001 - keep first take if rehearsal fails
+            log.warning("bandleader revision for %s failed: %s", request.instrument_id, exc)
+            return song
+        return revised.model_copy(
+            update={
+                "errors": [
+                    *revised.errors,
+                    f"bandleader requested {request.instrument_id}: {request.reason or instruction}",
+                ]
+            }
+        )
+    return song
+
+
+def revise_instrument_part(
+    song: SongState,
+    instruction: str,
+    instrument_id: str,
+    llm=None,
+) -> SongState:
+    """Revise one existing generated part with the instrument revision agent."""
+    roster_by_id = {item.id: item for item in song.roster}
+    roster_item = roster_by_id[instrument_id]
+    existing_part = song.parts[instrument_id]
+    peer_summaries = {
+        part_id: part.notes_summary
+        for part_id, part in song.parts.items()
+        if part_id != instrument_id and part.notes_summary
+    }
+    part, resolutions, new_requests = run_instrument_turn(
+        song.header,
+        roster_item,
+        song.roster,
+        peer_summaries,
+        [item.id for item in song.roster if item.id != instrument_id],
+        [],
+        existing_part,
+        llm=llm,
+        revision_instruction=instruction,
+    )
+    updated_requests = [
+        *song.negotiation_requests,
+        *_new_requests_to_pending(instrument_id, song.round + 1, new_requests),
+    ]
+    updated_errors = list(song.errors)
+    for resolution in resolutions:
+        updated_errors.append(f"{instrument_id} revision resolved {resolution.request_id}: {resolution.resolution}")
+    return song.model_copy(
+        update={
+            "request": instruction,
+            "parts": {**song.parts, instrument_id: part},
+            "negotiation_requests": updated_requests,
+            "errors": updated_errors,
+        }
     )
 
 

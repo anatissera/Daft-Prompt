@@ -7,6 +7,7 @@ from typing import Any
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
 from music_assistant.application.composition_brief import BuildCompositionBrief
 from music_assistant.application.compose_song import ComposeSong
+from music_assistant.application.language import is_spanish
 from music_assistant.application.reference_instruments import ReferenceInstrumentProfileBuilder
 from music_assistant.application.reference_transfer_intent import BuildReferenceTransferIntent
 from music_assistant.application.music_tool_models import (
@@ -23,6 +24,7 @@ from music_assistant.application.music_tool_models import (
     SectionsToolInput,
     SongReferenceToolInput,
     TabExcerptMeasure,
+    TabExcerptEvent,
     TabExcerptToolInput,
     TabExcerptToolOutput,
     ToolOutput,
@@ -54,6 +56,7 @@ class MusicTools:
         compose_song: ComposeSong | None = None,
         songsterr_tab_store: SongsterrTabStore | None = None,
         chat_model: ChatModel | None = None,
+        enable_web_research: bool = False,
     ) -> None:
         self.reference_store = reference_store
         self.answer_music_question = answer_music_question
@@ -61,9 +64,20 @@ class MusicTools:
         self.compose_song = compose_song
         self.songsterr_tab_store = songsterr_tab_store
         self.chat_model = chat_model
+        self.enable_web_research = enable_web_research
         self.profile_queries = ProfileQueryTools()
 
     def research_song(self, payload: ResearchSongToolInput) -> ResearchSongToolOutput:
+        if not self.enable_web_research:
+            return ResearchSongToolOutput(
+                answer=(
+                    "La búsqueda web está desactivada en esta instancia."
+                    if is_spanish(payload.query)
+                    else "Web research is disabled in this instance."
+                ),
+                error="web_research_disabled",
+                intent="clarify",
+            )
         if self.song_researcher is None:
             return ResearchSongToolOutput(
                 answer="Song research is not configured.",
@@ -73,13 +87,14 @@ class MusicTools:
         profile = self.song_researcher.research(payload.query)
         self.reference_store.save(profile)
         evidence_count = len(profile.knowledge.evidence_claims) if profile.knowledge else 0
+        instrument_summary = _instrument_profile_summary(profile, self.songsterr_tab_store)
         return ResearchSongToolOutput(
             reference_id=profile.reference_id,
-            answer=profile.summary or "Research ready from source-backed evidence.",
+            answer=_research_song_answer(profile, instrument_summary),
             summary=profile.summary or "",
             evidence_count=evidence_count,
             evidence=_profile_evidence_summary(profile),
-            instrument_profile_summary=_instrument_profile_summary(profile, self.songsterr_tab_store),
+            instrument_profile_summary=instrument_summary,
         )
 
     def get_song_profile(self, payload: SongReferenceToolInput) -> ProfileToolOutput:
@@ -256,6 +271,19 @@ class MusicTools:
                 marker=measure.marker,
                 note_events=sum(1 for event in measure.events if not event.rest),
                 durations=_unique_durations(measure.events),
+                events=[
+                    TabExcerptEvent(
+                        beat_index=event.beat_index,
+                        duration=event.duration,
+                        string=event.string,
+                        fret=event.fret,
+                        pitch=event.pitch,
+                        rest=event.rest,
+                        tie=event.tie,
+                        ghost=event.ghost,
+                    )
+                    for event in measure.events
+                ],
             )
             for measure in selected
         ]
@@ -271,6 +299,8 @@ class MusicTools:
             summary=summary,
             evidence=[f"songsterr:part:{track.part_id}:excerpt_measures={len(measures)}"],
             instrument=track.instrument_family,
+            track_name=track.name,
+            tuning=track.tuning,
             measures=measures,
         )
 
@@ -425,6 +455,28 @@ def _profile_evidence_summary(profile: ReferenceProfile) -> list[str]:
         f"{claim.claim_type}:{claim.source_name}:{claim.confidence}"
         for claim in profile.knowledge.evidence_claims[:8]
     ]
+
+
+def _research_song_answer(profile: ReferenceProfile, instrument_summary: list[dict]) -> str:
+    bits: list[str] = []
+    if profile.summary:
+        bits.append(profile.summary)
+    audio = profile.audio
+    facts = []
+    if audio is not None and audio.tempo_bpm is not None:
+        facts.append(f"tempo {audio.tempo_bpm:g} BPM")
+    if audio is not None and audio.key:
+        facts.append(f"key {audio.key}")
+    if facts:
+        bits.append("Found " + ", ".join(facts) + ".")
+    instruments = [
+        str(item.get("instrument_family") or item.get("track_name"))
+        for item in instrument_summary
+        if item.get("instrument_family") or item.get("track_name")
+    ]
+    if instruments:
+        bits.append("Loaded Songsterr instruments: " + ", ".join(instruments) + ".")
+    return " ".join(bits) or "Research ready from source-backed evidence."
 
 
 def _instrument_profile_summary(profile: ReferenceProfile, songsterr_tab_store: SongsterrTabStore | None) -> list[dict]:

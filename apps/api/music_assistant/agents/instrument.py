@@ -450,6 +450,7 @@ def run_instrument_turn(
     pending: list[NegotiationRequest],
     existing_part: Optional[Part],
     llm=None,
+    revision_instruction: str | None = None,
 ) -> tuple[Part, list[RequestResolution], list[NewRequest]]:
     """One negotiation-round turn: revise (or compose on round 0) this instrument's
     part, resolve requests addressed to it, and optionally raise new ones.
@@ -457,9 +458,10 @@ def run_instrument_turn(
     `batch_peer_ids` lists the other roster ids in this composition group — the
     negotiation etiquette block tells the model to only raise requests to those ids.
 
-    Drums skip the LLM entirely (see `compose_part`) and do not participate in
-    negotiation — pending requests addressed to the drums are declined so the
-    arbiter sees them resolved rather than stuck pending.
+    Drums use a deterministic pattern for initial composition and ordinary
+    negotiation turns. A direct user-requested revision is the exception: it
+    uses the revision agent so requests such as “make the drums less busy” can
+    change the existing track without rebuilding the rest of the song.
 
     Round-0 turns (no `existing_part`) use `InstrumentTurnOutput` — the full
     note list. Round >0 turns switch to `InstrumentRevisionOutput`, emitting a
@@ -468,7 +470,7 @@ def run_instrument_turn(
     run = get_current_run_tree()
     if run is not None:
         run.name = roster_item.instrument
-    if roster_item.is_drum:
+    if roster_item.is_drum and not (existing_part is not None and revision_instruction):
         part = _drum_part(header, roster_item)
         declined = [
             RequestResolution(
@@ -487,7 +489,15 @@ def run_instrument_turn(
             header, roster_item, roster, peer_summaries, batch_peer_ids, pending, llm,
         )
     return _compose_turn_revision(
-        header, roster_item, roster, peer_summaries, batch_peer_ids, pending, existing_part, llm,
+        header,
+        roster_item,
+        roster,
+        peer_summaries,
+        batch_peer_ids,
+        pending,
+        existing_part,
+        llm,
+        revision_instruction=revision_instruction,
     )
 
 
@@ -538,6 +548,7 @@ def _compose_turn_revision(
     pending: list[NegotiationRequest],
     existing_part: Part,
     llm,
+    revision_instruction: str | None = None,
 ) -> tuple[Part, list[RequestResolution], list[NewRequest]]:
     """Diff-based revision: LLM returns a small `list[NoteEdit]` instead of the
     full ~100-note part, cutting output tokens by 80-95% on the common case
@@ -556,6 +567,11 @@ def _compose_turn_revision(
                     + _revision_etiquette() + _negotiation_etiquette(batch_peer_ids)
                     + f"\n\nOther instruments:\n{_peer_context(roster, roster_item.id, peer_summaries)}"),
         ("human", f"Your current part:\n{_compact_part_text(existing_part)}"),
+        *(
+            [("human", f"User-requested revision: {revision_instruction}")]
+            if revision_instruction
+            else []
+        ),
         ("human", _pending_context(pending)),
     ]
 

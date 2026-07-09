@@ -844,11 +844,17 @@ code, pre, .mono { font-family: var(--font-mono); }
 }
 
 .chat-composer-caption {
+  align-self: center;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 210, 120, 0.22);
+  border-radius: 999px;
+  background: rgba(4, 5, 8, 0.6);
   text-align: center;
   font-family: var(--font-tech);
   font-size: 8.5px;
   letter-spacing: 0.22em;
-  color: rgba(255, 255, 255, 0.32);
+  color: rgba(255, 248, 224, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   margin: 0;
   text-transform: uppercase;
 }
@@ -1912,6 +1918,58 @@ input[type="number"], select {
 .arrangement-low { background: linear-gradient(180deg, rgba(0, 212, 255, 0.25), rgba(0, 212, 255, 0.12)); }
 .arrangement-medium { background: linear-gradient(180deg, var(--gold-shadow), rgba(215, 170, 60, 0.45)); }
 .arrangement-high { background: linear-gradient(180deg, var(--gold-bright), var(--gold-mid)); }
+
+.tab-excerpt {
+  margin: 14px 0 4px;
+  padding: 14px;
+  border: 1px solid rgba(244, 210, 122, 0.34);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(90, 61, 13, 0.2), rgba(7, 8, 12, 0.65));
+}
+
+.tab-excerpt-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tab-excerpt-eyebrow,
+.tab-excerpt-tuning,
+.tab-excerpt-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.tab-excerpt-eyebrow {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tab-excerpt-title { margin: 2px 0 0; font-size: 18px; text-transform: capitalize; }
+.tab-excerpt-track { color: var(--gold-bright); font-size: 12px; text-align: right; }
+.tab-excerpt-tuning { margin-top: 10px; font-family: var(--font-mono); }
+
+.tab-measures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.tab-measure {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(215, 218, 230, 0.18);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.tab-measure header { display: flex; justify-content: space-between; gap: 8px; color: var(--gold-bright); }
+.tab-measure header span { color: var(--text-muted); font-size: 11px; }
+.tab-measure ol { margin: 8px 0 0; padding-left: 18px; color: var(--text); font-family: var(--font-mono); font-size: 11px; line-height: 1.65; }
+.tab-measure p { margin: 8px 0 0; color: var(--text-muted); font-size: 11px; }
 
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }

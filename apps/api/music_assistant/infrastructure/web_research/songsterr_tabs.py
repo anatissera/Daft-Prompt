@@ -28,6 +28,7 @@ class TabEvent(BaseModel):
     rest: bool = False
     string: Optional[float] = None
     fret: Optional[int] = None
+    pitch: Optional[int] = Field(default=None, ge=0, le=127)
     tie: bool = False
     ghost: bool = False
     raw: dict[str, Any] = Field(default_factory=dict)
@@ -343,6 +344,7 @@ def _measure_from_payload(index: int, measure: dict[str, Any], *, expose_string_
                         rest=bool(note.get("rest") or beat.get("rest")),
                         string=_number_or_none(note.get("string")) if expose_string_fret else None,
                         fret=_int_or_none(note.get("fret")) if expose_string_fret else None,
+                        pitch=_midi_pitch_from_note(note),
                         tie=bool(note.get("tie")),
                         ghost=bool(note.get("ghost")),
                         raw=note,
@@ -410,6 +412,21 @@ def _int_or_none(value: Any) -> int | None:
             return int(float(value.strip()))
         except ValueError:
             return None
+    return None
+
+
+def _midi_pitch_from_note(note: dict[str, Any]) -> int | None:
+    """Extract only an explicit, valid MIDI-like pitch from Songsterr data.
+
+    String/fret positions are intentionally hidden for piano tracks, but a
+    source-provided MIDI value is useful for both reference composition and a
+    readable in-chat piano excerpt. Never infer pitch from a piano fret field.
+    """
+
+    for key in ("midi", "midiPitch", "pitch", "value"):
+        value = _int_or_none(note.get(key))
+        if value is not None and 0 <= value <= 127:
+            return value
     return None
 
 

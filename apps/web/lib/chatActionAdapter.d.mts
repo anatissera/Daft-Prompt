@@ -1,5 +1,5 @@
 import type { ChatMessage, FeedEvent } from "./chatTypes";
-import type { ComposeResponse, Header, ReferenceProfile } from "./types";
+import type { ComposeResponse, Header, ReferenceProfile, SongState, TabExcerpt } from "./types";
 
 export type ChatAction =
   | { type: "analyze"; messageText: string }
@@ -22,6 +22,13 @@ export function createAnalysisMessage(
   index: number,
 ): ChatMessage;
 
+export function createTabMessage(
+  role: ChatMessage["role"],
+  text: string,
+  excerpt: TabExcerpt,
+  index: number,
+): ChatMessage;
+
 export function createCompositionMessage(
   role: ChatMessage["role"],
   text: string,
@@ -31,3 +38,18 @@ export function createCompositionMessage(
   source: ComposeResponse["source"] | null,
   index: number,
 ): ChatMessage;
+
+export function referenceMemoryFromChatResponse(
+  response: { reference_id?: string | null; reference_label?: string | null },
+  fallbackLabel?: string,
+): { referenceId: string; label: string } | null;
+
+export function buildChatRequestPayload(input: {
+  message: string;
+  activeReferenceId?: string | null;
+  currentSong?: SongState | null;
+}): {
+  message: string;
+  reference_id: string | null;
+  current_song?: SongState;
+};

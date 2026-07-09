@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,13 +22,14 @@ from music_assistant.application.answer_music_question import AnswerMusicQuestio
 from music_assistant.application.audio_enrichment import enrich_profile_with_audio
 from music_assistant.application.chat_music import ChatMusic
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
+from music_assistant.application.language import is_spanish
 from music_assistant.application.reference_instruments import ReferenceInstrumentProfileBuilder
 from music_assistant.application.research_reference import ResearchReference
 from music_assistant.canned import canned_song
 from music_assistant.config import get_settings
 from music_assistant.domain.audio_profile import ReferenceProfile, ReferenceSource
 from music_assistant.domain.song_state import Part
-from music_assistant.graph import iter_negotiation_events, run_negotiation
+from music_assistant.graph import iter_negotiation_events, revise_instrument_part, run_negotiation
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from music_assistant.infrastructure.mir.demucs_separator import DemucsSeparator
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
@@ -318,7 +320,8 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
         return ChatResponse(intent="clarify", reply=event["message"], clarification=event["message"], error=event)
     except LLMError as exc:
         event = _llm_error_event(exc, partial=False)
-        return ChatResponse(intent="clarify", reply=event["message"], clarification=event["message"], error=event)
+        message = _chat_error_reply(req.message, event)
+        return ChatResponse(intent="clarify", reply=message, clarification=message, error=event)
 
     # If the orchestrator composed a song, render audio/score artifacts and
     # attach URLs so the chat UI can play / score / download — same contract
@@ -351,6 +354,7 @@ def _chat_music() -> ChatMusic:
         chat_model=_chat_model(),
         song_researcher=_song_researcher(),
         songsterr_tab_store=SONGSTERR_TAB_STORE,
+        enable_web_research=bool(getattr(get_settings(), "enable_web_research", False)),
     )
 
 
@@ -398,6 +402,7 @@ def _compose_song() -> ComposeSong:
         llm_configured=lambda: get_settings().llm_configured,
         negotiator=run_negotiation,
         event_streamer=iter_negotiation_events,
+        instrument_reviser=revise_instrument_part,
         canned=canned_song,
     )
 
@@ -488,6 +493,22 @@ def _compose_configuration_error_event(exc: ComposeConfigurationError) -> dict:
         message=exc.user_message,
         partial=False,
     ).model_dump(mode="json")
+
+
+_COMPOSE_CHAT_RE = re.compile(
+    r"\b(compose|generate|make|write|create|sketch|produce|compon[eé]|gener[aá]|cre[aá]|hac[eé])\b",
+    re.IGNORECASE,
+)
+
+
+def _chat_error_reply(message: str, event: dict) -> str:
+    if _COMPOSE_CHAT_RE.search(message):
+        return (
+            "No pude componer porque el proveedor LLM no está disponible."
+            if is_spanish(message)
+            else "I could not compose because the LLM provider is unavailable."
+        )
+    return str(event["message"])
 
 
 @app.post("/compose/stream")

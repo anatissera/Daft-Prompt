@@ -15,7 +15,7 @@ DEFAULT_MODELS: dict[str, str] = {
     "gemini": "gemini-3.5-flash",
     "groq": "llama-3.3-70b-versatile",
     "openrouter": "deepseek/deepseek-chat",
-    "vertexai": "gemini-2.5-flash",
+    "vertexai": "gemini-3.5-flash",
 }
 
 
@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
     google_cloud_project: Optional[str] = None
+    google_cloud_location: str = "global"
 
     model_director: Optional[str] = None
     model_instrument: Optional[str] = None
@@ -48,6 +49,7 @@ class Settings(BaseSettings):
     reference_upload_max_bytes: int = 50 * 1024 * 1024
     reference_stem_cache_enabled: bool = False
     reference_stem_cache_dir: Optional[str] = None
+    enable_web_research: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

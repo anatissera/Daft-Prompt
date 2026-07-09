@@ -6,6 +6,7 @@ import re
 from typing import Any, Protocol
 
 from music_assistant.application.profile_queries import answer_from_profile
+from music_assistant.application.language import is_spanish
 from music_assistant.domain.audio_profile import (
     ChordSpan,
     ExplanationAnswer,
@@ -32,7 +33,8 @@ class DeterministicMusicQuestionExplainer:
         self.songsterr_tab_store = songsterr_tab_store
 
     def answer(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer:
-        tab_answer = self._answer_from_songsterr_tabs(question, profile)
+        spanish = is_spanish(question)
+        tab_answer = self._answer_from_songsterr_tabs(question, profile, spanish=spanish)
         if tab_answer is not None:
             return tab_answer
 
@@ -48,74 +50,86 @@ class DeterministicMusicQuestionExplainer:
         if audio is None:
             return ExplanationAnswer(
                 reference_id=profile.reference_id,
-                answer="I do not have an audio profile for this reference yet.",
+                answer=("Todavía no tengo un perfil de audio para esta referencia." if spanish
+                        else "I do not have an audio profile for this reference yet."),
                 evidence=[],
             )
 
         normalized = question.lower()
-        if re.search(r"\b(key|tonality|tonal)\b", normalized):
-            return _answer_key(profile)
+        if re.search(r"\b(key|tonality|tonal|tonalidad|tono)\b", normalized):
+            return _answer_key(profile, spanish=spanish)
         # "chorus"/"verse" are structural terms; keep them out of the chord branch
         # so "where is the chorus" routes to structure, not chord estimates.
-        if re.search(r"\b(chord|chords|progression|harmony|harmonic)\b", normalized):
-            return _answer_chords(profile)
-        if re.search(r"\b(structure|form|section|sections|repeat|a/b/c|abc|verse|chorus)\b", normalized):
-            return _answer_structure(profile)
+        if re.search(r"\b(chord|chords|progression|harmony|harmonic|acorde|acordes|progresi[oó]n|armon[ií]a)\b", normalized):
+            return _answer_chords(profile, spanish=spanish)
+        if re.search(r"\b(structure|form|section|sections|repeat|a/b/c|abc|verse|chorus|estructura|secci[oó]n|secciones|estrofa|coro)\b", normalized):
+            return _answer_structure(profile, spanish=spanish)
 
         lead = (
-            "The chord and structure evidence is weak here, so this is a rough "
-            "sketch. "
+            ("La evidencia de acordes y estructura es débil, así que esto es solo un boceto. " if spanish
+             else "The chord and structure evidence is weak here, so this is a rough sketch. ")
             if _is_low_usefulness(profile)
             else ""
         )
         return ExplanationAnswer(
             reference_id=profile.reference_id,
             answer=(
-                f"{lead}I can answer from the current analysis about likely key, "
-                "probable chords, repeated progressions, and A/B/C structure."
+                f"{lead}" + (
+                    "Puedo responder a partir del análisis actual sobre tonalidad probable, "
+                    "acordes estimados, progresiones repetidas y estructura A/B/C."
+                    if spanish
+                    else "I can answer from the current analysis about likely key, probable chords, "
+                    "repeated progressions, and A/B/C structure."
+                )
             ),
             evidence=_general_evidence(profile),
         )
 
-    def _answer_from_songsterr_tabs(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer | None:
+    def _answer_from_songsterr_tabs(
+        self, question: str, profile: ReferenceProfile, *, spanish: bool
+    ) -> ExplanationAnswer | None:
         if self.songsterr_tab_store is None:
             return None
         bundle = self.songsterr_tab_store.get(profile.reference_id)
         if bundle is None:
             return None
         normalized = question.lower()
-        asks_tab = any(token in normalized for token in ["tab", "tabs", "tablature", "riff", "solo"])
+        asks_tab = any(token in normalized for token in ["tab", "tabs", "tablature", "riff", "solo", "tablatura"])
         asks_instrument = any(
             token in normalized
-            for token in ["bass", "drum", "guitar", "piano", "keyboard", "keys", "synth", "sax", "vocal", "voice"]
+            for token in ["bass", "drum", "guitar", "piano", "keyboard", "keys", "synth", "sax", "vocal", "voice", "bajo", "batería", "bateria", "guitarra"]
         )
         if not asks_tab and not asks_instrument:
             return None
-        if "section" in normalized or "form" in normalized:
+        if any(token in normalized for token in ["section", "form", "sección", "seccion", "estructura"]):
             sections = _songsterr_tab_sections(bundle)
             if not sections:
                 return ExplanationAnswer(
                     reference_id=profile.reference_id,
-                    answer="I do not have section markers from Songsterr for this song yet.",
+                    answer=("Todavía no tengo marcadores de sección de Songsterr para esta canción."
+                            if spanish else "I do not have section markers from Songsterr for this song yet."),
                     evidence=[],
                 )
             return ExplanationAnswer(
                 reference_id=profile.reference_id,
-                answer="Songsterr tab sections: " + ", ".join(sections) + ".",
+                answer=("Secciones de la tablatura de Songsterr: " if spanish else "Songsterr tab sections: ")
+                + ", ".join(sections) + ".",
                 evidence=[f"songsterr:sections:{len(sections)}"],
             )
         instrument = _mentioned_tab_instrument(normalized)
         if instrument is None:
             return ExplanationAnswer(
                 reference_id=profile.reference_id,
-                answer="Songsterr tab data is loaded for: " + ", ".join(bundle.instrument_names) + ".",
+                answer=("Hay datos de tablatura de Songsterr para: " if spanish else "Songsterr tab data is loaded for: ")
+                + ", ".join(bundle.instrument_names) + ".",
                 evidence=[f"songsterr:tracks:{len(bundle.tracks)}"],
             )
         tracks = bundle.tracks_for_instrument(instrument)
         if not tracks:
             return ExplanationAnswer(
                 reference_id=profile.reference_id,
-                answer=f"I do not have {instrument}-specific Songsterr tab data for this song yet.",
+                answer=(f"Todavía no tengo datos de Songsterr específicos para {instrument} en esta canción."
+                        if spanish else f"I do not have {instrument}-specific Songsterr tab data for this song yet."),
                 evidence=[],
             )
         summaries = [_songsterr_track_summary(track) for track in tracks[:3]]
@@ -126,14 +140,15 @@ class DeterministicMusicQuestionExplainer:
         )
 
 
-def _answer_key(profile: ReferenceProfile) -> ExplanationAnswer:
+def _answer_key(profile: ReferenceProfile, *, spanish: bool = False) -> ExplanationAnswer:
     audio = profile.audio
     key_profile = audio.harmony.key if audio and audio.harmony else None
     primary = key_profile.primary if key_profile else None
     if primary is None:
         return ExplanationAnswer(
             reference_id=profile.reference_id,
-            answer="I do not have a reliable key estimate for this reference yet.",
+            answer=("Todavía no tengo una estimación tonal confiable para esta referencia."
+                    if spanish else "I do not have a reliable key estimate for this reference yet."),
             evidence=[],
         )
 
@@ -142,20 +157,20 @@ def _answer_key(profile: ReferenceProfile) -> ExplanationAnswer:
         for candidate in key_profile.candidates[1:4]
     ]
     alternative_labels = [candidate.key for candidate in key_profile.candidates[1:4]]
-    suffix = f" Close alternatives: {', '.join(alternatives)}." if alternatives else ""
-    ambiguity = " There is relative-key ambiguity." if key_profile.relative_key_ambiguity else ""
+    suffix = ((f" Alternativas cercanas: {', '.join(alternatives)}.") if spanish else f" Close alternatives: {', '.join(alternatives)}.") if alternatives else ""
+    ambiguity = (" Hay ambigüedad de tonalidad relativa." if spanish else " There is relative-key ambiguity.") if key_profile.relative_key_ambiguity else ""
     if confidence_label(key_profile.confidence) == "low" or key_profile.relative_key_ambiguity:
         candidates = [primary.key, *alternative_labels]
         confidence_sentence = (
-            f"Low confidence ({_percent(key_profile.confidence)})."
+            (f"Confianza baja ({_percent(key_profile.confidence)})." if spanish else f"Low confidence ({_percent(key_profile.confidence)}).")
             if confidence_label(key_profile.confidence) == "low"
-            else f"Confidence {_percent(key_profile.confidence)}."
+            else (f"Confianza {_percent(key_profile.confidence)}." if spanish else f"Confidence {_percent(key_profile.confidence)}.")
         )
         return ExplanationAnswer(
             reference_id=profile.reference_id,
             answer=(
-                "Tonal center is ambiguous; close candidates include "
-                f"{', '.join(candidates)}. {confidence_sentence}"
+                ("El centro tonal es ambiguo; los candidatos cercanos incluyen " if spanish else "Tonal center is ambiguous; close candidates include ")
+                + f"{', '.join(candidates)}. {confidence_sentence}"
                 f"{suffix}{ambiguity}"
             ),
             evidence=[
@@ -164,15 +179,16 @@ def _answer_key(profile: ReferenceProfile) -> ExplanationAnswer:
             ],
         )
     confidence_text = (
-        f"low confidence ({_percent(key_profile.confidence)})"
+        (f"confianza baja ({_percent(key_profile.confidence)})" if spanish else f"low confidence ({_percent(key_profile.confidence)})")
         if confidence_label(key_profile.confidence) == "low"
-        else f"{_percent(key_profile.confidence)} confidence"
+        else (f"confianza de {_percent(key_profile.confidence)}" if spanish else f"{_percent(key_profile.confidence)} confidence")
     )
     return ExplanationAnswer(
         reference_id=profile.reference_id,
         answer=(
-            f"The key is likely {primary.key} with {confidence_text}."
-            f"{suffix}{ambiguity}"
+            (f"La tonalidad probablemente es {primary.key}, con {confidence_text}." if spanish
+             else f"The key is likely {primary.key} with {confidence_text}.")
+            + f"{suffix}{ambiguity}"
         ),
         evidence=[
             f"Primary key candidate: {primary.key}, confidence {_percent(primary.confidence)}.",
@@ -185,8 +201,12 @@ def _mentioned_tab_instrument(normalized_question: str) -> str | None:
     aliases = [
         ("drums", "drums"),
         ("drum", "drums"),
+        ("batería", "drums"),
+        ("bateria", "drums"),
         ("bass", "bass"),
+        ("bajo", "bass"),
         ("guitar", "guitar"),
+        ("guitarra", "guitar"),
         ("piano", "piano"),
         ("keyboard", "piano"),
         ("keys", "piano"),
@@ -223,13 +243,14 @@ def _songsterr_track_summary(track) -> str:
     )
 
 
-def _answer_chords(profile: ReferenceProfile) -> ExplanationAnswer:
+def _answer_chords(profile: ReferenceProfile, *, spanish: bool = False) -> ExplanationAnswer:
     audio = profile.audio
     harmony = audio.harmony if audio else None
     if harmony is None:
         return ExplanationAnswer(
             reference_id=profile.reference_id,
-            answer="I do not have probable chord estimates for this reference yet.",
+            answer=("Todavía no tengo estimaciones de acordes probables para esta referencia."
+                    if spanish else "I do not have probable chord estimates for this reference yet."),
             evidence=[],
         )
 
@@ -240,8 +261,10 @@ def _answer_chords(profile: ReferenceProfile) -> ExplanationAnswer:
             return ExplanationAnswer(
                 reference_id=profile.reference_id,
                 answer=(
-                    f"Weak chord loop candidate: {progression} across bars "
-                    f"{main.start_bar}-{main.end_bar}, with {_percent(main.confidence)} confidence."
+                    (f"Candidato débil de ciclo armónico: {progression} entre los compases " if spanish
+                     else f"Weak chord loop candidate: {progression} across bars ")
+                    + f"{main.start_bar}-{main.end_bar}, "
+                    + (f"con {_percent(main.confidence)} de confianza." if spanish else f"with {_percent(main.confidence)} confidence.")
                 ),
                 evidence=[
                     f"Progression bars {main.start_bar}-{main.end_bar}: {progression}, confidence {_percent(main.confidence)}.",
@@ -251,8 +274,10 @@ def _answer_chords(profile: ReferenceProfile) -> ExplanationAnswer:
         return ExplanationAnswer(
             reference_id=profile.reference_id,
             answer=(
-                f"The main progression is probably {progression} across bars "
-                f"{main.start_bar}-{main.end_bar}, with {_percent(main.confidence)} confidence."
+                (f"La progresión principal probablemente es {progression} entre los compases " if spanish
+                 else f"The main progression is probably {progression} across bars ")
+                + f"{main.start_bar}-{main.end_bar}, "
+                + (f"con {_percent(main.confidence)} de confianza." if spanish else f"with {_percent(main.confidence)} confidence.")
             ),
             evidence=[
                 f"Progression bars {main.start_bar}-{main.end_bar}: {progression}, confidence {_percent(main.confidence)}.",
@@ -264,24 +289,27 @@ def _answer_chords(profile: ReferenceProfile) -> ExplanationAnswer:
     if not chosen:
         return ExplanationAnswer(
             reference_id=profile.reference_id,
-            answer="I do not have probable chord estimates for this reference yet.",
+            answer=("Todavía no tengo estimaciones de acordes probables para esta referencia."
+                    if spanish else "I do not have probable chord estimates for this reference yet."),
             evidence=[],
         )
     summary = " - ".join(span.chosen.label for span in chosen[:8] if span.chosen)
     return ExplanationAnswer(
         reference_id=profile.reference_id,
-        answer=f"The strongest bar-level chord estimates are probably {summary}.",
+        answer=(f"Las estimaciones de acordes más sólidas por compás probablemente son {summary}."
+                if spanish else f"The strongest bar-level chord estimates are probably {summary}."),
         evidence=[_span_evidence(span) for span in chosen[:8]],
     )
 
 
-def _answer_structure(profile: ReferenceProfile) -> ExplanationAnswer:
+def _answer_structure(profile: ReferenceProfile, *, spanish: bool = False) -> ExplanationAnswer:
     audio = profile.audio
     structure = audio.structure if audio else None
     if structure is None or not structure.sections:
         return ExplanationAnswer(
             reference_id=profile.reference_id,
-            answer="I do not have an A/B/C structure estimate for this reference yet.",
+            answer=("Todavía no tengo una estimación de estructura A/B/C para esta referencia."
+                    if spanish else "I do not have an A/B/C structure estimate for this reference yet."),
             evidence=[],
         )
 
@@ -293,8 +321,8 @@ def _answer_structure(profile: ReferenceProfile) -> ExplanationAnswer:
         return ExplanationAnswer(
             reference_id=profile.reference_id,
             answer=(
-                f"The structure is unclear; an approximate low confidence "
-                f"A/B/C read is {form}."
+                (f"La estructura no es clara; una lectura A/B/C aproximada y de baja confianza es {form}."
+                 if spanish else f"The structure is unclear; an approximate low confidence A/B/C read is {form}.")
             ),
             evidence=[
                 (
@@ -306,7 +334,8 @@ def _answer_structure(profile: ReferenceProfile) -> ExplanationAnswer:
         )
     return ExplanationAnswer(
         reference_id=profile.reference_id,
-        answer=f"The structure appears to repeat as {form}.",
+        answer=(f"La estructura parece repetirse como {form}." if spanish
+                else f"The structure appears to repeat as {form}."),
         evidence=[
             (
                 f"Section {section.label}: bars {section.start_bar}-{section.end_bar}, "

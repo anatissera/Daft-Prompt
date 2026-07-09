@@ -133,11 +133,31 @@ class TabExcerptMeasure(BaseModel):
     marker: Optional[str] = None
     note_events: int = 0
     durations: list[str] = Field(default_factory=list)
+    events: list["TabExcerptEvent"] = Field(default_factory=list)
+
+
+class TabExcerptEvent(BaseModel):
+    """Small, render-safe symbolic event for an in-chat tab excerpt.
+
+    Keep this intentionally separate from Songsterr's raw payload. The client
+    needs timing and playable string/fret positions, not provider internals.
+    """
+
+    beat_index: float
+    duration: str = ""
+    string: Optional[float] = None
+    fret: Optional[int] = None
+    pitch: Optional[int] = Field(default=None, ge=0, le=127)
+    rest: bool = False
+    tie: bool = False
+    ghost: bool = False
 
 
 class TabExcerptToolOutput(ToolOutput):
     tool: str = "get_tab_excerpt"
     instrument: str = ""
+    track_name: str = ""
+    tuning: list[str] = Field(default_factory=list)
     measures: list[TabExcerptMeasure] = Field(default_factory=list)
 
 

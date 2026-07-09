@@ -374,6 +374,53 @@ def test_director_canonicalizes_requested_instrument_family_ids():
     rhythm = next(group for group in song.composition_groups if group.name == "rhythm")
     assert rhythm.instrument_ids == ["bass", "kit"]
 
+
+def test_arrangement_to_song_normalizes_hard_rock_guitar_label():
+    out = _full_output()
+    out.instruments = [
+        ArrangementInstrument(
+            id="drums",
+            instrument="drum_kit",
+            midi_program=0,
+            midi_low=35,
+            midi_high=81,
+            role="rhythm foundation",
+            playing_style="Backbeat.",
+            is_drum=True,
+        ),
+        ArrangementInstrument(
+            id="bass",
+            instrument="electric_bass",
+            midi_program=34,
+            midi_low=28,
+            midi_high=55,
+            role="bass line",
+            playing_style="Lock to the kick.",
+        ),
+        ArrangementInstrument(
+            id="hard_rock_guitar",
+            instrument="hard rock guitar",
+            midi_program=30,
+            midi_low=40,
+            midi_high=84,
+            role="lead melody",
+            playing_style="Aggressive hard rock tone.",
+        ),
+    ]
+    out.composition_groups = [
+        CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"]),
+        CompositionGroup(name="lead", instrument_ids=["hard_rock_guitar"]),
+    ]
+
+    song = arrangement_to_song("compose grunge rock", out)
+
+    guitar = next(item for item in song.roster if item.id == "lead_guitar")
+    assert guitar.instrument == "electric_guitar_overdriven"
+    assert "hard rock" in guitar.playing_style.lower()
+    assert "short guitar hooks" in guitar.playing_style.lower()
+    lead_group = next(group for group in song.composition_groups if group.name == "lead")
+    assert lead_group.instrument_ids == ["lead_guitar"]
+
 # --- chord/form backfill via skills (plans/composition-skills.md step 2) ---
 
 
