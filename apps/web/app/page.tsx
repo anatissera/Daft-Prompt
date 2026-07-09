@@ -13,6 +13,7 @@ import {
 } from "@/lib/analysisProgress.mjs";
 import {
   buildChatRequestPayload,
+  buildConversationContext,
   chooseChatAction,
   createAnalysisMessage,
   createCompositionMessage,
@@ -156,6 +157,7 @@ export default function Home() {
           message,
           activeReferenceId: activeReference?.referenceId ?? referenceProfile?.reference_id ?? null,
           currentSong,
+          conversationContext: buildConversationContext(messages),
         })),
       });
       if (!res.ok) throw new Error(await readApiError(res));

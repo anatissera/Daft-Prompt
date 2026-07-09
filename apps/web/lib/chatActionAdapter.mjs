@@ -61,8 +61,34 @@ export function referenceMemoryFromChatResponse(response, fallbackLabel = "Curre
   return { referenceId: response.reference_id, label };
 }
 
-export function buildChatRequestPayload({ message, activeReferenceId = null, currentSong = null }) {
+const MAX_CONTEXT_TURNS = 6;
+const MAX_CONTEXT_CHARS = 1200;
+const MAX_TURN_CHARS = 240;
+
+export function buildConversationContext(messages) {
+  if (!Array.isArray(messages)) return "";
+  const lines = messages
+    .filter((message) => message && (message.role === "user" || message.role === "assistant"))
+    .slice(-MAX_CONTEXT_TURNS)
+    .map((message) => {
+      const text = typeof message.text === "string"
+        ? message.text.replace(/\s+/g, " ").trim().slice(0, MAX_TURN_CHARS)
+        : "";
+      if (!text) return "";
+      return `${message.role === "user" ? "User" : "Assistant"}: ${text}`;
+    })
+    .filter(Boolean);
+  return lines.join("\n").slice(-MAX_CONTEXT_CHARS);
+}
+
+export function buildChatRequestPayload({
+  message,
+  activeReferenceId = null,
+  currentSong = null,
+  conversationContext = "",
+}) {
   const payload = { message, reference_id: activeReferenceId ?? null };
   if (currentSong) payload.current_song = currentSong;
+  if (conversationContext) payload.conversation_context = conversationContext;
   return payload;
 }

@@ -129,3 +129,21 @@ def test_chat_agent_keeps_composition_as_tool_delegation():
     assert result.reply == "Composition requested."
     assert tools.calls[0][0] == "request_composition"
     assert tools.calls[0][1].composition_request == "make it darker"
+
+
+def test_chat_agent_includes_bounded_session_context_in_its_decision_prompt():
+    tools = FakeTools()
+    model = FakeChatModel([ChatAgentDecision(tool="get_chords")])
+    agent = ChatAgent(chat_model=model, tools=tools)
+
+    agent.run(
+        ChatRequest(
+            message="What about the chorus?",
+            reference_id="ref_space_cowboy",
+            conversation_context="User: Compose a funk sketch\nAssistant: I chose a 110 BPM groove.",
+        )
+    )
+
+    prompt = "\n".join(message["content"] for message in model.invoker.calls[0])
+    assert "Recent in-session conversation" in prompt
+    assert "I chose a 110 BPM groove" in prompt

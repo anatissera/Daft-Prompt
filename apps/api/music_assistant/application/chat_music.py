@@ -50,6 +50,7 @@ class ChatRequest(BaseModel):
     reference_id: Optional[str] = None
     reference_ids: list[str] = Field(default_factory=list)
     reference_context: Optional[str] = None
+    conversation_context: Optional[str] = Field(default=None, max_length=1600)
     current_song: Optional[SongState] = None
 
 
