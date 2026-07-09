@@ -5,8 +5,10 @@ from music_assistant.application.composition_brief import (
     BriefBuildResult,
 )
 from music_assistant.domain.audio_profile import (
+    AudioProfile,
     EvidenceClaim,
     EvidenceConflict,
+    MelodyProfile,
     SongIdentity,
     SongKnowledgeProfile,
     SongSectionProfile,
@@ -78,6 +80,23 @@ def test_builds_multi_reference_brief_by_dimension():
     assert result.brief.transfer_policy["song_drums"] == ["rhythmic_guidance"]
     assert result.brief.transfer_policy["song_harmony"] == ["harmonic_guidance"]
     assert result.brief.harmonic_guidance["song_harmony"][0] == "Dm - G - Cmaj7"
+
+
+def test_requested_melody_uses_compact_transcription_style_not_events():
+    source = profile("song_melody", "Melody Song")
+    source.audio = AudioProfile(
+        duration_seconds=30.0,
+        melody=MelodyProfile(note_count=18, pitch_low=60, pitch_high=72, contour="rising", confidence=0.4),
+    )
+
+    result = BuildCompositionBrief().execute("compose a new solo using this song's melodic contour", [source])
+
+    assert result.brief is not None
+    guidance = result.brief.melodic_guidance["song_melody"]
+    assert guidance["contour"] == "rising"
+    assert guidance["pitch_low"] == 60
+    assert "copy events" in guidance["instruction"]
+    assert "representative_events" not in guidance
 
 
 def test_missing_requested_trait_returns_uncertainty_note():

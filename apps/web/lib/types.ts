@@ -595,6 +595,7 @@ export interface CompositionBrief {
   transfer_policy: Record<string, string[]>;
   harmonic_guidance: Record<string, unknown>;
   rhythmic_guidance: Record<string, unknown>;
+  melodic_guidance: Record<string, unknown>;
   form_guidance: Record<string, unknown>;
   instrumentation: Record<string, unknown>;
   instrument_requests: Record<string, Record<string, unknown>>;
