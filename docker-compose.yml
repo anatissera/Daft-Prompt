@@ -3,19 +3,20 @@ services:
     build:
       context: ./apps/api
     environment:
-      LLM_PROVIDER: vertexai
-      GOOGLE_CLOUD_PROJECT: daft-promt
-      GOOGLE_CLOUD_LOCATION: global
-      MODEL_DIRECTOR: gemini-3.5-flash
-      MODEL_INSTRUMENT: gemini-3.5-flash
-      MODEL_ARBITER: gemini-3.5-flash
-      ENABLE_WEB_RESEARCH: "true"
-      REFERENCE_STEM_CACHE_ENABLED: "true"
-      GOOGLE_APPLICATION_CREDENTIALS: /run/gcloud/application_default_credentials.json
+      # Leave provider settings unset for a self-contained canned-composition
+      # runtime. Supply these through a local .env file when using an LLM.
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      ENABLE_WEB_RESEARCH: ${ENABLE_WEB_RESEARCH:-false}
+      REFERENCE_STEM_CACHE_ENABLED: ${REFERENCE_STEM_CACHE_ENABLED:-false}
+      REFERENCE_UPLOAD_DIR: /app/uploads
     ports:
       - "8000:8000"
     volumes:
-      - ${HOME}/.config/gcloud/application_default_credentials.json:/run/gcloud/application_default_credentials.json:ro
+      - ./apps/api/uploads:/app/uploads
+      - ./apps/api/outputs:/app/outputs
     healthcheck:
       test:
         - CMD
