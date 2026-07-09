@@ -42,6 +42,16 @@ export function createTabMessage(role, text, excerpt, index) {
   };
 }
 
+export function createMelodyMessage(role, text, melody, index) {
+  return {
+    id: `${role}-${index}`,
+    kind: "melody",
+    role,
+    text,
+    melody,
+  };
+}
+
 export function createCompositionMessage(role, text, result, feed, header, source, index) {
   return {
     id: `${role}-${index}`,

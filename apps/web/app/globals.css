@@ -1948,6 +1948,22 @@ input[type="number"], select {
 }
 
 .tab-excerpt-title { margin: 2px 0 0; font-size: 18px; text-transform: capitalize; }
+.melody-preview {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--gold-bright) 42%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 88%, #2a1a38);
+}
+.melody-preview-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.melody-preview-header h2 { margin: 2px 0 0; font-size: 18px; }
+.melody-preview-header > span, .melody-preview-eyebrow, .melody-preview-summary { color: var(--muted); font-size: 12px; }
+.melody-preview-eyebrow { margin: 0; text-transform: uppercase; letter-spacing: .08em; }
+.melody-preview-summary { margin: 10px 0; font-family: var(--font-mono); }
+.melody-events { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.melody-events li { display: grid; gap: 2px; min-width: 64px; padding: 7px 8px; border-radius: 7px; background: color-mix(in srgb, var(--gold-bright) 12%, transparent); }
+.melody-events strong { color: var(--gold-bright); font-family: var(--font-mono); }
+.melody-events span { color: var(--muted); font-size: 10px; white-space: nowrap; }
 .tab-excerpt-track { color: var(--gold-bright); font-size: 12px; text-align: right; }
 .tab-excerpt-tuning { margin-top: 10px; font-family: var(--font-mono); }
 

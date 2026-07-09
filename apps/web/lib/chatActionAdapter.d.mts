@@ -1,5 +1,5 @@
 import type { ChatMessage, FeedEvent } from "./chatTypes";
-import type { ComposeResponse, Header, ReferenceProfile, SongState, TabExcerpt } from "./types";
+import type { ComposeResponse, Header, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "./types";
 
 export type ChatAction =
   | { type: "analyze"; messageText: string }
@@ -26,6 +26,13 @@ export function createTabMessage(
   role: ChatMessage["role"],
   text: string,
   excerpt: TabExcerpt,
+  index: number,
+): ChatMessage;
+
+export function createMelodyMessage(
+  role: ChatMessage["role"],
+  text: string,
+  melody: MelodyProfile,
   index: number,
 ): ChatMessage;
 

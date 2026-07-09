@@ -27,7 +27,7 @@ from music_assistant.application.music_tool_models import (
     TabExcerptToolOutput,
 )
 from music_assistant.application.music_tools import MusicTools
-from music_assistant.domain.audio_profile import ExplanationAnswer, ReferenceProfile
+from music_assistant.domain.audio_profile import ExplanationAnswer, MelodyProfile, ReferenceProfile
 from music_assistant.domain.errors import OffTopicRequest
 from music_assistant.domain.song_state import SongState
 from music_assistant.domain.usage import USAGE_TRACKER, UsageTracker
@@ -91,6 +91,7 @@ class ChatResponse(BaseModel):
     reference_label: Optional[str] = None
     answer: Optional[ExplanationAnswer] = None
     chord_chart: list[ChordChartRow] = Field(default_factory=list)
+    melody_preview: Optional[MelodyProfile] = None
     tab_excerpt: Optional[TabExcerptToolOutput] = None
     compose: Optional[ChatComposeResult] = None
     clarification: Optional[str] = None
@@ -103,7 +104,7 @@ _REFERENCE_TOPIC_RE = re.compile(
     r"\b(chord|chords|tempo|bpm|key|energy|section|sections|chorus|verse|analysis|analyze|profile|progression|harmony|harmonic"
     # deep-listening vocabulary — route these to the evidence-backed answer path
     r"|swing|swings|swung|groove|syncopated|syncopation|shuffle|feel|build|builds|drop|drops|dynamics|loudness"
-    r"|timbre|bright|dark|warm|noisy|sound|sounds|arrangement|instrument|instruments|tab|tabs)\b",
+    r"|timbre|bright|dark|warm|noisy|sound|sounds|arrangement|instrument|instruments|tab|tabs|melody|melodic|riff|solo|lead)\b",
     re.IGNORECASE,
 )
 _RESEARCH_RE = re.compile(r"\b(research|look\s*up|search|buscar|busc[aá])\b", re.IGNORECASE)
@@ -324,6 +325,7 @@ class ChatMusic:
                 reference_label=_reference_label(profile),
                 answer=answer,
                 chord_chart=_chord_chart(profile) if _is_chord_question(message) else [],
+                melody_preview=_melody_preview(profile) if _is_melody_question(message) else None,
             )
 
         if intent == "compose_from_reference":
@@ -585,6 +587,16 @@ def _composition_warnings(song: SongState) -> list[str]:
 
 def _is_chord_question(message: str) -> bool:
     return bool(re.search(r"\b(chord|chords|progression|harmony|harmonic|acorde|acordes|progresi[oó]n|armon[ií]a)\b", message, re.IGNORECASE))
+
+
+
+def _is_melody_question(message: str) -> bool:
+    return bool(re.search(r"\b(melody|melodic|riff|solo|lead|melod[ií]a|fraseo)\b", message, re.IGNORECASE))
+
+
+def _melody_preview(profile: ReferenceProfile) -> MelodyProfile | None:
+    melody = profile.audio.melody if profile.audio else None
+    return melody if melody is not None and melody.note_count else None
 
 
 def _chord_chart(profile: ReferenceProfile) -> list[ChordChartRow]:

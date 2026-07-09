@@ -16,6 +16,8 @@ from music_assistant.domain.audio_profile import (
     AudioProfile,
     ChordEstimate,
     ExplanationAnswer,
+    MelodyEvent,
+    MelodyProfile,
     ReferenceProfile,
     ReferenceSource,
     SectionProfile,
@@ -142,6 +144,33 @@ def test_answer_reference_intent_when_question_matches_profile_topic():
     assert composer.calls == []
     assert explainer.calls == [("what chords does the chorus play?", profile.reference_id)]
     assert response.chord_chart[0].chords == ["Am", "F", "C", "G"]
+
+
+def test_riff_question_returns_native_melody_preview_when_transcription_exists():
+    chat, _, _, store = _make_chat()
+    profile = _make_profile()
+    profile = profile.model_copy(update={
+        "audio": profile.audio.model_copy(update={
+            "melody": MelodyProfile(
+                note_count=2,
+                pitch_low=60,
+                pitch_high=64,
+                contour="rising",
+                representative_events=[
+                    MelodyEvent(bar=0, start_beat=0.0, duration_beats=1.0, pitch=60),
+                    MelodyEvent(bar=0, start_beat=1.0, duration_beats=1.0, pitch=64),
+                ],
+                confidence=0.4,
+            )
+        })
+    })
+    store.save(profile)
+
+    response = chat.handle(ChatRequest(message="How do I play this riff?", reference_id=profile.reference_id))
+
+    assert response.intent == "answer_reference"
+    assert response.melody_preview is not None
+    assert response.melody_preview.representative_events[1].pitch == 64
 
 
 def test_tab_tool_output_is_exposed_as_a_native_chat_excerpt():

@@ -146,6 +146,7 @@ export interface ChatResponse {
   answer?: { answer: string; confidence?: string } | null;
   tab_excerpt?: TabExcerpt | null;
   chord_chart?: ChordChartRow[];
+  melody_preview?: MelodyProfile | null;
   compose?: ChatComposeResult | null;
   clarification?: string | null;
   usage?: Record<string, number> | null;

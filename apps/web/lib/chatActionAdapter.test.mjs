@@ -7,6 +7,7 @@ import {
   chooseChatAction,
   createAnalysisMessage,
   createCompositionMessage,
+  createMelodyMessage,
   createTextMessage,
   createTabMessage,
   referenceMemoryFromChatResponse,
@@ -59,6 +60,18 @@ test("createTabMessage keeps a native tab excerpt attached to the chat turn", ()
     role: "assistant",
     text: "Here is the bass tab.",
     excerpt,
+  });
+});
+
+test("createMelodyMessage keeps a native melody preview attached to the chat turn", () => {
+  const melody = { note_count: 2, representative_events: [] };
+
+  assert.deepEqual(createMelodyMessage("assistant", "Here is the riff.", melody, 4), {
+    id: "assistant-4",
+    kind: "melody",
+    role: "assistant",
+    text: "Here is the riff.",
+    melody,
   });
 });
 

@@ -1,6 +1,7 @@
 import type { ChatMessage } from "@/lib/chatTypes";
 import AnalysisResultBlock from "@/components/AnalysisResultBlock";
 import TabExcerptBlock from "@/components/TabExcerptBlock";
+import MelodyPreviewBlock from "@/components/MelodyPreviewBlock";
 import GeneratedSongBlock from "@/components/GeneratedSongBlock";
 import Typewriter from "@/components/Typewriter";
 import AnalysisProgressChecklist from "@/components/AnalysisProgressChecklist";
@@ -53,6 +54,7 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
           {message.meta ? <span className="chat-meta">{message.meta}</span> : null}
           {message.kind === "analysis" ? <AnalysisResultBlock profile={message.profile} /> : null}
           {message.kind === "tab" ? <TabExcerptBlock excerpt={message.excerpt} /> : null}
+          {message.kind === "melody" ? <MelodyPreviewBlock melody={message.melody} /> : null}
           {message.kind === "composition" ? <GeneratedSongBlock message={message} /> : null}
         </article>
       ))}
