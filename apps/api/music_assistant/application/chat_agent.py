@@ -131,6 +131,7 @@ def _required_reference(reference_id: str | None) -> str:
 def _decision_messages(request: Any) -> list[dict[str, str]]:
     reference_context = request.reference_id or ", ".join(request.reference_ids) or "none"
     profile_context = getattr(request, "reference_context", "") or "No current profile."
+    conversation_context = getattr(request, "conversation_context", "") or "No earlier turns in this session."
     return [
         {
             "role": "system",
@@ -150,5 +151,6 @@ def _decision_messages(request: Any) -> list[dict[str, str]]:
         },
         {"role": "system", "content": f"Current reference ids: {reference_context}"},
         {"role": "system", "content": f"Current reference profile context: {profile_context}"},
+        {"role": "system", "content": f"Recent in-session conversation:\n{conversation_context}"},
         {"role": "user", "content": request.message},
     ]

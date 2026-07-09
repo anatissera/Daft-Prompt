@@ -153,6 +153,7 @@ export interface ChatRequestPayload {
   message: string;
   reference_id?: string | null;
   current_song?: SongState | null;
+  conversation_context?: string | null;
 }
 
 export type ReferenceSourceKind = "upload" | "direct_url" | "youtube" | "metadata" | "local";

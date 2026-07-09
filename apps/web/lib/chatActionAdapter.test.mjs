@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildChatRequestPayload,
+  buildConversationContext,
   chooseChatAction,
   createAnalysisMessage,
   createCompositionMessage,
@@ -79,11 +80,28 @@ test("buildChatRequestPayload includes active reference and current song when av
       message: "What instruments are loaded for this song?",
       activeReferenceId: "ref_song",
       currentSong,
+      conversationContext: "User: Make it darker",
     }),
     {
       message: "What instruments are loaded for this song?",
       reference_id: "ref_song",
       current_song: currentSong,
+      conversation_context: "User: Make it darker",
     },
   );
+});
+
+test("buildConversationContext keeps a bounded, user and assistant-only session summary", () => {
+  const context = buildConversationContext([
+    { role: "system", text: "internal event" },
+    { role: "user", text: "Compose a disco groove" },
+    { role: "assistant", text: "I will start with drums and bass." },
+    { role: "user", text: "Make it darker\nwith more space." },
+  ]);
+
+  assert.equal(
+    context,
+    "User: Compose a disco groove\nAssistant: I will start with drums and bass.\nUser: Make it darker with more space.",
+  );
+  assert.equal(context.includes("internal event"), false);
 });

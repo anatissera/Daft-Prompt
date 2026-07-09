@@ -44,12 +44,16 @@ export function referenceMemoryFromChatResponse(
   fallbackLabel?: string,
 ): { referenceId: string; label: string } | null;
 
+export function buildConversationContext(messages: Array<Pick<ChatMessage, "role" | "text">>): string;
+
 export function buildChatRequestPayload(input: {
   message: string;
   activeReferenceId?: string | null;
   currentSong?: SongState | null;
+  conversationContext?: string;
 }): {
   message: string;
   reference_id: string | null;
   current_song?: SongState;
+  conversation_context?: string;
 };

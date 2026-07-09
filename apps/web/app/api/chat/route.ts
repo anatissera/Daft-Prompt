@@ -16,13 +16,21 @@ export async function POST(req: NextRequest) {
   const message = typeof body?.message === "string" ? body.message : "";
   const referenceId = body?.reference_id ?? null;
   const currentSong = body?.current_song ?? null;
+  const conversationContext = typeof body?.conversation_context === "string"
+    ? body.conversation_context.slice(-1600)
+    : null;
 
   try {
     const upstream = await fetch(`${API_BASE_URL}/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       signal: req.signal,
-      body: JSON.stringify({ message, reference_id: referenceId, current_song: currentSong }),
+      body: JSON.stringify({
+        message,
+        reference_id: referenceId,
+        current_song: currentSong,
+        conversation_context: conversationContext,
+      }),
     });
     const text = await upstream.text();
     return new Response(text, {
