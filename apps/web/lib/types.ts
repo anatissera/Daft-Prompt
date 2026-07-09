@@ -136,6 +136,8 @@ export interface TabExcerpt {
   evidence?: string[];
 }
 
+export interface ChordChartRow { label: string; chords: string[]; confidence: number; }
+
 export interface ChatResponse {
   intent: "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
   reply: string;
@@ -143,6 +145,7 @@ export interface ChatResponse {
   reference_label?: string | null;
   answer?: { answer: string; confidence?: string } | null;
   tab_excerpt?: TabExcerpt | null;
+  chord_chart?: ChordChartRow[];
   compose?: ChatComposeResult | null;
   clarification?: string | null;
   usage?: Record<string, number> | null;

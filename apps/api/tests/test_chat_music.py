@@ -141,6 +141,7 @@ def test_answer_reference_intent_when_question_matches_profile_topic():
     assert response.answer.reference_id == profile.reference_id
     assert composer.calls == []
     assert explainer.calls == [("what chords does the chorus play?", profile.reference_id)]
+    assert response.chord_chart[0].chords == ["Am", "F", "C", "G"]
 
 
 def test_tab_tool_output_is_exposed_as_a_native_chat_excerpt():
