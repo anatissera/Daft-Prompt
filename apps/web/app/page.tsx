@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
-import type { AnalysisEvent, ReferenceProfile, SongState, TabExcerpt } from "@/lib/types";
+import type { AnalysisEvent, ChordChartRow, ReferenceProfile, SongState, TabExcerpt } from "@/lib/types";
 import { getAnalysisReadyMessage } from "@/lib/referenceProfileView.mjs";
 import {
   createAnalysisProgress,
@@ -56,6 +56,7 @@ interface ChatResponse {
   reference_label?: string | null;
   answer?: { answer: string; confidence?: string } | null;
   tab_excerpt?: TabExcerpt | null;
+  chord_chart?: ChordChartRow[];
   compose?: ChatComposeResult | null;
   clarification?: string | null;
   usage?: UsageInfo | null;
@@ -170,6 +171,8 @@ export default function Home() {
       if (rememberedReference) setActiveReference(rememberedReference);
       if (data.tab_excerpt) {
         appendMessage({ ...createTabMessage("assistant", data.reply, data.tab_excerpt, idx), meta });
+      } else if (data.chord_chart?.length) {
+        appendMessage({ ...createTextMessage("assistant", `${data.reply}\n\n${data.chord_chart.map((row) => `${row.label}: ${row.chords.join(" · ")} (${Math.round(row.confidence * 100)}%)`).join("\n")}`, idx), meta });
       } else if (data.compose && data.compose.artifacts) {
         const composeResponse = {
           job_id: "chat",

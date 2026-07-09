@@ -70,6 +70,12 @@ class ChatComposeResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ChordChartRow(BaseModel):
+    label: str
+    chords: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
 class UsageInfo(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
@@ -84,6 +90,7 @@ class ChatResponse(BaseModel):
     reference_id: Optional[str] = None
     reference_label: Optional[str] = None
     answer: Optional[ExplanationAnswer] = None
+    chord_chart: list[ChordChartRow] = Field(default_factory=list)
     tab_excerpt: Optional[TabExcerptToolOutput] = None
     compose: Optional[ChatComposeResult] = None
     clarification: Optional[str] = None
@@ -316,6 +323,7 @@ class ChatMusic:
                 reference_id=profile.reference_id,
                 reference_label=_reference_label(profile),
                 answer=answer,
+                chord_chart=_chord_chart(profile) if _is_chord_question(message) else [],
             )
 
         if intent == "compose_from_reference":
@@ -573,6 +581,25 @@ def _composition_warnings(song: SongState) -> list[str]:
         warnings.append(f"{instrument_id} failed to compose: {reason}")
     warnings.extend(error for error in song.errors if error)
     return warnings
+
+
+def _is_chord_question(message: str) -> bool:
+    return bool(re.search(r"\b(chord|chords|progression|harmony|harmonic|acorde|acordes|progresi[oó]n|armon[ií]a)\b", message, re.IGNORECASE))
+
+
+def _chord_chart(profile: ReferenceProfile) -> list[ChordChartRow]:
+    audio = profile.audio
+    if audio is None:
+        return []
+    return [
+        ChordChartRow(
+            label=f"{estimate.start_seconds:g}-{estimate.end_seconds:g}s",
+            chords=estimate.chords,
+            confidence=estimate.confidence,
+        )
+        for estimate in audio.chord_estimates[:4]
+        if estimate.chords
+    ]
 
 
 def _style_with_reference(message: str, profile: ReferenceProfile) -> str:
