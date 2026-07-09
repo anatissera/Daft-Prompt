@@ -78,6 +78,19 @@ class BuildCompositionBrief:
                     brief.harmonic_guidance[profile.profile_id] = harmony
                 else:
                     brief.uncertainty_notes.append(f"Requested harmony from {profile.identity.title}, but no harmony evidence is available.")
+            if "melodic_guidance" in dimensions:
+                melody = profile.audio.melody if profile.audio else None
+                if melody is not None and melody.note_count and melody.confidence >= 0.35:
+                    brief.melodic_guidance[profile.profile_id] = {
+                        "note_count": melody.note_count,
+                        "pitch_low": melody.pitch_low,
+                        "pitch_high": melody.pitch_high,
+                        "contour": melody.contour,
+                        "confidence": melody.confidence,
+                        "instruction": "Use only the register and contour as transformative melodic guidance; do not copy events.",
+                    }
+                else:
+                    brief.uncertainty_notes.append(f"Requested melodic guidance from {profile.identity.title}, but no reliable transcription is available.")
             if "form_guidance" in dimensions:
                 brief.form_guidance[profile.profile_id] = [section.name for section in profile.sections]
             if "timbre_traits" in dimensions:
@@ -200,6 +213,8 @@ def _requested_dimensions(normalized: str) -> list[str]:
         dimensions.append("tempo")
     if any(word in normalized for word in ["harmony", "chord", "progression", "key"]):
         dimensions.append("harmonic_guidance")
+    if any(word in normalized for word in ["melody", "melodic", "riff", "solo", "lead", "melodía", "melodia"]):
+        dimensions.append("melodic_guidance")
     if any(word in normalized for word in ["form", "section", "structure", "energy"]):
         dimensions.append("form_guidance")
     if any(word in normalized for word in ["synth", "texture", "timbre", "sound"]):

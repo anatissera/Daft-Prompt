@@ -81,6 +81,7 @@ def prompt_from_composition_brief(brief: CompositionBrief) -> str:
         f"transfer_policy: {data['transfer_policy']}\n"
         f"harmonic_guidance: {data['harmonic_guidance']}\n"
         f"rhythmic_guidance: {data['rhythmic_guidance']}\n"
+        f"melodic_guidance: {data['melodic_guidance']}\n"
         f"form_guidance: {data['form_guidance']}\n"
         f"instrumentation: {data['instrumentation']}\n"
         f"instrument_requests: {instrument_requests}\n"

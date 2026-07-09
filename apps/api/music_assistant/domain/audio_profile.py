@@ -280,6 +280,7 @@ class CompositionBrief(BaseModel):
     transfer_policy: dict[str, list[str]] = Field(default_factory=dict)
     harmonic_guidance: dict[str, Any] = Field(default_factory=dict)
     rhythmic_guidance: dict[str, Any] = Field(default_factory=dict)
+    melodic_guidance: dict[str, Any] = Field(default_factory=dict)
     form_guidance: dict[str, Any] = Field(default_factory=dict)
     instrumentation: dict[str, Any] = Field(default_factory=dict)
     instrument_requests: dict[str, dict[str, Any]] = Field(default_factory=dict)
