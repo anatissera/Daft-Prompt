@@ -1,5 +1,5 @@
 import type { ChatMessage, FeedEvent } from "./chatTypes";
-import type { ComposeResponse, Header, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "./types";
+import type { ChordChartRow, ComposeResponse, Header, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "./types";
 
 export type ChatAction =
   | { type: "analyze"; messageText: string }
@@ -35,6 +35,7 @@ export function createMelodyMessage(
   melody: MelodyProfile,
   index: number,
 ): ChatMessage;
+export function createChordMessage(role: ChatMessage["role"], text: string, rows: ChordChartRow[], index: number): ChatMessage;
 
 export function createCompositionMessage(
   role: ChatMessage["role"],
