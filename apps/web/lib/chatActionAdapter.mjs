@@ -32,6 +32,16 @@ export function createAnalysisMessage(role, text, profile, index) {
   };
 }
 
+export function createTabMessage(role, text, excerpt, index) {
+  return {
+    id: `${role}-${index}`,
+    kind: "tab",
+    role,
+    text,
+    excerpt,
+  };
+}
+
 export function createCompositionMessage(role, text, result, feed, header, source, index) {
   return {
     id: `${role}-${index}`,
@@ -43,4 +53,16 @@ export function createCompositionMessage(role, text, result, feed, header, sourc
     header,
     source,
   };
+}
+
+export function referenceMemoryFromChatResponse(response, fallbackLabel = "Current reference") {
+  if (!response || !response.reference_id) return null;
+  const label = response.reference_label || fallbackLabel || response.reference_id;
+  return { referenceId: response.reference_id, label };
+}
+
+export function buildChatRequestPayload({ message, activeReferenceId = null, currentSong = null }) {
+  const payload = { message, reference_id: activeReferenceId ?? null };
+  if (currentSong) payload.current_song = currentSong;
+  return payload;
 }

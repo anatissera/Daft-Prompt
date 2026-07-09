@@ -289,6 +289,100 @@ def _arrangement_item_matches_family(item: ArrangementInstrument, family: str) -
     return any(alias in haystack for alias in aliases.get(family, [family]))
 
 
+def _normalize_guitar_items(
+    items: list[ArrangementInstrument],
+    groups: list[CompositionGroup],
+) -> tuple[list[ArrangementInstrument], list[CompositionGroup]]:
+    used_ids = {item.id for item in items}
+    id_map: dict[str, str] = {}
+    updated: list[ArrangementInstrument] = []
+    for item in items:
+        if not _arrangement_item_matches_family(item, "guitar"):
+            updated.append(item)
+            continue
+
+        role_kind = _guitar_role_kind(item)
+        target_id = "lead_guitar" if role_kind == "lead" else "rhythm_guitar"
+        new_id = item.id
+        if _guitar_id_should_be_normalized(item):
+            used_ids.discard(item.id)
+            new_id = _unique_id(target_id, used_ids)
+            used_ids.add(new_id)
+            id_map[item.id] = new_id
+
+        instrument = _guitar_instrument_name(item, role_kind)
+        playing_style = _guitar_playing_style(item, role_kind)
+        updated.append(
+            item.model_copy(
+                update={
+                    "id": new_id,
+                    "instrument": instrument,
+                    "playing_style": playing_style,
+                }
+            )
+        )
+    if not id_map:
+        return updated, groups
+    return updated, _remap_groups(groups, id_map)
+
+
+def _guitar_id_should_be_normalized(item: ArrangementInstrument) -> bool:
+    text = f"{item.id} {item.instrument}".lower()
+    return any(
+        marker in text
+        for marker in [
+            "hard rock",
+            "hard_rock",
+            "heavy",
+            "distortion",
+            "distorted",
+            "overdrive",
+            "overdriven",
+        ]
+    )
+
+
+def _guitar_role_kind(item: ArrangementInstrument) -> Literal["rhythm", "lead"]:
+    text = f"{item.id} {item.instrument} {item.role} {item.playing_style}".lower()
+    if any(token in text for token in ["lead", "solo", "melody", "melodic", "hook", "fill"]):
+        return "lead"
+    return "rhythm"
+
+
+def _guitar_instrument_name(item: ArrangementInstrument, role_kind: str) -> str:
+    text = f"{item.id} {item.instrument} {item.role} {item.playing_style}".lower()
+    if role_kind == "lead" or any(
+        token in text for token in ["hard rock", "heavy", "distort", "overdrive", "overdriven", "grunge"]
+    ):
+        return "electric_guitar_overdriven"
+    return "electric_guitar_clean"
+
+
+def _guitar_playing_style(item: ArrangementInstrument, role_kind: str) -> str:
+    base = item.playing_style.strip()
+    if role_kind == "lead":
+        guidance = (
+            "Band guidance: use short guitar hooks and fills between phrases, "
+            "answer the rhythm riff, approximate bends/slides with nearby MIDI notes, "
+            "and avoid constant keyboard-like scale runs."
+        )
+    else:
+        guidance = (
+            "Band guidance: use repeated riff cells, power chords, palm-muted eighths, "
+            "occasional syncopated strums, and leave room for the lead guitar."
+        )
+    return f"{base} {guidance}".strip() if base else guidance
+
+
+def _unique_id(base: str, used_ids: set[str]) -> str:
+    candidate = base
+    suffix = 2
+    while candidate in used_ids:
+        candidate = f"{base}_{suffix}"
+        suffix += 1
+    return candidate
+
+
 def _clamp_roster(items: list[ArrangementInstrument]) -> list[ArrangementInstrument]:
     return items[:MAX_ROSTER]
 
@@ -349,6 +443,7 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
     groups = _remap_groups(out.composition_groups, id_map)
     clamped_instruments, groups = _collapse_drum_components(clamped_instruments, groups)
     clamped_instruments, groups = _canonicalize_requested_instrument_ids(style, clamped_instruments, groups)
+    clamped_instruments, groups = _normalize_guitar_items(clamped_instruments, groups)
     num_bars = _clamp_num_bars(out.num_bars)
     _validate_groups(groups, clamped_instruments)
     sections = _clamp_sections(out.sections, num_bars) or suggest_form(out.genre, num_bars)

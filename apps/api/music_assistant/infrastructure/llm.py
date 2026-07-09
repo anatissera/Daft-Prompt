@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -101,6 +103,11 @@ def model_plan(role: str, settings: Settings) -> list[tuple[str, str]]:
         return []
 
     providers = _csv(settings.llm_fallback_providers)
+    if (
+        settings.llm_provider == "vertexai"
+        and "llm_fallback_providers" not in settings.model_fields_set
+    ):
+        providers = []
     providers = [settings.llm_provider] + [p for p in providers if p != settings.llm_provider]
 
     plan: list[tuple[str, str]] = []
@@ -168,6 +175,18 @@ def _import_openrouter_chat():
     return ChatOpenAI
 
 
+def _import_vertexai_chat():
+    from langchain_google_vertexai import ChatVertexAI
+
+    return ChatVertexAI
+
+
+def _validate_vertexai_adc() -> None:
+    import google.auth
+
+    google.auth.default()
+
+
 def _build_chat_model(provider: str, model: str, settings: Settings):
     key = settings.api_key_for(provider)
     if provider == "gemini":
@@ -204,18 +223,37 @@ def _build_chat_model(provider: str, model: str, settings: Settings):
         )
 
     if provider == "vertexai":
+        if not settings.google_cloud_project:
+            raise LLMProviderUnavailable(
+                provider=provider,
+                model=model,
+                detail="Set GOOGLE_CLOUD_PROJECT when LLM_PROVIDER=vertexai.",
+            )
         try:
-            from langchain_google_vertexai import ChatVertexAI
+            ChatVertexAI = _import_vertexai_chat()
         except ModuleNotFoundError as exc:
             raise LLMProviderUnavailable(
                 provider=provider,
                 model=model,
                 detail='Install backend extra: pip install -e ".[vertexai]"',
             ) from exc
+        try:
+            _validate_vertexai_adc()
+        except Exception as exc:
+            raise LLMProviderUnavailable(
+                provider=provider,
+                model=model,
+                detail=(
+                    "Vertex AI authentication is not available. Run "
+                    "`gcloud auth application-default login` with the billing-enabled account."
+                ),
+            ) from exc
         return ChatVertexAI(
             model=model,
             project=settings.google_cloud_project,
+            location=settings.google_cloud_location,
             temperature=0.7,
+            max_retries=max(0, settings.llm_max_retries),
         )
 
     raise LLMProviderUnavailable(provider=provider, model=model, detail="unknown provider")
@@ -229,8 +267,6 @@ def with_fallbacks(role: str, settings: Settings, operation: Callable[[str, str]
         except Exception as exc:
             failure = classify_llm_error(exc, provider=provider, model=model)
             failures.append(failure)
-            if isinstance(failure, LLMStructuredOutputError):
-                break
             if isinstance(failure, LLMQuotaExceeded) and settings.llm_fail_fast_on_quota:
                 continue
     raise LLMAllProvidersFailed(failures)
@@ -292,11 +328,8 @@ class _FallbackStructuredInvoker:
         def operation(provider: str, model: str):
             _RATE_LIMITER.wait(self.settings.llm_rpm_limit)
             chat = _build_chat_model(provider, model, self.settings)
-            structured = chat.with_structured_output(self.schema)
             callbacks = _usage_callbacks()
-            if callbacks:
-                return structured.invoke(messages, config={"callbacks": callbacks})
-            return structured.invoke(messages)
+            return _invoke_structured_with_recovery(chat, self.schema, messages, callbacks, provider, model)
 
         return with_fallbacks(self.role, self.settings, operation)
 
@@ -317,3 +350,57 @@ def make_llm(role: str = "director", settings: Optional[Settings] = None):
             "No LLM configured. Set LLM_PROVIDER and the matching <PROVIDER>_API_KEY."
         )
     return FallbackChatModel(role, s)
+
+
+def _invoke_structured_with_recovery(
+    chat,
+    schema: type[T],
+    messages,
+    callbacks: list,
+    provider: str,
+    model: str,
+) -> T:
+    structured = chat.with_structured_output(schema)
+    config = {"callbacks": callbacks} if callbacks else None
+    try:
+        if config:
+            return structured.invoke(messages, config=config)
+        return structured.invoke(messages)
+    except Exception as structured_exc:
+        raw = _invoke_raw_chat(chat, messages, config)
+        try:
+            return _parse_raw_structured_output(raw, schema)
+        except Exception as parse_exc:
+            raise LLMStructuredOutputError(
+                provider=provider,
+                model=model,
+                detail=f"{structured_exc}; recovery failed: {parse_exc}",
+            ) from structured_exc
+
+
+def _invoke_raw_chat(chat, messages, config: dict | None):
+    invoke = getattr(chat, "invoke", None)
+    if invoke is None:
+        raise RuntimeError("chat model does not expose raw invoke for structured recovery")
+    if config:
+        return invoke(messages, config=config)
+    return invoke(messages)
+
+
+_FENCED_JSON_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.IGNORECASE | re.DOTALL)
+
+
+def _parse_raw_structured_output(raw: Any, schema: type[T]) -> T:
+    content = getattr(raw, "content", raw)
+    if isinstance(content, list):
+        content = "".join(
+            item.get("text", "") if isinstance(item, dict) else str(item)
+            for item in content
+        )
+    if not isinstance(content, str):
+        content = str(content)
+    match = _FENCED_JSON_RE.match(content)
+    if match:
+        content = match.group(1)
+    data = json.loads(content.strip())
+    return schema.model_validate(data)

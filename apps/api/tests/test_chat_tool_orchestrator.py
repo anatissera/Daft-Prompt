@@ -126,6 +126,7 @@ def make_chat(
     *,
     store: InMemoryReferenceStore | None = None,
     researcher: FakeResearcher | None = None,
+    enable_web_research: bool = True,
 ) -> tuple[ChatMusic, FakeChatModel, RecordingComposer, FakeResearcher, InMemoryReferenceStore]:
     store = store or InMemoryReferenceStore()
     model = FakeChatModel(decisions)
@@ -137,6 +138,7 @@ def make_chat(
         reference_store=store,
         chat_model=model,
         song_researcher=researcher,
+        enable_web_research=enable_web_research,
     )
     return chat, model, composer, researcher, store
 
@@ -153,6 +155,40 @@ def test_llm_tool_orchestrator_researches_and_persists_profile():
     assert "Research ready" in response.reply
     assert researcher.calls == ["Space Cowboy"]
     assert store.get("ref_researched") is not None
+    assert composer.calls == []
+    assert model.invoker.calls
+
+
+def test_llm_tool_orchestrator_can_research_named_song_analysis_prompt():
+    chat, model, composer, researcher, store = make_chat(
+        [ChatToolDecision(action="research_song", query="Around the World by Daft Punk")]
+    )
+
+    response = chat.handle(ChatRequest(message="Analyze Around the World by Daft Punk"))
+
+    assert response.intent == "answer_reference"
+    assert response.reference_id == "ref_researched"
+    assert researcher.calls == ["Around the World by Daft Punk"]
+    assert store.get("ref_researched") is not None
+    assert composer.calls == []
+    prompt_text = str(model.invoker.calls[0])
+    assert "analyze a named song" in prompt_text
+    assert "research_song" in prompt_text
+
+
+def test_llm_research_decision_respects_disabled_web_research():
+    chat, model, composer, researcher, store = make_chat(
+        [ChatToolDecision(action="research_song", query="Around the World by Daft Punk")],
+        enable_web_research=False,
+    )
+
+    response = chat.handle(ChatRequest(message="Analyze Around the World by Daft Punk"))
+
+    assert response.intent == "clarify"
+    assert "Web research is disabled" in response.reply
+    assert response.error == {"code": "web_research_disabled", "message": response.reply}
+    assert researcher.calls == []
+    assert store.get("ref_researched") is None
     assert composer.calls == []
     assert model.invoker.calls
 

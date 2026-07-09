@@ -235,6 +235,37 @@ def test_song_system_prompt_and_instrument_intro_cover_song_and_instrument_conte
     assert "Lock to the kick." not in song
 
 
+def test_guitar_intro_contains_band_like_idiomatic_constraints():
+    from music_assistant.agents.instrument import _instrument_intro
+
+    header = Header(genre="grunge rock", key="F minor", tempo_bpm=117, num_bars=8)
+    rhythm = RosterItem(
+        id="rhythm_guitar",
+        instrument="electric_guitar_overdriven",
+        midi_range=(40, 84),
+        role="rhythm guitar riff",
+        playing_style="Aggressive mid-register part.",
+    )
+    lead = RosterItem(
+        id="lead_guitar",
+        instrument="electric_guitar_overdriven",
+        midi_range=(52, 88),
+        role="lead guitar hook",
+        playing_style="Answer the riff.",
+    )
+
+    rhythm_intro = _instrument_intro(rhythm, header)
+    lead_intro = _instrument_intro(lead, header)
+
+    assert "power chord" in rhythm_intro.lower()
+    assert "palm-muted" in rhythm_intro.lower()
+    assert "repeated riff" in rhythm_intro.lower()
+    assert "keyboard-like" in rhythm_intro.lower()
+    assert "short motifs" in lead_intro.lower()
+    assert "fills between phrases" in lead_intro.lower()
+    assert "call-and-response" in lead_intro.lower()
+
+
 def test_run_instrument_turn_accepts_batch_peer_ids():
     from music_assistant.agents.instrument import InstrumentTurnOutput, run_instrument_turn
     from music_assistant.domain.song_state import Header, Note, RosterItem
@@ -258,5 +289,87 @@ def test_run_instrument_turn_accepts_batch_peer_ids():
         header, bass, roster, {}, ["drums"], [], None, llm=TurnLLM()
     )
     assert part.instrument_id == "bass"
+    assert resolutions == []
+    assert new_requests == []
+
+
+def test_instrument_revision_includes_the_user_instruction_in_its_prompt():
+    from music_assistant.agents.instrument import InstrumentRevisionOutput
+    from music_assistant.domain.song_state import Note, Part
+
+    class RevisionLLM:
+        def __init__(self) -> None:
+            self.messages = None
+
+        def with_structured_output(self, schema):
+            assert schema is InstrumentRevisionOutput
+            return self
+
+        def invoke(self, messages):
+            self.messages = messages
+            return InstrumentRevisionOutput(notes_summary="simplified bass line")
+
+    existing = Part(
+        instrument_id="bass",
+        notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)],
+        notes_summary="busy bass line",
+    )
+    llm = RevisionLLM()
+
+    part, resolutions, new_requests = run_instrument_turn(
+        HEADER,
+        BASS,
+        ROSTER,
+        {},
+        [],
+        [],
+        existing,
+        llm=llm,
+        revision_instruction="Make the bass less busy and leave more space for the kick.",
+    )
+
+    assert part.notes_summary == "simplified bass line"
+    assert resolutions == []
+    assert new_requests == []
+    prompt = "\n".join(content for _role, content in llm.messages)
+    assert "User-requested revision" in prompt
+    assert "Make the bass less busy" in prompt
+
+
+def test_user_requested_drum_revision_uses_the_revision_agent():
+    from music_assistant.agents.instrument import InstrumentRevisionOutput
+    from music_assistant.domain.song_state import Part
+
+    drums = ROSTER[1]
+    existing = Part(
+        instrument_id="drums",
+        notes=[Note(bar=0, start_beat=0.0, pitch=36, dur=0.25)],
+        notes_summary="basic kick pattern",
+    )
+
+    class DrumRevisionLLM:
+        def with_structured_output(self, schema):
+            assert schema is InstrumentRevisionOutput
+            return self
+
+        def invoke(self, _messages):
+            return InstrumentRevisionOutput(
+                edits=[],
+                notes_summary="sparser kick pattern with room for the bass",
+            )
+
+    part, resolutions, new_requests = run_instrument_turn(
+        HEADER,
+        drums,
+        ROSTER,
+        {},
+        [],
+        [],
+        existing,
+        llm=DrumRevisionLLM(),
+        revision_instruction="Make the drums less busy.",
+    )
+
+    assert part.notes_summary == "sparser kick pattern with room for the bass"
     assert resolutions == []
     assert new_requests == []

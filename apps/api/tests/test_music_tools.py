@@ -75,6 +75,7 @@ def _bundle() -> SongsterrTabBundle:
                 instrument="Electric Bass",
                 instrument_family="bass",
                 is_bass=True,
+                tuning=["E1", "A1", "D2", "G2"],
                 source_url="https://www.songsterr.com/a/wsa/queen-another-one-bites-the-dust-bass-tab-s371",
                 measures=[
                     TabMeasure(
@@ -103,6 +104,22 @@ def _bundle() -> SongsterrTabBundle:
                 measures=[TabMeasure(index=0, marker="Intro", events=[])],
                 note_count=8,
                 beat_count=4,
+            ),
+            InstrumentTabTrack(
+                part_id=5,
+                name="Electric Piano",
+                instrument="Electric Piano",
+                instrument_family="piano",
+                is_piano=True,
+                measures=[
+                    TabMeasure(
+                        index=0,
+                        marker="Intro",
+                        events=[TabEvent(measure_index=0, beat_index=0, duration="1/4", pitch=60)],
+                    )
+                ],
+                note_count=1,
+                beat_count=1,
             ),
         ],
     )
@@ -145,6 +162,7 @@ def _tools() -> MusicTools:
         answer_music_question=AnswerMusicQuestion(songsterr_tab_store=tab_store),
         song_researcher=FakeResearcher(),
         songsterr_tab_store=tab_store,
+        enable_web_research=True,
     )
 
 
@@ -186,9 +204,25 @@ def test_get_tab_excerpt_returns_small_extract_not_full_track_json():
     assert output.instrument == "bass"
     assert len(output.measures) == 1
     assert output.measures[0].marker == "Intro"
+    assert output.measures[0].events[0].beat_index == 0.0
+    assert output.measures[0].events[0].string == 3
+    assert output.measures[0].events[0].fret == 5
+    assert output.track_name
+    assert output.tuning
     assert "string=3" not in output.summary
     assert "raw" not in output.model_dump_json()
     assert output.error is None
+
+
+def test_get_piano_excerpt_includes_source_provided_midi_pitch():
+    output = _tools().get_tab_excerpt(
+        TabExcerptToolInput(reference_id="ref_queen", instrument="piano", start_measure=0, measure_count=1)
+    )
+
+    assert output.instrument == "piano"
+    assert output.measures[0].events[0].pitch == 60
+    assert output.measures[0].events[0].string is None
+    assert output.measures[0].events[0].fret is None
 
 
 def test_get_instrument_summary_uses_loaded_songsterr_bundle():

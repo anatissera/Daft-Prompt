@@ -109,6 +109,8 @@ def _seed_from_track(track: Any, family: str) -> tuple[list[ReferenceNoteSeed], 
 
 
 def _event_pitch(event: Any, family: str, tuning: list[int | None]) -> int | None:
+    if isinstance(getattr(event, "pitch", None), int) and 0 <= event.pitch <= 127:
+        return event.pitch
     raw = event.raw if isinstance(event.raw, dict) else {}
     for key in ["midi", "midiPitch", "pitch", "value", "drum"]:
         value = raw.get(key)

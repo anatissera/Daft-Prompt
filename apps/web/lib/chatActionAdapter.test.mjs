@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chooseChatAction, createTextMessage, createAnalysisMessage, createCompositionMessage } from "./chatActionAdapter.mjs";
+import {
+  buildChatRequestPayload,
+  chooseChatAction,
+  createAnalysisMessage,
+  createCompositionMessage,
+  createTextMessage,
+  createTabMessage,
+  referenceMemoryFromChatResponse,
+} from "./chatActionAdapter.mjs";
 
 test("chooseChatAction analyzes when a local file is attached", () => {
   assert.deepEqual(
@@ -39,4 +47,43 @@ test("message helpers create stable enriched chat messages", () => {
   const composition = createCompositionMessage("assistant", "Generated", { job_id: "job_1" }, [], null, "director", 2);
   assert.equal(composition.kind, "composition");
   assert.equal(composition.result.job_id, "job_1");
+});
+
+test("createTabMessage keeps a native tab excerpt attached to the chat turn", () => {
+  const excerpt = { instrument: "bass", measures: [] };
+
+  assert.deepEqual(createTabMessage("assistant", "Here is the bass tab.", excerpt, 3), {
+    id: "assistant-3",
+    kind: "tab",
+    role: "assistant",
+    text: "Here is the bass tab.",
+    excerpt,
+  });
+});
+
+test("referenceMemoryFromChatResponse remembers researched references", () => {
+  assert.deepEqual(
+    referenceMemoryFromChatResponse(
+      { reference_id: "ref_song", reply: "Research found source-backed claims." },
+      "Look up Paranoid by Black Sabbath",
+    ),
+    { referenceId: "ref_song", label: "Look up Paranoid by Black Sabbath" },
+  );
+  assert.equal(referenceMemoryFromChatResponse({ reply: "No reference" }, "Hello"), null);
+});
+
+test("buildChatRequestPayload includes active reference and current song when available", () => {
+  const currentSong = { request: "compose rock", parts: {} };
+  assert.deepEqual(
+    buildChatRequestPayload({
+      message: "What instruments are loaded for this song?",
+      activeReferenceId: "ref_song",
+      currentSong,
+    }),
+    {
+      message: "What instruments are loaded for this song?",
+      reference_id: "ref_song",
+      current_song: currentSong,
+    },
+  );
 });

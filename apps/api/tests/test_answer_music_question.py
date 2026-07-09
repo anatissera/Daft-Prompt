@@ -160,6 +160,25 @@ def test_answers_key_questions_from_key_profile():
     assert "Primary key candidate: A minor" in answer.evidence[0]
 
 
+def test_spanish_key_question_uses_spanish_explanation_and_keeps_evidence():
+    answer = AnswerMusicQuestion().execute("¿Cuál es la tonalidad de esta canción?", _profile())
+
+    assert answer.answer.startswith("El centro tonal es ambiguo")
+    assert "A minor" in answer.answer
+    assert "Primary key candidate: A minor" in answer.evidence[0]
+
+
+def test_spanish_chord_and_structure_questions_are_recognized():
+    explainer = AnswerMusicQuestion()
+
+    chords = explainer.execute("¿Qué acordes tiene la progresión?", _profile())
+    structure = explainer.execute("¿Cuál es la estructura y dónde está el coro?", _profile())
+
+    assert chords.answer.startswith("La progresión principal probablemente es")
+    assert "Am - F - C - G" in chords.answer
+    assert structure.answer.startswith("La estructura parece repetirse como")
+
+
 def test_answers_chord_questions_from_progression_estimates():
     answer = AnswerMusicQuestion().execute("What chords are probably in the chorus?", _profile())
 

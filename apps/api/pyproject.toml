@@ -18,13 +18,14 @@ dependencies = [
     "music21>=9.1",
     "langgraph>=0.2,<0.4",
     "langsmith>=0.1",
+    "langchain-google-genai>=2.0,<3.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27"]
 # Provider-agnostic by design (see music_assistant/llm.py) — install only the one you use,
 # selected at runtime via the LLM_PROVIDER env var.
-gemini = ["langchain-google-genai>=2.0"]
+gemini = []
 groq = ["langchain-groq>=0.2"]
 openrouter = ["langchain-openai>=0.2"]
 vertexai = ["langchain-google-vertexai>=2.0"]

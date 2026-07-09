@@ -162,26 +162,71 @@ source venv/bin/activate
 # Install
 pip install -e .
 
-# Optional: Add an LLM provider
-pip install -e ".[gemini]"    # or [groq], [openrouter]
-# For local fallback during long composition runs, install every provider you configure:
-pip install -e ".[gemini,openrouter]"
+# Gemini support is included in the base install.
+# For local fallback during long composition runs, install every extra provider you configure:
+pip install -e ".[openrouter]"    # or [groq], [vertexai]
 
 # Set env
 export LLM_PROVIDER=gemini
-export GOOGLE_API_KEY=xxx
+export GEMINI_API_KEY=xxx
 
 # Run
 uvicorn music_assistant.interfaces.api:app --reload --port 8000
 ```
 
-### Docker (both services)
+### Vertex AI with the billed Daft Prompt project
+
+To use Google Cloud billing/credits through the `daft-promt` project instead of
+the Gemini API-key path:
 
 ```bash
-docker-compose up
+cd apps/api
+source .venv/bin/activate
+pip install -e ".[vertexai]"
+gcloud auth application-default login
+```
+
+Set these local environment variables in your uncommitted `.env`:
+
+```bash
+LLM_PROVIDER=vertexai
+GOOGLE_CLOUD_PROJECT=daft-promt
+GOOGLE_CLOUD_LOCATION=global
+MODEL_DIRECTOR=gemini-3.5-flash
+MODEL_INSTRUMENT=gemini-3.5-flash
+MODEL_ARBITER=gemini-3.5-flash
+```
+
+`global` is the safest default for Gemini 3.5 through the current Vertex AI
+LangChain adapter. Single-region endpoints such as `us-central1` can return
+`404 Publisher model ... was not found` for `gemini-3.5-flash` even when the
+project, billing, and ADC are configured correctly.
+
+Other developers can keep using `LLM_PROVIDER=gemini`, `openrouter`, or `groq`
+with their own local credentials.
+
+### Docker (both services)
+
+If you want the whole app with Vertex AI using a single command from the repo
+root, first make sure ADC exists locally:
+
+```bash
+gcloud auth application-default login
+```
+
+Then run:
+
+```bash
+docker compose up --build
 # API: http://localhost:8000
 # UI:  http://localhost:3000
 ```
+
+The compose stack mounts your local ADC file from
+`~/.config/gcloud/application_default_credentials.json` into the API container
+as read-only, configures `LLM_PROVIDER=vertexai`, points at the billed
+`daft-promt` project, and uses `GOOGLE_CLOUD_LOCATION=global` for
+`gemini-3.5-flash`.
 
 ---
 
@@ -294,7 +339,7 @@ pytest
 **LLM provider not configured?**
 ```bash
 export LLM_PROVIDER=gemini
-export GOOGLE_API_KEY=your-key
+export GEMINI_API_KEY=your-key
 ```
 If you configure OpenRouter as fallback, make sure the extra is installed:
 ```bash

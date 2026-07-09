@@ -106,15 +106,53 @@ export interface ChatComposeResult {
   warnings?: string[];
 }
 
+export interface TabExcerptEvent {
+  beat_index: number;
+  duration: string;
+  string?: number | null;
+  fret?: number | null;
+  pitch?: number | null;
+  rest: boolean;
+  tie: boolean;
+  ghost: boolean;
+}
+
+export interface TabExcerptMeasure {
+  index: number;
+  marker?: string | null;
+  note_events: number;
+  durations: string[];
+  events: TabExcerptEvent[];
+}
+
+export interface TabExcerpt {
+  reference_id?: string | null;
+  answer: string;
+  summary: string;
+  instrument: string;
+  track_name: string;
+  tuning: string[];
+  measures: TabExcerptMeasure[];
+  evidence?: string[];
+}
+
 export interface ChatResponse {
   intent: "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
   reply: string;
   reference_id?: string | null;
+  reference_label?: string | null;
   answer?: { answer: string; confidence?: string } | null;
+  tab_excerpt?: TabExcerpt | null;
   compose?: ChatComposeResult | null;
   clarification?: string | null;
   usage?: Record<string, number> | null;
   error?: ChatErrorDetail | null;
+}
+
+export interface ChatRequestPayload {
+  message: string;
+  reference_id?: string | null;
+  current_song?: SongState | null;
 }
 
 export type ReferenceSourceKind = "upload" | "direct_url" | "youtube" | "metadata" | "local";

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
-import type { AnalysisEvent, ReferenceProfile, SongState } from "@/lib/types";
+import type { AnalysisEvent, ReferenceProfile, SongState, TabExcerpt } from "@/lib/types";
 import { getAnalysisReadyMessage } from "@/lib/referenceProfileView.mjs";
 import {
   createAnalysisProgress,
@@ -12,10 +12,13 @@ import {
   type AnalysisStageState,
 } from "@/lib/analysisProgress.mjs";
 import {
+  buildChatRequestPayload,
   chooseChatAction,
   createAnalysisMessage,
   createCompositionMessage,
+  createTabMessage,
   createTextMessage,
+  referenceMemoryFromChatResponse,
 } from "@/lib/chatActionAdapter.mjs";
 import { deriveSessionTitle } from "@/lib/sessionTitle.mjs";
 
@@ -49,7 +52,9 @@ interface ChatResponse {
   intent: Intent;
   reply: string;
   reference_id?: string | null;
+  reference_label?: string | null;
   answer?: { answer: string; confidence?: string } | null;
+  tab_excerpt?: TabExcerpt | null;
   compose?: ChatComposeResult | null;
   clarification?: string | null;
   usage?: UsageInfo | null;
@@ -69,6 +74,8 @@ export default function Home() {
     ),
   ]);
   const [referenceProfile, setReferenceProfile] = useState<ReferenceProfile | null>(null);
+  const [activeReference, setActiveReference] = useState<{ referenceId: string; label: string } | null>(null);
+  const [currentSong, setCurrentSong] = useState<SongState | null>(null);
   const [activeWork, setActiveWork] = useState<string | null>(null);
   const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
   const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
@@ -145,10 +152,11 @@ export default function Home() {
         method: "POST",
         headers: { "content-type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({
+        body: JSON.stringify(buildChatRequestPayload({
           message,
-          reference_id: referenceProfile?.reference_id ?? null,
-        }),
+          activeReferenceId: activeReference?.referenceId ?? referenceProfile?.reference_id ?? null,
+          currentSong,
+        })),
       });
       if (!res.ok) throw new Error(await readApiError(res));
       const data = (await res.json()) as ChatResponse;
@@ -156,7 +164,11 @@ export default function Home() {
       const idx = nextMessageIndex();
       // Title the session from the first user message (client-side, no LLM).
       maybeTitleSession(message);
-      if (data.compose && data.compose.artifacts) {
+      const rememberedReference = referenceMemoryFromChatResponse(data, message);
+      if (rememberedReference) setActiveReference(rememberedReference);
+      if (data.tab_excerpt) {
+        appendMessage({ ...createTabMessage("assistant", data.reply, data.tab_excerpt, idx), meta });
+      } else if (data.compose && data.compose.artifacts) {
         const composeResponse = {
           job_id: "chat",
           source: data.compose.source as "director" | "canned",
@@ -172,6 +184,7 @@ export default function Home() {
           composeResponse.source,
           idx,
         );
+        setCurrentSong(data.compose.song);
         appendMessage({ ...msg, meta });
       } else {
         const msg = createTextMessage("assistant", data.reply, idx);
@@ -228,6 +241,7 @@ export default function Home() {
       }
       if (!profile) throw new Error("analysis stream ended without a profile");
       setReferenceProfile(profile);
+      setActiveReference({ referenceId: profile.reference_id, label: profile.source.label });
       appendMessage(createAnalysisMessage("assistant", getAnalysisReadyMessage(profile), profile, nextMessageIndex()));
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -253,6 +267,9 @@ export default function Home() {
   function resetConversation() {
     setMessages(messages.slice(0, 1));
     setError(null);
+    setReferenceProfile(null);
+    setActiveReference(null);
+    setCurrentSong(null);
     setSessionTitle("Untitled session");
     sessionTitledRef.current = false;
   }
@@ -280,10 +297,12 @@ export default function Home() {
           </div>
         </div>
 
-        {referenceProfile ? (
+        {referenceProfile || activeReference ? (
           <div className="sidebar-section">
             <span className="sidebar-section-title">Reference loaded</span>
-            <span className="sidebar-item sidebar-item-active">{referenceProfile.source.label}</span>
+            <span className="sidebar-item sidebar-item-active">
+              {referenceProfile?.source.label ?? activeReference?.label}
+            </span>
           </div>
         ) : null}
 

@@ -1,4 +1,4 @@
-import type { ComposeEvent, ComposeResponse, Header, ReferenceProfile } from "@/lib/types";
+import type { ComposeEvent, ComposeResponse, Header, ReferenceProfile, TabExcerpt } from "@/lib/types";
 
 export type FeedEvent = Extract<ComposeEvent, { type: "agent_pass" | "convergence" | "error" }>;
 
@@ -20,6 +20,11 @@ export interface AnalysisChatMessage extends BaseChatMessage {
   profile: ReferenceProfile;
 }
 
+export interface TabChatMessage extends BaseChatMessage {
+  kind: "tab";
+  excerpt: TabExcerpt;
+}
+
 export interface CompositionChatMessage extends BaseChatMessage {
   kind: "composition";
   result: ComposeResponse;
@@ -28,4 +33,4 @@ export interface CompositionChatMessage extends BaseChatMessage {
   source: ComposeResponse["source"] | null;
 }
 
-export type ChatMessage = TextChatMessage | AnalysisChatMessage | CompositionChatMessage;
+export type ChatMessage = TextChatMessage | AnalysisChatMessage | TabChatMessage | CompositionChatMessage;

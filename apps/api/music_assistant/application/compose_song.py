@@ -36,11 +36,13 @@ class ComposeSong:
         negotiator: Callable[[str], SongState],
         event_streamer: Callable[[str], Iterator[tuple[dict[str, Any], Any]]],
         canned: Callable[[str], SongState],
+        instrument_reviser: Callable[[SongState, str, str], SongState] | None = None,
     ):
         self.llm_configured = llm_configured
         self.negotiator = negotiator
         self.event_streamer = event_streamer
         self.canned = canned
+        self.instrument_reviser = instrument_reviser
 
     def compose(self, style: str | CompositionBrief) -> tuple[SongState, str]:
         if not self.llm_configured():
@@ -59,6 +61,13 @@ class ComposeSong:
                 song = song_snapshot
             yield event, song, source
         yield {}, song, source
+
+    def revise_instrument(self, song: SongState, instruction: str, instrument_id: str) -> tuple[SongState, str]:
+        if not self.llm_configured():
+            raise ComposeConfigurationError()
+        if self.instrument_reviser is None:
+            raise ComposeConfigurationError()
+        return self.instrument_reviser(song, instruction, instrument_id), "director"
 
 
 def prompt_from_composition_brief(brief: CompositionBrief) -> str:

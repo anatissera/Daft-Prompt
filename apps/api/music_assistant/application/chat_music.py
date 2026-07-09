@@ -17,12 +17,14 @@ from pydantic import BaseModel, Field
 from music_assistant.application.answer_music_question import AnswerMusicQuestion, MusicQuestionExplainer
 from music_assistant.application.chat_agent import ChatAgent
 from music_assistant.application.composition_brief import BuildCompositionBrief
-from music_assistant.application.compose_song import ComposeSong
+from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
+from music_assistant.application.language import is_spanish
 from music_assistant.application.music_tool_models import (
     AnswerToolOutput,
     ChatAgentDecision as ChatToolDecision,
     CompositionRequestToolInput,
     CompositionToolOutput,
+    TabExcerptToolOutput,
 )
 from music_assistant.application.music_tools import MusicTools
 from music_assistant.domain.audio_profile import ExplanationAnswer, ReferenceProfile
@@ -48,6 +50,7 @@ class ChatRequest(BaseModel):
     reference_id: Optional[str] = None
     reference_ids: list[str] = Field(default_factory=list)
     reference_context: Optional[str] = None
+    current_song: Optional[SongState] = None
 
 
 class ChatArtifacts(BaseModel):
@@ -78,7 +81,9 @@ class ChatResponse(BaseModel):
     intent: Intent
     reply: str
     reference_id: Optional[str] = None
+    reference_label: Optional[str] = None
     answer: Optional[ExplanationAnswer] = None
+    tab_excerpt: Optional[TabExcerptToolOutput] = None
     compose: Optional[ChatComposeResult] = None
     clarification: Optional[str] = None
     usage: Optional[UsageInfo] = None
@@ -93,9 +98,11 @@ _REFERENCE_TOPIC_RE = re.compile(
     r"|timbre|bright|dark|warm|noisy|sound|sounds|arrangement|instrument|instruments|tab|tabs)\b",
     re.IGNORECASE,
 )
-_RESEARCH_RE = re.compile(r"\b(research|look\s*up|search)\b", re.IGNORECASE)
+_RESEARCH_RE = re.compile(r"\b(research|look\s*up|search|buscar|busc[aá])\b", re.IGNORECASE)
 _RESEARCH_PREFIX_RE = re.compile(
-    r"^\s*(please\s+)?(can\s+you\s+)?(research|look\s*up|search)(\s+(on|the)\s+internet)?(\s+(for|about|and\s+analyze))?\s*",
+    r"^\s*(please\s+)?(can\s+you\s+)?(research|look\s*up|search|buscar|busc[aá])"
+    r"(\s+(in|on)\s+(the\s+)?(web|internet))?"
+    r"(\s+(for|about|and\s+analyze|sobre))?\s*",
     re.IGNORECASE,
 )
 _REFERENCE_GUIDE_RE = re.compile(
@@ -114,6 +121,7 @@ class ChatMusic:
         chat_model: ChatModel | None = None,
         song_researcher: SongResearcher | None = None,
         songsterr_tab_store: SongsterrTabStore | None = None,
+        enable_web_research: bool = False,
     ) -> None:
         self.compose_song = compose_song
         self.answer_music_question = answer_music_question
@@ -121,6 +129,7 @@ class ChatMusic:
         self.chat_model = chat_model
         self.song_researcher = song_researcher
         self.songsterr_tab_store = songsterr_tab_store
+        self.enable_web_research = enable_web_research
 
     def handle(self, request: ChatRequest) -> ChatResponse:
         tracker = UsageTracker()
@@ -142,6 +151,8 @@ class ChatMusic:
 
     def _handle(self, request: ChatRequest) -> ChatResponse:
         message = request.message.strip()
+        if request.current_song is not None and _looks_like_song_edit(message):
+            return self._revise_current_song(message, request.current_song)
         profile = (
             self.reference_store.get(request.reference_id)
             if request.reference_id
@@ -151,10 +162,20 @@ class ChatMusic:
         if profile is None and profiles:
             profile = profiles[0]
 
-        if self.chat_model is not None:
-            return self._handle_with_llm_tools(request, message, profile, profiles)
-
         intent = self._classify(message, has_reference=profile is not None)
+        if intent == "research_song":
+            return self._execute_deterministic_intent(intent, message, profile)
+        if profile is not None and intent == "answer_reference" and _should_answer_reference_locally(message, profiles):
+            return self._execute_deterministic_intent(intent, message, profile)
+
+        if self.chat_model is not None:
+            try:
+                return self._handle_with_llm_tools(request, message, profile, profiles)
+            except Exception:
+                if profile is not None:
+                    return self._execute_deterministic_intent(intent, message, profile)
+                raise
+
         return self._execute_deterministic_intent(intent, message, profile)
 
     def _handle_with_llm_tools(
@@ -172,6 +193,7 @@ class ChatMusic:
             song_researcher=self.song_researcher,
             songsterr_tab_store=self.songsterr_tab_store,
             chat_model=self.chat_model,
+            enable_web_research=self.enable_web_research,
         )
         agent_request = request.model_copy(
             update={"reference_context": _compact_profiles_context(profiles or ([profile] if profile else []))}
@@ -197,6 +219,7 @@ class ChatMusic:
     def _response_from_agent_result(self, agent_result) -> ChatResponse:
         output = agent_result.tool_output
         answer = output.explanation if isinstance(output, AnswerToolOutput) else None
+        tab_excerpt = output if isinstance(output, TabExcerptToolOutput) else None
         compose = None
         if isinstance(output, CompositionToolOutput) and output.song is not None and output.source is not None:
             compose = _compose_result_from_tool_output(output)
@@ -209,11 +232,28 @@ class ChatMusic:
                 clarification=clarification,
                 error={"code": output.error, "message": output.answer or output.error},
             )
+        if output is not None and output.error and output.intent == "clarify":
+            message = output.answer or output.error
+            return ChatResponse(
+                intent="clarify",
+                reply=message,
+                reference_id=output.reference_id,
+                clarification=message,
+                error={"code": output.error, "message": message},
+            )
+        reference_id = agent_result.reference_id
+        reference_label = None
+        if reference_id:
+            profile = self.reference_store.get(reference_id)
+            if profile is not None:
+                reference_label = _reference_label(profile)
         return ChatResponse(
             intent=agent_result.intent,  # type: ignore[arg-type]
             reply=agent_result.reply,
-            reference_id=agent_result.reference_id,
+            reference_id=reference_id,
+            reference_label=reference_label,
             answer=answer,
+            tab_excerpt=tab_excerpt,
             compose=compose,
             clarification=agent_result.clarification,
         )
@@ -226,6 +266,15 @@ class ChatMusic:
     ) -> ChatResponse:
 
         if intent == "clarify":
+            if _looks_like_named_song_analysis(message):
+                return ChatResponse(
+                    intent="clarify",
+                    reply=(
+                        "Subí un audio para analizarlo localmente. Si querés buscar datos web "
+                        "sobre esa canción, escribí search/research con el título y artista."
+                    ),
+                    clarification="Subí audio local o pedí search/research explícitamente.",
+                )
             return ChatResponse(
                 intent="clarify",
                 reply=(
@@ -236,6 +285,8 @@ class ChatMusic:
             )
 
         if intent == "research_song":
+            if not self.enable_web_research:
+                return _web_research_disabled_response(message)
             if self.song_researcher is None:
                 return ChatResponse(
                     intent="clarify",
@@ -250,8 +301,9 @@ class ChatMusic:
             self.reference_store.save(researched)
             return ChatResponse(
                 intent="answer_reference",
-                reply=researched.summary or "Research ready from source-backed evidence.",
+                reply=_research_ready_reply(researched),
                 reference_id=researched.reference_id,
+                reference_label=_reference_label(researched),
             )
 
         if intent == "answer_reference":
@@ -261,6 +313,7 @@ class ChatMusic:
                 intent="answer_reference",
                 reply=answer.answer,
                 reference_id=profile.reference_id,
+                reference_label=_reference_label(profile),
                 answer=answer,
             )
 
@@ -275,10 +328,36 @@ class ChatMusic:
             song, source = self.compose_song.compose(style)
         except OffTopicRequest as refusal:
             return _off_topic_response(refusal)
+        except ComposeConfigurationError as exc:
+            return _compose_unavailable_response(exc.code, user_message=style)
         return ChatResponse(
             intent="compose",
-            reply=_compose_reply(song, source),
+            reply=_compose_reply(song, source, spanish=is_spanish(style)),
             compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
+        )
+
+    def _revise_current_song(self, message: str, song: SongState) -> ChatResponse:
+        match = _target_instrument(song, message)
+        if match is None:
+            choices = ", ".join(_instrument_label(item) for item in song.roster) or "the generated parts"
+            clarification = (
+                f"¿Qué instrumento generado querés revisar? Instrumentos disponibles: {choices}."
+                if is_spanish(message)
+                else f"Which generated instrument should I revise? Available instruments: {choices}."
+            )
+            return ChatResponse(intent="clarify", reply=clarification, clarification=clarification)
+        try:
+            revised, source = self.compose_song.revise_instrument(song, message, match.id)
+        except OffTopicRequest as refusal:
+            return _off_topic_response(refusal)
+        except ComposeConfigurationError as exc:
+            return _compose_unavailable_response(exc.code, user_message=message)
+        return ChatResponse(
+            intent="compose",
+            reply=(f"Actualicé la parte de {match.instrument} y preservé el resto del arreglo."
+                   if is_spanish(message)
+                   else f"Updated the {match.instrument} part while preserving the rest of the arrangement."),
+            compose=ChatComposeResult(song=revised, source=source, warnings=_composition_warnings(revised)),
         )
 
     def _compose_from_references(self, message: str, profiles: list[ReferenceProfile]) -> ChatResponse:
@@ -297,10 +376,13 @@ class ChatMusic:
             song, source = self.compose_song.compose(built.brief)
         except OffTopicRequest as refusal:
             return _off_topic_response(refusal)
+        except ComposeConfigurationError as exc:
+            return _compose_unavailable_response(exc.code, reference_id=profiles[0].reference_id, user_message=message)
         return ChatResponse(
             intent="compose_from_reference",
-            reply=_compose_reply(song, source, reference=profiles[0]),
+            reply=_compose_reply(song, source, reference=profiles[0], spanish=is_spanish(message)),
             reference_id=profiles[0].reference_id,
+            reference_label=_reference_label(profiles[0]),
             compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
         )
 
@@ -313,16 +395,20 @@ class ChatMusic:
                     reply=built.clarification,
                     clarification=built.clarification,
                     reference_id=profile.reference_id,
+                    reference_label=_reference_label(profile),
                 )
             if built.brief is not None:
                 try:
                     song, source = self.compose_song.compose(built.brief)
                 except OffTopicRequest as refusal:
                     return _off_topic_response(refusal)
+                except ComposeConfigurationError as exc:
+                    return _compose_unavailable_response(exc.code, reference_id=profile.reference_id, user_message=message)
                 return ChatResponse(
                     intent="compose_from_reference",
-                    reply=_compose_reply(song, source, reference=profile),
+                    reply=_compose_reply(song, source, reference=profile, spanish=is_spanish(message)),
                     reference_id=profile.reference_id,
+                    reference_label=_reference_label(profile),
                     compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
                 )
 
@@ -331,10 +417,13 @@ class ChatMusic:
             song, source = self.compose_song.compose(style)
         except OffTopicRequest as refusal:
             return _off_topic_response(refusal)
+        except ComposeConfigurationError as exc:
+            return _compose_unavailable_response(exc.code, reference_id=profile.reference_id, user_message=message)
         return ChatResponse(
             intent="compose_from_reference",
-            reply=_compose_reply(song, source, reference=profile),
+            reply=_compose_reply(song, source, reference=profile, spanish=is_spanish(message)),
             reference_id=profile.reference_id,
+            reference_label=_reference_label(profile),
             compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
         )
 
@@ -372,18 +461,91 @@ def _off_topic_response(refusal: OffTopicRequest) -> ChatResponse:
     return ChatResponse(intent="off_topic", reply=refusal.message)
 
 
-def _compose_reply(song: SongState, source: str, *, reference: Optional[ReferenceProfile] = None) -> str:
+def _compose_unavailable_response(
+    code: str, *, reference_id: str | None = None, user_message: str = ""
+) -> ChatResponse:
+    message = (
+        "No pude componer porque el proveedor LLM no está disponible."
+        if is_spanish(user_message)
+        else "I could not compose because the LLM provider is unavailable."
+    )
+    return ChatResponse(
+        intent="clarify",
+        reply=message,
+        reference_id=reference_id,
+        clarification=message,
+        error={"code": code, "message": message},
+    )
+
+
+def _web_research_disabled_response(user_message: str = "") -> ChatResponse:
+    message = (
+        "La búsqueda web está desactivada en esta instancia."
+        if is_spanish(user_message)
+        else "Web research is disabled in this instance."
+    )
+    return ChatResponse(
+        intent="clarify",
+        reply=message,
+        clarification=message,
+        error={"code": "web_research_disabled", "message": message},
+    )
+
+
+def _compose_reply(
+    song: SongState, source: str, *, reference: Optional[ReferenceProfile] = None, spanish: bool = False
+) -> str:
     header = song.header
     base = (
-        f"Generated a {header.genre} sketch at {header.tempo_bpm} BPM in {header.key} "
+        f"Generé un boceto de {header.genre} a {header.tempo_bpm} BPM en {header.key} "
+        f"({len(song.roster)} instrumentos, fuente={source})."
+        if spanish
+        else f"Generated a {header.genre} sketch at {header.tempo_bpm} BPM in {header.key} "
         f"({len(song.roster)} instruments, source={source})."
     )
     if reference is not None:
-        base += f" Used reference {reference.source.label} as style guide."
+        base += (
+            f" Usé {reference.source.label} como guía de estilo."
+            if spanish else f" Used reference {reference.source.label} as style guide."
+        )
     warnings = _composition_warnings(song)
     if warnings:
-        base += f" Generated with partial failures: {'; '.join(warnings)}."
+        base += (
+            f" Se generó con fallas parciales: {'; '.join(warnings)}."
+            if spanish else f" Generated with partial failures: {'; '.join(warnings)}."
+        )
     return base
+
+
+def _reference_label(profile: ReferenceProfile) -> str:
+    if profile.knowledge is not None:
+        artist = profile.knowledge.identity.artist
+        title = profile.knowledge.identity.title
+        return f"{title} by {artist}" if artist else title
+    return profile.source.label
+
+
+def _research_ready_reply(profile: ReferenceProfile) -> str:
+    bits: list[str] = []
+    if profile.summary:
+        bits.append(profile.summary)
+    audio = profile.audio
+    if audio is not None:
+        facts = []
+        if audio.tempo_bpm is not None:
+            facts.append(f"tempo {audio.tempo_bpm:g} BPM")
+        if audio.key:
+            facts.append(f"key {audio.key}")
+        if facts:
+            bits.append("Found " + ", ".join(facts) + ".")
+    if profile.knowledge is not None:
+        instruments = []
+        for claim in profile.knowledge.evidence_claims:
+            if claim.claim_type in {"instrumentation", "tab"} and claim.source_name == "Songsterr":
+                instruments.append(claim.value)
+        if instruments:
+            bits.append("Songsterr evidence: " + "; ".join(instruments[:3]) + ".")
+    return " ".join(bits) or "Research ready from source-backed evidence."
 
 
 def _compose_result_from_tool_output(output: CompositionToolOutput) -> ChatComposeResult:
@@ -453,6 +615,96 @@ def _clarification_asks_for_existing_reference(reply: str) -> bool:
         ("reference" in normalized or "song" in normalized or "canción" in normalized or "cancion" in normalized)
         and ("provide" in normalized or "which" in normalized or "what" in normalized or "qué" in normalized or "que" in normalized)
     )
+
+
+_LOCAL_REFERENCE_QUESTION_RE = re.compile(
+    r"^\s*(what|where|when|why|how|does|do|is|are|can|tell me|show me|decime|dime|mostrame|cu[aá]l|d[oó]nde|por qu[eé]|c[oó]mo|qu[eé])\b",
+    re.IGNORECASE,
+)
+
+_SONG_EDIT_RE = re.compile(
+    r"\b(make|regenerate|revise|modify|change|update|edit|less|more|busier|quieter|louder|faster|slower"
+    r"|hac[eé]|rehac[eé]|regener[aá]|revis[aá]|modific[aá]|cambi[aá]|actualiz[aá]|edit[aá]"
+    r"|menos|m[aá]s|r[aá]pido|lento)\b",
+    re.IGNORECASE,
+)
+
+
+def _should_answer_reference_locally(message: str, profiles: list[ReferenceProfile]) -> bool:
+    if len(profiles) > 1:
+        return False
+    return bool("?" in message or _LOCAL_REFERENCE_QUESTION_RE.search(message))
+
+
+def _looks_like_named_song_analysis(message: str) -> bool:
+    normalized = message.strip().lower()
+    return bool(
+        re.search(r"\banaly[sz]e\b", normalized)
+        and not re.search(r"\b(this|attached|file|audio|upload|archivo|adjunto|este audio)\b", normalized)
+    )
+
+
+def _looks_like_song_edit(message: str) -> bool:
+    return bool(_SONG_EDIT_RE.search(message))
+
+
+def _instrument_label(item) -> str:
+    return item.instrument or item.id
+
+
+def _target_instrument(song: SongState, message: str):
+    normalized = message.lower()
+    scored_matches = []
+    for item in song.roster:
+        if item.id not in song.parts:
+            continue
+        candidates = {
+            item.id.lower(),
+            item.instrument.lower(),
+            item.role.lower(),
+        }
+        if "guitar" in item.instrument.lower() or "guitar" in item.id.lower():
+            candidates.add("guitar")
+        if "bass" in item.instrument.lower() or "bass" in item.id.lower():
+            candidates.update({"bass", "bajo"})
+        if item.is_drum or "drum" in item.instrument.lower() or "drum" in item.id.lower():
+            candidates.update({"drum", "drums", "batería", "bateria", "percusión", "percusion"})
+        if "guitar" in item.instrument.lower() or "guitar" in item.id.lower():
+            candidates.add("guitarra")
+        if "piano" in item.instrument.lower() or "piano" in item.id.lower():
+            candidates.add("piano")
+        matched = any(candidate and re.search(rf"\b{re.escape(candidate)}\b", normalized) for candidate in candidates)
+        score = 1 if matched else 0
+        score += _guitar_edit_specificity_score(item, normalized)
+        if score > 0:
+            scored_matches.append((score, item))
+    if not scored_matches:
+        return None
+    top_score = max(score for score, _item in scored_matches)
+    top = [item for score, item in scored_matches if score == top_score]
+    return top[0] if len(top) == 1 else None
+
+
+def _guitar_edit_specificity_score(item, normalized_message: str) -> int:
+    item_text = f"{item.id} {item.instrument} {item.role} {item.playing_style}".lower()
+    if "guitar" not in item_text:
+        return 0
+    score = 0
+    if "hard rock guitar" in normalized_message:
+        if any(token in item_text for token in ["overdriven", "distort", "lead", "hard rock", "heavy"]):
+            score += 4
+        else:
+            score -= 1
+    if any(token in normalized_message for token in ["distorted", "distortion", "overdriven", "overdrive", "heavy"]):
+        if any(token in item_text for token in ["overdriven", "distort", "lead", "heavy"]):
+            score += 3
+    if "lead guitar" in normalized_message:
+        if any(token in item_text for token in ["lead", "melody", "hook", "solo"]):
+            score += 3
+    if "rhythm guitar" in normalized_message:
+        if any(token in item_text for token in ["rhythm", "riff", "harmonic", "chord"]):
+            score += 3
+    return score
 
 
 def _compact_profiles_context(profiles: list[ReferenceProfile]) -> str:

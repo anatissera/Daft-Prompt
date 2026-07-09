@@ -283,6 +283,42 @@ def test_songsterr_tab_loader_does_not_expose_string_fret_for_piano_tracks():
     assert event.raw["fret"] == 5
 
 
+def test_songsterr_tab_loader_keeps_an_explicit_piano_midi_pitch_without_string_fret():
+    piano_tracks = [
+        {
+            "partId": 5,
+            "name": "Keys",
+            "instrument": "Electric Piano",
+            "isBassGuitar": False,
+            "isDrums": False,
+            "isGuitar": False,
+            "isPiano": True,
+        }
+    ]
+    payload = {
+        "name": "Keys",
+        "measures": [{
+            "signature": [4, 4],
+            "voices": [{"beats": [{"type": 4, "duration": [1, 4], "notes": [{"value": 60, "string": 3, "fret": 5}]}]}],
+        }],
+    }
+    bundle = SongsterrTabLoader(
+        fetcher=FixtureFetcher({
+            "https://www.songsterr.com/a/wsa/test-piano-tab-s1": songsterr_state_html(tracks=piano_tracks),
+            "https://dqsljvtekg760.cloudfront.net/371/7564044/v0-test-image/5.json": json.dumps(payload),
+        })
+    ).load_from_tab_url(
+        "https://www.songsterr.com/a/wsa/test-piano-tab-s1",
+        ResolvedSongQuery(title="Test Piano"),
+    )
+
+    assert bundle is not None
+    event = bundle.tracks[0].measures[0].events[0]
+    assert event.pitch == 60
+    assert event.string is None
+    assert event.fret is None
+
+
 def test_songsterr_tab_loader_searches_filtered_results_before_loading_tab():
     drum_search_html = """
     <html><body>

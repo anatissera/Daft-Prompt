@@ -86,7 +86,17 @@ def role_constraint_text(instrument: str, role: str, register: tuple[int, int], 
     if "drum" in haystack or "kit" in haystack:
         return "Constraint hints: one coherent kit, clear kick/snare relationship, density follows section energy, fills only into transitions."
     if "guitar" in haystack:
-        return "Constraint hints: choose strumming or picking pattern, keep register consistent, and leave rhythmic space for vocals/leads."
+        if "lead" in haystack or "melody" in haystack or "hook" in haystack or "solo" in haystack:
+            return (
+                "Constraint hints: write guitar-native lead playing: short motifs, fills between phrases, "
+                "call-and-response with the riff, approximate bends/slides with nearby passing notes, "
+                "avoid constant soloing, avoid keyboard-like scale runs, and leave space for the band."
+            )
+        return (
+            "Constraint hints: write guitar-native rhythm playing: repeated riff cells, power chord "
+            "shapes, palm-muted eighths or sixteenths, occasional syncopated strums, consistent "
+            "mid-register voicings, avoid keyboard-like runs, and leave room for lead/vocals."
+        )
     if "synth" in haystack or "pad" in haystack:
         traits = synth_timbre_constraints(role)
         return f"Constraint hints: timbre={traits['waveform_family']}; {traits['filter_envelope']}; density={traits['density']}."
