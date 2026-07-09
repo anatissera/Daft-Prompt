@@ -23,6 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27"]
+transcription = ["basic-pitch>=0.4"]
 # Provider-agnostic by design (see music_assistant/llm.py) — install only the one you use,
 # selected at runtime via the LLM_PROVIDER env var.
 gemini = []
