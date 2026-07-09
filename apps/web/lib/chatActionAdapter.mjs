@@ -51,6 +51,7 @@ export function createMelodyMessage(role, text, melody, index) {
     melody,
   };
 }
+export function createChordMessage(role, text, rows, index) { return { id: `${role}-${index}`, kind: "chords", role, text, rows }; }
 
 export function createCompositionMessage(role, text, result, feed, header, source, index) {
   return {

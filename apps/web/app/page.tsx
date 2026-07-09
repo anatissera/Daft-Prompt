@@ -17,6 +17,7 @@ import {
   chooseChatAction,
   createAnalysisMessage,
   createCompositionMessage,
+  createChordMessage,
   createMelodyMessage,
   createTabMessage,
   createTextMessage,
@@ -176,7 +177,7 @@ export default function Home() {
       } else if (data.melody_preview) {
         appendMessage({ ...createMelodyMessage("assistant", data.reply, data.melody_preview, idx), meta });
       } else if (data.chord_chart?.length) {
-        appendMessage({ ...createTextMessage("assistant", `${data.reply}\n\n${data.chord_chart.map((row) => `${row.label}: ${row.chords.join(" · ")} (${Math.round(row.confidence * 100)}%)`).join("\n")}`, idx), meta });
+        appendMessage({ ...createChordMessage("assistant", data.reply, data.chord_chart, idx), meta });
       } else if (data.compose && data.compose.artifacts) {
         const composeResponse = {
           job_id: "chat",
