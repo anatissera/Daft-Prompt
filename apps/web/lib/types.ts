@@ -363,6 +363,22 @@ export interface StemDynamics {
   confidence: number;
 }
 
+export interface MelodyEvent {
+  bar: number;
+  start_beat: number;
+  duration_beats: number;
+  pitch: number;
+}
+
+export interface MelodyProfile {
+  note_count: number;
+  pitch_low: number | null;
+  pitch_high: number | null;
+  contour: "rising" | "falling" | "static" | "mixed" | "unknown";
+  representative_events: MelodyEvent[];
+  confidence: number;
+}
+
 export interface StemProfile {
   name: string;
   artifact_uri: string | null;
@@ -624,6 +640,7 @@ export interface AudioProfile {
   structure: StructureProfile | null;
   mix_timbre?: TimbreProfile | null;
   ensemble?: EnsembleProfile | null;
+  melody?: MelodyProfile | null;
   analysis_notes: AnalysisNote[];
 }
 

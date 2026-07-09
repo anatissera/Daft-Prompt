@@ -132,6 +132,23 @@ def _audio_claims(audio: AudioProfile, reference_id: str) -> list[EvidenceClaim]
                 notes=["approximate", "probable"],
             )
         )
+    if audio.melody is not None and audio.melody.note_count:
+        melody = audio.melody
+        pitch_range = (
+            f"MIDI {melody.pitch_low}-{melody.pitch_high}"
+            if melody.pitch_low is not None and melody.pitch_high is not None
+            else "unknown register"
+        )
+        claims.append(
+            _claim(
+                "audio_estimate",
+                f"melody: {melody.note_count} transcribed notes, {pitch_range}, {melody.contour} contour",
+                source_url,
+                melody.confidence,
+                "Provisional melody summary from local audio transcription.",
+                notes=["approximate", "provisional transcription"],
+            )
+        )
     claims.extend(_stem_listening_claims(audio, source_url))
     return claims
 

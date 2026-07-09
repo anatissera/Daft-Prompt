@@ -38,6 +38,12 @@ class DeterministicMusicQuestionExplainer:
         if tab_answer is not None:
             return tab_answer
 
+        normalized = question.lower()
+        # Knowledge-profile answers normally take precedence, but audio
+        # transcription is the direct evidence for a local melody/riff query.
+        if re.search(r"\b(melody|melodic|riff|solo|lead|melod[ií]a|fraseo)\b", normalized):
+            return _answer_melody(profile, spanish=spanish)
+
         if profile.knowledge is not None:
             answer = answer_from_profile(question, profile.knowledge)
             return ExplanationAnswer(
@@ -240,6 +246,47 @@ def _songsterr_track_summary(track) -> str:
         f"{track.instrument_family.title()} tab loaded from Songsterr: {track.name} "
         f"({len(track.measures)} measures, {track.note_count} note events). "
         f"Sections: {section_text}."
+    )
+
+
+def _answer_melody(profile: ReferenceProfile, *, spanish: bool = False) -> ExplanationAnswer:
+    melody = profile.audio.melody if profile.audio else None
+    if melody is None or not melody.note_count:
+        return ExplanationAnswer(
+            reference_id=profile.reference_id,
+            answer=(
+                "Todavía no tengo una transcripción melódica para esta referencia. "
+                "Podés activar la transcripción local opcional y volver a analizar el audio."
+                if spanish
+                else "I do not have a melodic transcription for this reference yet. "
+                "Enable optional local transcription and analyze the audio again."
+            ),
+            evidence=[],
+        )
+    register = (
+        f"MIDI {melody.pitch_low}-{melody.pitch_high}"
+        if melody.pitch_low is not None and melody.pitch_high is not None
+        else ("registro no disponible" if spanish else "an unavailable register")
+    )
+    event_count = len(melody.representative_events)
+    answer = (
+        f"La transcripción local encontró {melody.note_count} notas melódicas, con un registro de {register} "
+        f"y un contorno {melody.contour}. Eso sugiere una frase que "
+        f"{'sube' if melody.contour == 'rising' else 'baja' if melody.contour == 'falling' else 'se mueve en ambas direcciones' if melody.contour == 'mixed' else 'se mantiene relativamente estable'}. "
+        f"Tomalo como una guía provisional: la transcripción tiene {_percent(melody.confidence)} de confianza y no identifica por sí sola el instrumento."
+        if spanish
+        else f"Local transcription found {melody.note_count} melodic notes in {register} with a {melody.contour} contour. "
+        f"That suggests a phrase that "
+        f"{'climbs' if melody.contour == 'rising' else 'falls' if melody.contour == 'falling' else 'moves in both directions' if melody.contour == 'mixed' else 'stays relatively level'}. "
+        f"Treat it as a provisional playing guide: transcription confidence is {_percent(melody.confidence)} and it does not identify the instrument by itself."
+    )
+    return ExplanationAnswer(
+        reference_id=profile.reference_id,
+        answer=answer,
+        evidence=[
+            f"Provisional audio transcription: {melody.note_count} notes, {register}, {melody.contour} contour.",
+            f"Representative symbolic events retained: {event_count}.",
+        ],
     )
 
 

@@ -17,9 +17,8 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
-from music_assistant.application.analyze_reference import AnalyzeReference
+from music_assistant.application.analyze_reference import AnalyzeReference, enrich_profile_with_transcription
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
-from music_assistant.application.audio_enrichment import enrich_profile_with_audio
 from music_assistant.application.chat_music import ChatMusic
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
 from music_assistant.application.language import is_spanish
@@ -32,6 +31,7 @@ from music_assistant.domain.song_state import Part
 from music_assistant.graph import iter_negotiation_events, revise_instrument_part, run_negotiation
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from music_assistant.infrastructure.mir.demucs_separator import DemucsSeparator
+from music_assistant.infrastructure.mir.basic_pitch_transcriber import BasicPitchTranscriber
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
@@ -81,7 +81,7 @@ def health() -> dict[str, str]:
 async def analyze_reference_upload(file: UploadFile | None = File(None)) -> ReferenceProfile:
     source = await _store_reference_upload(file)
     try:
-        profile = AnalyzeReference(_reference_analyzer()).execute(source)
+        profile = AnalyzeReference(_reference_analyzer(), transcriber=_reference_transcriber()).execute(source)
     except HTTPException:
         raise
     except Exception as exc:
@@ -253,8 +253,8 @@ def _reference_analysis_stream_events(source: ReferenceSource) -> Iterator[dict]
             # Same enrichment as the blocking endpoint (AnalyzeReference): the
             # streamed profile must also carry the SongKnowledgeProfile with
             # audio evidence claims, or chat Q&A falls back to legacy answers.
-            profile = enrich_profile_with_audio(
-                _analyze_with_progress(analyzer, source, progress)
+            profile = enrich_profile_with_transcription(
+                _analyze_with_progress(analyzer, source, progress), source, _reference_transcriber()
             )
             REFERENCE_STORE.save(profile)
             events.put(AnalysisDoneEvent(profile=profile).model_dump(mode="json"))
@@ -307,6 +307,12 @@ def _reference_analyzer() -> DeepHarmonicAnalyzer:
         ),
     )
     return DeepHarmonicAnalyzer(output_root=upload_root, separator=separator)
+
+
+def _reference_transcriber() -> BasicPitchTranscriber | None:
+    if not bool(getattr(get_settings(), "enable_melody_transcription", False)):
+        return None
+    return BasicPitchTranscriber()
 
 
 @app.post("/chat", response_model=ChatResponse)
