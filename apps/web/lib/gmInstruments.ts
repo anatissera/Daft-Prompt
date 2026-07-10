@@ -1,5 +1,4 @@
-// General MIDI program → soundfont folder name (FluidR3_GM on github pages).
-// Source: https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/
+// General MIDI program metadata shared by local playback and MIDI export.
 // Only the canonical 128 melodic patches are needed; drums use a single
 // percussion folder where the note number is the kit piece.
 
@@ -38,8 +37,6 @@ export const GM_PROGRAM_FOLDER: Record<number, string> = {
   120: "guitar_fret_noise", 121: "breath_noise", 122: "seashore", 123: "bird_tweet",
   124: "telephone_ring", 125: "helicopter", 126: "applause", 127: "gunshot",
 };
-
-export const FLUIDR3_BASE = "https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/";
 
 export function folderForProgram(program: number): string {
   return GM_PROGRAM_FOLDER[program] ?? "acoustic_grand_piano";

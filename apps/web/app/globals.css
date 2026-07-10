@@ -1752,52 +1752,10 @@ code, pre, .mono { font-family: var(--font-mono); }
 }
 .mixer-transport input[type="range"] { accent-color: var(--gold-bright); }
 
-/* html-midi-player — dark chrome control panel that matches the deck */
-midi-player {
-  display: block;
-  width: 100%;
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-midi-player::part(control-panel) {
-  background: linear-gradient(180deg, #15161b 0%, #0a0b0e 100%);
-  border: 1px solid rgba(255, 170, 80, 0.22);
-  border-radius: 12px;
-  padding: 8px 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-midi-player::part(play-button) {
-  color: #241704;
-  background: linear-gradient(176deg, #8a6418, #f4d27a 44%, #fff3c8 50%, #e6b94e 58%, #7a5614);
-  border-radius: 50%;
-  box-shadow:
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.7),
-    0 0 18px -2px rgba(255, 180, 60, 0.7);
-}
-midi-player::part(time) {
-  font-family: var(--font-mono);
-  color: #ffc868;
-  font-variant-numeric: tabular-nums;
-}
-midi-player::part(seek-bar) {
-  height: 6px;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #23262e, #15171c);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.7);
-  accent-color: var(--gold-bright);
-}
-
-.opensheetmusicdisplay, .midi-player {
+.opensheetmusicdisplay {
   background: rgba(255, 255, 255, 0.96);
   border-radius: var(--radius-md);
   padding: 12px;
-}
-
-/* The MidiPlayer wrapper (.media-frame-dark from MidiPlayer.tsx) */
-.media-frame-dark {
-  background: transparent;
-  padding: 0;
-  margin: 0 18px;
 }
 
 .context-section { display: flex; flex-direction: column; gap: 6px; }
