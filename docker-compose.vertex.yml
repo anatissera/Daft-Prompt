@@ -1,0 +1,11 @@
+# Opt-in local override for Vertex AI. It deliberately requires the host path
+# and project id so no account-specific credential or project configuration is
+# committed. Use alongside docker-compose.yml as documented in README.md.
+services:
+  api:
+    environment:
+      LLM_PROVIDER: vertexai
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:?set the Vertex AI project id}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+    volumes:
+      - ${GCP_ADC_HOST_PATH:?set the host ADC directory}:/root/.config/gcloud:ro
