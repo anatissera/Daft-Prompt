@@ -183,7 +183,31 @@ APIs directly.
 Do not copy estimated reference chords by default. Use them only when the user
 explicitly asks for harmonic guidance or accepts it in chat.
 
-## UI Rules
+## Architecture Graphs Must Stay In Sync
+
+The UI ships two hand-maintained architecture diagrams in
+`apps/web/components/PipelineGraphs.tsx`, opened from the sidebar squares:
+
+- **Agent map** (helmet button): the conceptual pipeline — every component
+  from prompt to rendered song (intent, research tools, director, instrument
+  agents, fallback chain, composer, render, player).
+- **LangGraph architecture** (LC button): the hard implementation — the
+  StateGraph nodes and conditional edges, the LLM stack
+  (`make_llm` -> `FallbackChatModel` -> `ChatOpenAI` -> `with_structured_output`
+  schemas) and the SSE streaming path to the UI.
+
+If you change anything those diagrams describe, you MUST update them in the
+same change. This includes:
+
+- adding, removing, or renaming pipeline nodes / tools / fallback tiers;
+- changing which models or providers each role uses;
+- changing pydantic output schemas fed to `with_structured_output`;
+- changing the streaming path (SSE endpoints, proxies) or parallelism;
+- changing what a node fundamentally IS (its `kind` tag: llm call, tool,
+  deterministic step, graph node, …).
+
+Stale diagrams are worse than no diagrams — they are part of the product
+(they get presented) and part of onboarding.
 
 The UI should be conversational first.
 
