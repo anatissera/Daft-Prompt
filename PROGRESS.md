@@ -2,6 +2,18 @@
 
 Last reviewed: 2026-07-10
 
+## Developer-experience phase
+
+- The default Docker stack was rebuilt from an environment with no root `.env`.
+  `/health` and the web page started, but the first chat turn initially failed
+  because Compose represented an unset `LLM_PROVIDER` as an empty string.
+- `Settings` now treats a blank provider as the documented no-provider mode.
+  This keeps default chat available while composition requests return the
+  existing explicit configuration guidance.
+- Next: consolidate the duplicate environment examples, forward only the
+  documented optional provider values through Compose, and replace the README
+  setup sections with a clone-to-chat Quick Start.
+
 ## Completed milestones
 
 - Chat-first local audio analysis, evidence-grounded questions, reference-guided composition, bounded session context, and generated-song playback/mixing are in place.

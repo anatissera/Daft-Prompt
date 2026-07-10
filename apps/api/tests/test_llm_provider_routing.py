@@ -18,6 +18,13 @@ from music_assistant.infrastructure.llm import (
 )
 
 
+def test_blank_provider_is_treated_as_unconfigured_for_compose_defaults():
+    settings = Settings(llm_provider="")
+
+    assert settings.llm_provider is None
+    assert settings.llm_configured is False
+
+
 def test_classify_gemini_quota_error_from_message():
     exc = RuntimeError("ResourceExhausted: 429 You exceeded your current quota")
 
@@ -76,7 +83,7 @@ def test_vertexai_build_requires_google_cloud_project():
         _build_chat_model(
             "vertexai",
             "gemini-3.5-flash",
-            Settings(llm_provider="vertexai"),
+            Settings(llm_provider="vertexai", google_cloud_project=""),
         )
 
     assert err.value.provider == "vertexai"
