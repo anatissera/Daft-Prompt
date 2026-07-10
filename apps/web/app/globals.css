@@ -188,33 +188,104 @@ code, pre, .mono { font-family: var(--font-mono); }
   color: rgba(255, 150, 70, 0.7);
 }
 
-.sidebar-new {
+/* Row of square action buttons: [+] new session, [LC], [Daft Punk helmet]. */
+.sidebar-actions {
   margin-top: 6px;
   display: flex;
+  gap: 8px;
+}
+.sidebar-square {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 12px 14px;
+  justify-content: center;
   border-radius: 13px;
   border: 1px solid rgba(255, 170, 80, 0.22);
   background: linear-gradient(180deg, #15161b, #0c0d11);
   color: #f4f1ea;
   font-family: var(--font-sans);
-  font-size: 13.5px;
-  font-weight: 600;
   cursor: pointer;
   transition: all 160ms ease;
+  flex-shrink: 0;
 }
-.sidebar-new:hover {
+.sidebar-square:hover {
   border-color: rgba(255, 180, 90, 0.6);
   box-shadow:
     0 0 0 1px rgba(255, 170, 80, 0.25),
     0 8px 22px -10px rgba(255, 140, 40, 0.5);
 }
 .sidebar-new-plus {
-  font-size: 17px;
+  font-size: 19px;
   line-height: 0;
   color: #ffb45a;
+}
+/* Traced silhouette icons pick up the sidebar's accent via currentColor. */
+.sidebar-square-icon {
+  color: #ffb45a;
+}
+.sidebar-square-icon:hover {
+  color: #ffd08a;
+}
+.sidebar-square-active {
+  border-color: rgba(255, 180, 90, 0.85);
+  background: linear-gradient(180deg, #241a0c, #120d06);
+  box-shadow:
+    0 0 0 1px rgba(255, 170, 80, 0.35),
+    0 0 16px -4px rgba(255, 150, 50, 0.55);
+}
+
+/* Full-panel architecture graph views (helmet / LC sidebar buttons). */
+.graph-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px 26px;
+  overflow: auto;
+}
+.graph-view-title {
+  font-family: var(--font-display, var(--font-sans));
+  font-size: 18px;
+  letter-spacing: 0.14em;
+  color: var(--gold-bright, #f3c45a);
+  margin: 0;
+}
+.graph-view-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted, #9aa0ae);
+  max-width: 760px;
+}
+.graph-view-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* No framed panel — the nodes float directly on the page background. */
+  overflow: auto;
+}
+.graph-svg {
+  width: 100%;
+  height: auto;
+  min-width: 900px;
+}
+.graph-node-title {
+  font-family: var(--font-tech, var(--font-sans));
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.graph-node-line {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  /* fill comes from the SVG attribute — dark text on solid color chips */
+}
+.graph-edge-label {
+  font-family: var(--font-tech, var(--font-sans));
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  fill: rgba(243, 196, 90, 0.85);
+  text-transform: uppercase;
 }
 
 .sidebar-recent-list { display: flex; flex-direction: column; gap: 7px; }
@@ -2630,4 +2701,5 @@ body { background: #1e2028; }
   background: rgba(255, 255, 255, 0.12);
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
 

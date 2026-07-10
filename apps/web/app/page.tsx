@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
+import { DaftHelmetIcon, LcIcon } from "@/components/icons";
+import { AgentGraphView, LangGraphView } from "@/components/PipelineGraphs";
 import ChatThread, { type PipelineState, type PipelineStageIdx } from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
 import type { AnalysisEvent, ReferenceProfile, SongState } from "@/lib/types";
@@ -66,6 +68,9 @@ export default function Home() {
   const messageIndexRef = useRef(1);
   const [prompt, setPrompt] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // Main-panel view: chat, or one of the two architecture graphs opened from
+  // the sidebar squares (helmet = agent map, LC = LangGraph internals).
+  const [view, setView] = useState<"chat" | "agents" | "lc">("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([
     createTextMessage(
       "assistant",
@@ -359,6 +364,7 @@ export default function Home() {
     setError(null);
     setSessionTitle("Untitled session");
     sessionTitledRef.current = false;
+    setView("chat");
   }
 
   return (
@@ -369,15 +375,42 @@ export default function Home() {
           <span className="sidebar-tagline">MULTI-AGENT STUDIO</span>
         </div>
 
-        <button type="button" className="sidebar-new" onClick={resetConversation}>
-          <span className="sidebar-new-plus" aria-hidden="true">+</span>
-          New session
-        </button>
+        <div className="sidebar-actions">
+          <button
+            type="button"
+            className="sidebar-square"
+            onClick={resetConversation}
+            title="New session"
+            aria-label="New session"
+          >
+            <span className="sidebar-new-plus" aria-hidden="true">+</span>
+          </button>
+          <button
+            type="button"
+            className={`sidebar-square sidebar-square-icon${view === "lc" ? " sidebar-square-active" : ""}`}
+            onClick={() => setView((v) => (v === "lc" ? "chat" : "lc"))}
+            title="LangGraph architecture"
+            aria-label="LangGraph architecture"
+            aria-pressed={view === "lc"}
+          >
+            <LcIcon size={26} />
+          </button>
+          <button
+            type="button"
+            className={`sidebar-square sidebar-square-icon${view === "agents" ? " sidebar-square-active" : ""}`}
+            onClick={() => setView((v) => (v === "agents" ? "chat" : "agents"))}
+            title="Agent map"
+            aria-label="Agent map"
+            aria-pressed={view === "agents"}
+          >
+            <DaftHelmetIcon size={26} />
+          </button>
+        </div>
 
         <div className="sidebar-section">
           <span className="sidebar-section-title">Recent sessions</span>
           <div className="sidebar-recent-list">
-            <button type="button" className="sidebar-recent">
+            <button type="button" className="sidebar-recent" onClick={() => setView("chat")}>
               <span className="sidebar-recent-title">{sessionTitle}</span>
               <span className="sidebar-recent-meta">NOW · LIVE</span>
             </button>
@@ -401,25 +434,37 @@ export default function Home() {
         <header className="app-topbar">
           <div className="app-topbar-left">
             <span className="app-topbar-dot" aria-hidden="true" />
-            <span className="app-topbar-title">{sessionTitle}</span>
+            <span className="app-topbar-title">
+              {view === "agents" ? "Agent map" : view === "lc" ? "LangGraph architecture" : sessionTitle}
+            </span>
           </div>
-          <span className="app-topbar-meta">TWILIGHT · OUTPUT MIDI</span>
+          <span className="app-topbar-meta">
+            {view === "chat" ? "TWILIGHT · OUTPUT MIDI" : "SYSTEM VIEW · CHAT PAUSED"}
+          </span>
         </header>
-        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} pipeline={pipeline} />
-        {error ? (
-          <p className="error-banner" role="alert">{error}</p>
-        ) : null}
-        <ChatComposer
-          busy={busy}
-          prompt={prompt}
-          selectedFileName={selectedFile?.name ?? null}
-          fileInputRef={fileInputRef}
-          onPromptChange={setPrompt}
-          onFileChange={setSelectedFile}
-          onSubmit={submit}
-          queuedPrompts={promptQueue}
-          onCancelQueued={(i) => setPromptQueue((prev) => prev.filter((_, idx) => idx !== i))}
-        />
+        {view === "agents" ? (
+          <AgentGraphView />
+        ) : view === "lc" ? (
+          <LangGraphView />
+        ) : (
+          <>
+            <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} pipeline={pipeline} />
+            {error ? (
+              <p className="error-banner" role="alert">{error}</p>
+            ) : null}
+            <ChatComposer
+              busy={busy}
+              prompt={prompt}
+              selectedFileName={selectedFile?.name ?? null}
+              fileInputRef={fileInputRef}
+              onPromptChange={setPrompt}
+              onFileChange={setSelectedFile}
+              onSubmit={submit}
+              queuedPrompts={promptQueue}
+              onCancelQueued={(i) => setPromptQueue((prev) => prev.filter((_, idx) => idx !== i))}
+            />
+          </>
+        )}
       </section>
     </main>
   );
