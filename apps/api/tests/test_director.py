@@ -7,6 +7,7 @@ import pytest
 from music_assistant.agents.director import (
     MAX_ROSTER,
     MAX_BARS,
+    MIN_ROSTER,
     MIN_BARS,
     ArrangementInstrument,
     ArrangementSection,
@@ -79,6 +80,64 @@ def test_director_prompt_groups_independent_rhythm_parts_for_responsiveness():
     assert role == "system"
     assert "drum kit and bass together in the first batch" in system_prompt
     assert "Do not create one-instrument batches" in system_prompt
+
+
+def test_director_contract_allows_solo_arrangements_and_requires_purpose():
+    solo = DirectorOutput(
+        genre="solo piano",
+        key="C major",
+        instruments=[ArrangementInstrument(
+            id="piano", instrument="acoustic_grand_piano", midi_program=0,
+            midi_low=21, midi_high=108, role="complete harmony and melody",
+            playing_style="Carry bass, chords, and melody with independent hands.",
+        )],
+        composition_groups=[CompositionGroup(name="solo", instrument_ids=["piano"])],
+    )
+    song = arrangement_to_song("solo piano", solo)
+    assert len(song.roster) == MIN_ROSTER == 1
+
+    with pytest.raises(Exception):
+        ArrangementInstrument(
+            id="filler", instrument="synth_pad", role="", playing_style="",
+        )
+
+
+def test_grunge_drops_unrequested_synth_texture_but_preserves_idiomatic_ensemble():
+    out = DirectorOutput(
+        genre="grunge",
+        key="E minor",
+        instruments=[
+            ArrangementInstrument(id="drums", instrument="drum_kit", role="backbeat", playing_style="Heavy backbeat.", is_drum=True),
+            ArrangementInstrument(id="bass", instrument="electric_bass", midi_program=33, role="low end", playing_style="Lock to the kick."),
+            ArrangementInstrument(id="guitar", instrument="distortion_guitar", midi_program=30, role="riff", playing_style="Power-chord riff."),
+            ArrangementInstrument(id="pad", instrument="synth_pad", midi_program=89, role="texture", playing_style="Sustained pad."),
+        ],
+        composition_groups=[
+            CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"]),
+            CompositionGroup(name="layers", instrument_ids=["guitar", "pad"]),
+        ],
+    )
+
+    song = arrangement_to_song("raw grunge rock", out)
+
+    assert {item.id for item in song.roster} == {"drums", "bass", "rhythm_guitar"}
+    assert all("pad" not in group.instrument_ids for group in song.composition_groups)
+
+
+def test_roots_genre_keeps_synth_when_user_explicitly_requests_it():
+    out = DirectorOutput(
+        genre="folk electronic",
+        key="D major",
+        instruments=[
+            ArrangementInstrument(id="guitar", instrument="acoustic_guitar", midi_program=25, role="harmony", playing_style="Fingerpicked pulse."),
+            ArrangementInstrument(id="synth", instrument="synth_pad", midi_program=89, role="requested texture", playing_style="Quiet sustained layer."),
+        ],
+        composition_groups=[CompositionGroup(name="all", instrument_ids=["guitar", "synth"])],
+    )
+
+    song = arrangement_to_song("folk with an explicit synth pad", out)
+
+    assert len(song.roster) == 2
 
 
 def test_roster_is_capped():

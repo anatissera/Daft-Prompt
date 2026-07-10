@@ -30,7 +30,7 @@ _DEFAULT_REFUSAL = (
     "or answer questions about a reference you already shared. Try \"compose a slow blues\"."
 )
 
-MIN_ROSTER = 3
+MIN_ROSTER = 1
 MAX_ROSTER = 8
 MIN_BARS = 4
 MAX_BARS = 32
@@ -42,8 +42,9 @@ class ArrangementInstrument(BaseModel):
     midi_program: int = Field(0, ge=0, le=127, description="General MIDI program")
     midi_low: int = Field(0, ge=0, le=127)
     midi_high: int = Field(127, ge=0, le=127)
-    role: str = Field(description="this instrument's musical role in the arrangement")
+    role: str = Field(min_length=1, description="this instrument's musical role in the arrangement")
     playing_style: str = Field(
+        min_length=1,
         description=(
             "1-2 sentences of idiomatic technique for this instrument in this genre. "
             "Example: 'Anchor beat 1. Ghost notes on snare between 2 and 4. "
@@ -109,9 +110,10 @@ Otherwise set off_topic=false and, given a style description, produce a complete
 
 3. CHORD PROGRESSION: one ChordSpan per bar covering every bar (0..num_bars-1). Use chord names like "Dm7", "G7", "Cm9". Chords must fit the key and genre idiom.
 
-4. INSTRUMENTATION: {MIN_ROSTER}-{MAX_ROSTER} instruments. For each instrument:
+4. INSTRUMENTATION: First choose the smallest ensemble capable of an authentic arrangement, then return {MIN_ROSTER}-{MAX_ROSTER} instruments. A solo or duo is valid. Silence and omitted layers are valid; never add an instrument merely because an agent is available. For each instrument:
    - A General MIDI program number and a sensible MIDI pitch range for that instrument in that register (e.g. bass: 28-55, not 0-127).
    - Its musical role. All percussion must be a single drum-kit roster item with is_drum=true — do NOT create separate entries for kick, snare, hi-hat, cymbals, or toms; those are MIDI pitches inside the one kit.
+   - A concise stylistic justification in its role or playing_style: explain why this genre/request needs that voice. Every instrument must have a distinct purpose.
    - A playing_style: 1-2 sentences of idiomatic technique a real musician of this instrument in this genre would immediately recognise. Be specific about rhythm, articulation, and register. Examples:
      * Funk bass: "Anchor beat 1 firmly. Use ghost notes between the 2 and 4. Slap on the upbeat 16th just before beat 3 in bar-ending phrases."
      * Funk guitar: "Short 16th-note chord stabs on beats 2 and 4 with percussive muting between hits. Wah on fill bars. Stay in the mid register."
@@ -124,6 +126,8 @@ If the style description contains a CompositionBrief with instrument_requests, t
 - Use the request's timbre midi_program, midi_range, and drum/percussion status when present.
 - Fold pattern, transfer_mode, fidelity, and any symbolic_seed summary into playing_style so the instrument agent can apply it.
 - For literal transfer, mention the seed as a starting motif/pattern, not raw tab text.
+
+Genre compatibility is mandatory. Do not add synth leads, synth pads, electronic textures, or keyboard-like filler to grunge, punk, blues, folk, garage rock, or acoustic music unless the user explicitly requests that electronic voice. Prefer drums/bass/guitar or a still smaller idiomatic ensemble where appropriate. Do not use more instruments to make the plan look more sophisticated.
 
 Do not use a fixed genre-to-instrument mapping. Reason about what genuinely fits the requested style."""
 
@@ -387,6 +391,33 @@ def _clamp_roster(items: list[ArrangementInstrument]) -> list[ArrangementInstrum
     return items[:MAX_ROSTER]
 
 
+_ROOTS_GENRE_RE = re.compile(r"\b(grunge|punk|blues|folk|garage(?:\s+rock)?|acoustic)\b", re.IGNORECASE)
+_EXPLICIT_ELECTRONIC_RE = re.compile(r"\b(synth|synthesizer|electronic|pad|keyboard|keys)\b", re.IGNORECASE)
+
+
+def _remove_unrequested_electronic_textures(
+    style: str,
+    items: list[ArrangementInstrument],
+    groups: list[CompositionGroup],
+) -> tuple[list[ArrangementInstrument], list[CompositionGroup]]:
+    if not _ROOTS_GENRE_RE.search(style) or _EXPLICIT_ELECTRONIC_RE.search(style):
+        return items, groups
+    removable = {
+        item.id
+        for item in items
+        if 80 <= item.midi_program <= 103
+        or _EXPLICIT_ELECTRONIC_RE.search(f"{item.id} {item.instrument} {item.role}")
+    }
+    kept = [item for item in items if item.id not in removable]
+    if not kept:
+        return items, groups
+    filtered_groups = [
+        group.model_copy(update={"instrument_ids": [iid for iid in group.instrument_ids if iid not in removable]})
+        for group in groups
+    ]
+    return kept, [group for group in filtered_groups if group.instrument_ids]
+
+
 def _clamp_num_bars(value: int) -> int:
     return max(MIN_BARS, min(MAX_BARS, value))
 
@@ -444,6 +475,7 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
     clamped_instruments, groups = _collapse_drum_components(clamped_instruments, groups)
     clamped_instruments, groups = _canonicalize_requested_instrument_ids(style, clamped_instruments, groups)
     clamped_instruments, groups = _normalize_guitar_items(clamped_instruments, groups)
+    clamped_instruments, groups = _remove_unrequested_electronic_textures(style, clamped_instruments, groups)
     num_bars = _clamp_num_bars(out.num_bars)
     _validate_groups(groups, clamped_instruments)
     sections = _clamp_sections(out.sections, num_bars) or suggest_form(out.genre, num_bars)

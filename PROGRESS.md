@@ -110,7 +110,29 @@ frontend suite 60 passed with clean TypeScript and production build.
   - Status: verified by repeated-edit sequence tests. Timbre persists into a
     later note edit; all unrequested notes, peer parts, header, original request,
     and roster state remain unchanged.
-- [ ] Priority 3: genre-aware, purpose-driven minimal instrumentation (active).
+
+### Priority 3 — Genre-aware instrumentation (complete)
+
+Priority 3 completion audit: 574 backend tests passed, 1 skipped.
+
+- [x] Allow the smallest ensemble that can authentically satisfy the request.
+  - Status: fixed and verified. The contract now permits 1-8 instruments,
+    explicitly accepts solos/duos and silence, and directs the ensemble decision
+    before agent selection.
+  - Root cause/evidence: the director schema/prompt forces 3-8 instruments even
+    for solo/duo music, making unnecessary roles structurally mandatory.
+- [x] Reject unrequested electronic textures in acoustic/roots genres.
+  - Status: fixed and verified. A narrow normalization guard removes synth/pad/
+    electronic programs from the named roots genres unless explicitly requested,
+    repairing composition groups at the same time. The grunge fixture falls from
+    4 agents to 3 (25% less agent work) without losing an idiomatic role.
+  - Root cause/evidence: grunge, punk, blues, folk, garage rock, and acoustic
+    plans containing synth/pad/electronic roster items pass normalization.
+- [x] Require a defined purpose and stylistic justification per instrument.
+  - Status: fixed and verified. Schema fields reject empty purpose/style and the
+    director prompt requires a distinct musical purpose and genre justification.
+  - Root cause/evidence: role and playing-style fields are required keys but
+    accept empty strings; the prompt does not make ensemble choice a first step.
 - [ ] Priority 4: research-pipeline evaluation and benchmarked Giner comparison.
 - [ ] Full Phase 2 completion audit.
 
