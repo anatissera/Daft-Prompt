@@ -19,16 +19,19 @@ dependencies = [
     "langgraph>=0.2,<0.4",
     "langsmith>=0.1",
     "langchain-google-genai>=2.0,<3.0",
+    # OpenRouter is the default configured fallback for Gemini, so its adapter
+    # belongs in the standard runtime instead of failing only when needed.
+    "langchain-openai>=0.2",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27"]
 transcription = ["basic-pitch>=0.4"]
-# Provider-agnostic by design (see music_assistant/llm.py) — install only the one you use,
-# selected at runtime via the LLM_PROVIDER env var.
+# Provider-agnostic by design (see music_assistant/llm.py). Gemini and the
+# default OpenRouter fallback are standard; install these adapters only when
+# selecting them at runtime via LLM_PROVIDER.
 gemini = []
 groq = ["langchain-groq>=0.2"]
-openrouter = ["langchain-openai>=0.2"]
 vertexai = ["langchain-google-vertexai>=2.0"]
 
 [build-system]

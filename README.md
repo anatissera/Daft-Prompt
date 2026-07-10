@@ -162,9 +162,9 @@ source venv/bin/activate
 # Install
 pip install -e .
 
-# Gemini support is included in the base install.
-# For local fallback during long composition runs, install every extra provider you configure:
-pip install -e ".[openrouter]"    # or [groq], [vertexai]
+# Gemini and the default OpenRouter fallback are included in the base install.
+# Install an extra only for Groq or Vertex AI:
+pip install -e ".[groq]"          # or [vertexai]
 
 # Set env
 export LLM_PROVIDER=gemini
@@ -342,9 +342,9 @@ pytest
 export LLM_PROVIDER=gemini
 export GEMINI_API_KEY=your-key
 ```
-If you configure OpenRouter as fallback, make sure the extra is installed:
+OpenRouter is included in the base backend install. Set its key to enable the
+default fallback:
 ```bash
-pip install -e ".[openrouter]"
 export OPENROUTER_API_KEY=your-key
 ```
 Without the matching extra/API key, composition still fails gracefully and `/chat`

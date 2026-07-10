@@ -117,7 +117,7 @@ Otherwise set off_topic=false and, given a style description, produce a complete
      * Funk guitar: "Short 16th-note chord stabs on beats 2 and 4 with percussive muting between hits. Wah on fill bars. Stay in the mid register."
      * String pad: "Sustained whole-note pads below the melody register. Swell into the chorus. Avoid the top octave to leave room for the lead."
 
-5. COMPOSITION GROUPS: ordered batches specifying which instruments compose in which wave. Each instrument_id must appear in exactly one group. Put rhythmic foundation first (drums, bass), harmonic layer second, melodic/textural layer last. Set max_negotiation_rounds (0-2) — use 1 for rhythm section, 0 for texture layers.
+5. COMPOSITION GROUPS: ordered batches specifying which instruments compose in which wave. Each instrument_id must appear in exactly one group. Put rhythmic foundation first (drums, bass), harmonic layer second, melodic/textural layer last. Independent instruments in the same layer MUST share one batch: put the drum kit and bass together in the first batch unless the request explicitly makes one depend on the other. Do not create one-instrument batches merely to impose a conventional layering order; use a later batch only when it needs the earlier batch's peer summary. For a compact three-part groove, prefer exactly two batches: [drums, bass], then [lead or harmony]. Set max_negotiation_rounds (0-2) — use 1 for rhythm section, 0 for texture layers.
 
 If the style description contains a CompositionBrief with instrument_requests, treat it as binding reference guidance:
 - Keep each requested instrument family in the roster unless the request explicitly says to avoid it.
