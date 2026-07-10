@@ -1,3 +1,6 @@
+"use client";
+
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { ChatMessage } from "@/lib/chatTypes";
 import AnalysisResultBlock from "@/components/AnalysisResultBlock";
 import TabExcerptBlock from "@/components/TabExcerptBlock";
@@ -8,6 +11,7 @@ import Typewriter from "@/components/Typewriter";
 import AnalysisProgressChecklist from "@/components/AnalysisProgressChecklist";
 import type { AnalysisStageState } from "@/lib/analysisProgress.mjs";
 import { WORKFLOW_STAGES, activeWorkflowStage, type ChatWorkflow } from "@/lib/workflowProgress.mjs";
+import { isNearConversationBottom } from "@/lib/chatAutoFollow.mjs";
 
 interface ChatThreadProps {
   messages: ChatMessage[];
@@ -24,11 +28,46 @@ interface ChatThreadProps {
 // fake list of stages. Wait until the classifier window has clearly passed
 // AND the busy label is the "Thinking…" one (analyze uses its own label).
 export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCancel, analysisProgress, workflow }: ChatThreadProps) {
+  const threadRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const followingRef = useRef(true);
+  const previousMessageCountRef = useRef(messages.length);
   const elapsedSec = (busyElapsedMs ?? 0) / 1000;
   const stages = workflow ? WORKFLOW_STAGES[workflow] : [];
   const activeIdx = activeWorkflowStage(elapsedSec, stages.length);
+  const scrollToLatest = useCallback(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    thread.scrollTop = thread.scrollHeight;
+  }, []);
+
+  useLayoutEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    const userSent = messages.length > previousMessageCountRef.current && lastMessage?.role === "user";
+    previousMessageCountRef.current = messages.length;
+    if (userSent) followingRef.current = true;
+    if (followingRef.current) scrollToLatest();
+  }, [messages, busyLabel, scrollToLatest]);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (followingRef.current) scrollToLatest();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scrollToLatest]);
+
+  function handleScroll() {
+    const thread = threadRef.current;
+    if (!thread) return;
+    followingRef.current = isNearConversationBottom(thread);
+  }
+
   return (
-    <div className="chat-thread" aria-live="polite">
+    <div ref={threadRef} className="chat-thread" data-testid="chat-thread" onScroll={handleScroll} aria-live="polite">
+      <div ref={contentRef} className="chat-thread-content">
       {messages.map((message) => (
         <article key={message.id} className={`chat-message chat-message-${message.role}`}>
           <span className="chat-role">{message.role}</span>
@@ -88,6 +127,8 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
           </div>
         </article>
       ) : null}
+      <div className="chat-scroll-anchor" data-testid="chat-scroll-anchor" aria-hidden="true" />
+      </div>
     </div>
   );
 }

@@ -34,12 +34,18 @@ attempted.
     `AnswerMusicQuestion`, bypassing `get_tab_excerpt`; generated `SongState`
     has no tab projection; UI failure handling only renders text and provides no
     explicit tab-unavailable attachment state.
-- [ ] Respectful conversation auto-follow: reproduce missing scroll-to-latest,
+- [x] Respectful conversation auto-follow: reproduce missing scroll-to-latest,
   follow progress/completion near the bottom, preserve manual upward scrolling,
   resume near-bottom/send behavior, and validate fixed-composer offset in browser.
   - Reproduced/root cause: `ChatThread` has no scroll container/anchor refs,
     near-bottom state, scroll listener, or effect responding to message/progress
     growth. No code accounts for the fixed composer height.
+  - Fix/test/browser: thread now follows atomic content-height changes only while
+    near bottom, forces follow on a new user send, pauses after manual upward
+    scrolling, and resumes near bottom/send. The composer remains outside the
+    scroll viewport. Playwright populates an overflowing conversation, checks
+    send/response completion, manual-scroll protection, resume, and composer
+    clearance; 1 browser test passes. Commit/push pending.
 - [ ] Reliable famous-song lookup and entity resolution: reproduce `Adiós` by
   Gustavo Cerati and `I Kissed a Girl` by Katy Perry; support featured artists,
   collaborations, multiple primaries, remixes/live versions, aliases, accents,

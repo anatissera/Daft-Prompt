@@ -388,13 +388,21 @@ code, pre, .mono { font-family: var(--font-mono); }
   min-height: 0;          /* required in column flex for overflow-y to work */
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding: var(--space-8) var(--space-6) var(--space-6);
+  position: relative;
+  z-index: 1;
+}
+
+.chat-thread-content {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  padding: var(--space-8) var(--space-6) var(--space-6);
-  scroll-behavior: smooth;
-  position: relative;
-  z-index: 1;
+  min-height: 100%;
+}
+
+.chat-scroll-anchor {
+  height: 1px;
+  flex: 0 0 1px;
 }
 
 .chat-message {
