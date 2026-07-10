@@ -67,33 +67,24 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
   // share the same Mute/Solo state.
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(() => new Set());
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
+  // Per-agent volume (0..1, default 1). Adjusted with the mouse wheel on
+  // each roster card's knob; applied live AND baked into MIDI/MP3 downloads.
+  const [trackGains, setTrackGains] = useState<Record<string, number>>({});
   const [mp3State, setMp3State] = useState<"idle" | "rendering" | "error">("idle");
   const [mp3Error, setMp3Error] = useState<string | null>(null);
 
   return (
     <section className="song-deck" aria-label="Generated song">
       <header className="song-deck-header">
-        <div className="song-deck-stencil">
-          <span className="song-deck-stencil-label">TRK</span>
-          <span className="song-deck-stencil-number">001</span>
-        </div>
-        <div className="song-deck-title-block">
-          <p className="song-deck-eyebrow">— Generated · {result.source} —</p>
-          <h2 className="song-deck-title">{h.genre}</h2>
-          <ul className="song-deck-specs">
-            <li><span>KEY</span><strong>{h.key}</strong></li>
-            <li><span>BPM</span><strong>{Math.round(h.tempo_bpm)}</strong></li>
-            <li><span>METER</span><strong>{h.time_signature[0]}/{h.time_signature[1]}</strong></li>
-            <li><span>BARS</span><strong>{h.num_bars}</strong></li>
-            <li><span>AGENTS</span><strong>{partsCount}</strong></li>
-            {fit ? (
-              <li title="Fraction of notes that fit the active chord">
-                <span>HARMONY</span>
-                <strong data-fit={harmonicFitLabel(fit.overallPct)}>{fit.overallPct}%</strong>
-              </li>
-            ) : null}
-          </ul>
-        </div>
+        <h2 className="song-deck-title">{h.genre}</h2>
+        <p className="song-deck-specs-inline">
+          {h.key} · {Math.round(h.tempo_bpm)} BPM · {h.time_signature[0]}/{h.time_signature[1]} · {h.num_bars} bars · {partsCount} agents
+          {fit ? (
+            <span title="Fraction of notes that fit the active chord">
+              {" · "}<span data-fit={harmonicFitLabel(fit.overallPct)}>{fit.overallPct}% harmony</span>
+            </span>
+          ) : null}
+        </p>
       </header>
 
       {message.header ? (
@@ -104,8 +95,10 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
           embedded
           mutedTrackIds={mutedTrackIds}
           soloTrackIds={soloTrackIds}
+          trackGains={trackGains}
           onToggleMute={(id) => setMutedTrackIds((prev) => toggleSetItem(prev, id))}
           onToggleSolo={(id) => setSoloTrackIds((prev) => toggleSetItem(prev, id))}
+          onGainChange={(id, gain) => setTrackGains((prev) => ({ ...prev, [id]: gain }))}
         />
       ) : null}
 
@@ -115,30 +108,33 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             song={song}
             mutedTrackIds={mutedTrackIds}
             soloTrackIds={soloTrackIds}
+            trackGains={trackGains}
             onMutedChange={setMutedTrackIds}
             onSoloChange={setSoloTrackIds}
           />
           <div className="artifact-link-row">
             <button
               type="button"
-              className="artifact-link"
+              className="download-chip"
+              title={`Download MIDI (${hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full mix"})`}
               onClick={() => {
                 const partIds = Object.keys(song.parts);
                 const audible = getAudibleTrackIds(partIds, mutedTrackIds, soloTrackIds);
-                triggerMidiDownload(song, audible);
+                triggerMidiDownload(song, audible, trackGains);
               }}
             >
-              ↓ Download MIDI ({hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full"})
+              MIDI
             </button>
             <button
               type="button"
-              className="artifact-link"
+              className="download-chip"
+              title="Download rendered MP3"
               disabled={mp3State === "rendering"}
               onClick={async () => {
                 setMp3State("rendering");
                 setMp3Error(null);
                 try {
-                  await triggerMp3Download(song);
+                  await triggerMp3Download(song, trackGains);
                   setMp3State("idle");
                 } catch (e) {
                   setMp3Error(String((e as Error).message ?? e));
@@ -146,7 +142,7 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
                 }
               }}
             >
-              {mp3State === "rendering" ? "Rendering MP3…" : "↓ Download MP3"}
+              {mp3State === "rendering" ? "…" : "MP3"}
             </button>
           </div>
           {mp3Error ? <p className="empty-note">MP3 render failed: {mp3Error}</p> : null}

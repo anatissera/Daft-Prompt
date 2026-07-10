@@ -158,6 +158,7 @@ const SYNTH_PRESET_GM_FALLBACK: Record<string, number> = {
   pluck: 80,         // lead_1_square
   warm_pad: 89,      // pad_2_warm
   vocal_fx: 54,      // synth_choir
+  wobble_bass: 39,   // synth_bass_2 (closest flat approximation; the LFO wobble only exists live)
 };
 
 /** Trust midi_program when non-zero; otherwise map a synth preset to its GM

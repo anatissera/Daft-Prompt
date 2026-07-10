@@ -60,12 +60,15 @@ from .tools import (
     search_midi_online,
     search_web,
 )
+from .tools.fallback_fill import llm_seeded_fill
+from .tools.style_research import fetch_style_excerpts
 
 
 class _AgentState(TypedDict, total=False):
     style: str
     intent: IntentDecision
     research: list[dict[str, Any]]
+    excerpts: list[dict[str, Any]]
     corpus: dict[str, Any]
     skeleton: BandSkeleton
     fills: dict[str, list[NotePlan]]
@@ -89,6 +92,15 @@ def _text_signals(hits: list[dict[str, Any]]) -> list[str]:
 def _research_node(state: _AgentState) -> _AgentState:
     style = state.get("style", "")
     research = search_web(style)
+    # Fetch the top result pages in a worker thread so it overlaps with the
+    # corpus retrieval below. These excerpts are the ONLY real prose the
+    # skeleton call sees about the style — titles alone tell the LLM nothing
+    # about instrumentation. NOTE: not a `with` block — the context manager's
+    # __exit__ joins all workers, which silently turned the 8s result timeout
+    # into "wait for the slowest page anyway".
+    pool = ThreadPoolExecutor(max_workers=1)
+    excerpts_fut = pool.submit(fetch_style_excerpts, research)
+    pool.shutdown(wait=False)
     corpus = retrieve_corpus(style)
     inferred_genre: str | None = None
     # The Lakh index is genre-tagged, not artist-tagged, so a prompt like
@@ -106,18 +118,22 @@ def _research_node(state: _AgentState) -> _AgentState:
             inferred_genre = infer_genre_from_titles(_text_signals(extra))
         if inferred_genre:
             corpus = retrieve_corpus(inferred_genre)
+    try:
+        excerpts = excerpts_fut.result(timeout=8.0)
+    except Exception:
+        excerpts = []
     events = state.get("events", []) + [
         {
             "type": "progress",
             "stage": "research",
             "message": (
-                f"found {len(research)} web hits; "
+                f"found {len(research)} web hits, read {len(excerpts)} pages; "
                 f"{len(corpus.get('examples', []))} corpus exemplars"
                 + (f" (via inferred genre: {inferred_genre})" if inferred_genre else "")
             ),
         }
     ]
-    return {"research": research, "corpus": corpus, "events": events}
+    return {"research": research, "excerpts": excerpts, "corpus": corpus, "events": events}
 
 
 def _skeleton_node(state: _AgentState) -> _AgentState:
@@ -129,10 +145,43 @@ def _skeleton_node(state: _AgentState) -> _AgentState:
                 state.get("style", ""),
                 {"results": state.get("research", [])},
                 state.get("corpus", {}),
+                excerpts=state.get("excerpts") or None,
             )
         ),
     ]
-    skeleton: BandSkeleton = llm.invoke(messages)
+    # One-shot retry: langchain_openai's streaming JSON parser occasionally
+    # dies mid-response with `Error in input stream` on openrouter.ai, or
+    # returns None silently when the parse fails. Either aborts the compose
+    # (SSE emits `compose_crashed`, UI shows "Chat failed"). Retrying once
+    # almost always succeeds since the failure is a transient parse race.
+    import time as _time
+    skeleton: BandSkeleton | None = None
+    last_exc: Exception | None = None
+    for attempt in (1, 2):
+        _t0 = _time.monotonic()
+        try:
+            skeleton = llm.invoke(messages)
+            _log.info("skeleton TIMING attempt %d ok: %.1fs", attempt, _time.monotonic() - _t0)
+        except Exception as exc:
+            _log.warning("skeleton TIMING attempt %d FAIL: %.1fs", attempt, _time.monotonic() - _t0)
+            _log.warning(
+                "skeleton (attempt %d) raised: %s: %s", attempt, type(exc).__name__, exc,
+            )
+            last_exc = exc
+            skeleton = None
+        if skeleton is not None:
+            break
+        _log.warning("skeleton (attempt %d) returned None — retrying", attempt)
+    if skeleton is None:
+        # Re-raise the ORIGINAL exception so typed errors (LLMError et al.)
+        # keep their meaning for the API layer, which maps them to proper
+        # SSE error events instead of a generic compose_crashed.
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(
+            "skeleton LLM call returned no parsed output after 2 attempts — "
+            "likely a provider streaming/parse flake. Try again."
+        )
     events = state.get("events", []) + [
         {
             "type": "progress",
@@ -146,43 +195,92 @@ def _skeleton_node(state: _AgentState) -> _AgentState:
     return {"skeleton": skeleton, "events": events}
 
 
-# How many per-instrument fill calls to run concurrently. 4 works well on
-# Gemini free-tier (15 RPM headroom) and llama-server (4 slots). Drop to
-# 1-2 on tight OpenRouter accounts where each in-flight call reserves
-# max_tokens against the credit budget.
-_FILL_MAX_WORKERS = 4
+# How many fill LLM calls to run concurrently. Each fill unit is one
+# (instrument, section-slice) pair — with 5-7 instruments × 2-3 slices that's
+# 10-21 units. 16 puts essentially ALL units in flight at once, so the fills
+# stage costs one slice-latency (~60-90s) instead of 3 sequential waves.
+# Fine on flat-fee gateways (opencode.ai) and on llama-server (requests just
+# queue at the server); drop to 3-4 on metered OpenRouter accounts where each
+# in-flight call reserves max_tokens against the credit budget.
+_FILL_MAX_WORKERS = 16
 
 
 def _fills_node(state: _AgentState) -> _AgentState:
     skeleton = state["skeleton"]
     skeleton_ctx = skeleton.model_dump(mode="json", exclude={"instruments"})
-    targets: list[InstrumentDecl] = [
-        i for i in skeleton.instruments if not i.is_drum
-    ]
+    # Include drums now: the LLM writes GM percussion pitches from the
+    # director's committed rhythmic_feel. If the drum fill fails at every
+    # tier, `compose_band` still falls back to the corpus groove (or the
+    # deterministic four-on-the-floor default) — so drums always play,
+    # but the LLM gets to shape the groove first when it can.
+    targets: list[InstrumentDecl] = list(skeleton.instruments)
 
     fills: dict[str, list[NotePlan]] = {}
     fallback_ids: list[str] = []
     targets_by_id = {inst.id: inst for inst in targets}
-    if targets:
-        with ThreadPoolExecutor(max_workers=min(_FILL_MAX_WORKERS, len(targets))) as pool:
-            futures = {
-                pool.submit(_fill_one, skeleton_ctx, inst): inst.id
-                for inst in targets
+    if not targets:
+        events = state.get("events", []) + [
+            {"type": "progress", "stage": "fills", "message": "no instruments in skeleton"}
+        ]
+        return {"fills": fills, "events": events}
+
+    # Flatten to (instrument, section-slice) work units so slices for the same
+    # instrument run in parallel (not sequentially inside `_fill_one`). With
+    # 5 instruments × 2-3 slices this is 10-15 tasks in the pool. The pool
+    # cap bounds provider RPM; per-instrument aggregation happens after.
+    sections = _sections_for_fill(skeleton_ctx)
+    work: list[tuple[InstrumentDecl, dict[str, Any]]] = [
+        (inst, sec) for inst in targets for sec in sections
+    ]
+    section_notes_by_inst: dict[str, list[NotePlan]] = {inst.id: [] for inst in targets}
+
+    pool_size = min(_FILL_MAX_WORKERS, max(1, len(work)))
+    with ThreadPoolExecutor(max_workers=pool_size) as pool:
+        # Phase A: rich→minimal fill per (instrument, slice).
+        section_futures = {
+            pool.submit(_fill_section, skeleton_ctx, inst, sec): inst.id
+            for inst, sec in work
+        }
+        for fut in as_completed(section_futures):
+            inst_id = section_futures[fut]
+            try:
+                notes = fut.result()
+                if notes:
+                    section_notes_by_inst[inst_id].extend(notes)
+            except Exception as exc:
+                _log.info("fill section for %s: %s: %s", inst_id, type(exc).__name__, exc)
+
+        # Phase B: for melodic instruments still empty, run seeded fallback
+        # in parallel on the same pool.
+        empty_melodic = [
+            inst for inst in targets
+            if not section_notes_by_inst[inst.id] and not inst.is_drum
+        ]
+        if empty_melodic:
+            seeded_futures = {
+                pool.submit(llm_seeded_fill, skeleton, inst, make_llm(role="instrument")): inst.id
+                for inst in empty_melodic
             }
-            for fut in as_completed(futures):
-                inst_id = futures[fut]
+            for fut in as_completed(seeded_futures):
+                inst_id = seeded_futures[fut]
                 try:
-                    fill: InstrumentFill = fut.result()
-                    if not fill.notes:
-                        raise ValueError("empty note list")
-                    fills[inst_id] = fill.notes
+                    seeded = fut.result()
+                    if seeded:
+                        section_notes_by_inst[inst_id].extend(seeded)
                 except Exception as exc:
-                    _log.warning(
-                        "band_agent: fill for %s failed (%s: %s) — using deterministic fallback",
-                        inst_id, type(exc).__name__, exc,
-                    )
-                    fills[inst_id] = deterministic_fill(skeleton, targets_by_id[inst_id])
-                    fallback_ids.append(inst_id)
+                    _log.info("seeded fill for %s: %s: %s", inst_id, type(exc).__name__, exc)
+
+    # Phase C: aggregate + deterministic fallback for anyone still empty.
+    for inst in targets:
+        notes = section_notes_by_inst[inst.id]
+        if notes:
+            fills[inst.id] = notes
+        else:
+            _log.warning(
+                "band_agent: all LLM tiers empty for %s — deterministic fallback", inst.id
+            )
+            fills[inst.id] = deterministic_fill(skeleton, targets_by_id[inst.id])
+            fallback_ids.append(inst.id)
 
     llm_ok = sum(1 for iid, v in fills.items() if v and iid not in fallback_ids)
     events = state.get("events", []) + [
@@ -202,18 +300,177 @@ def _fills_node(state: _AgentState) -> _AgentState:
     return {"fills": fills, "events": events}
 
 
-def _fill_one(skeleton_ctx: dict[str, Any], instrument: InstrumentDecl) -> InstrumentFill:
-    llm = make_llm(role="instrument").with_structured_output(InstrumentFill)
-    messages = [
-        SystemMessage(content=FILL_SYSTEM_PROMPT),
-        HumanMessage(
-            content=fill_user_prompt(
-                skeleton_ctx,
-                instrument.model_dump(mode="json"),
-            )
-        ),
+from pydantic import BaseModel, Field as _Field
+
+from .band_spec import NotePlan as _NotePlan
+
+
+class _MinimalFill(BaseModel):
+    """Stripped-down fill schema used as a retry when `InstrumentFill` can't
+    be parsed — providers sometimes truncate JSON on the richer wrapper but
+    complete a bare notes list. Retried automatically per section slice."""
+
+    notes: list[_NotePlan] = _Field(default_factory=list)
+
+
+_MAX_BARS_PER_SLICE = 12
+
+
+def _slice_cap(num_bars: int) -> int:
+    """Adaptive slice count. Short songs (≤23 bars) fit reliably in 2 slices —
+    3 was overkill and added a whole extra LLM round-trip per instrument for
+    no output-budget benefit. Long songs (≥24 bars) still get 3 to stay under
+    per-call token limits."""
+    if num_bars < 24:
+        return 2
+    return 3
+
+
+def _sections_for_fill(skeleton_ctx: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the bar-range slices to iterate over. Skeletons with many
+    small sections (Intro/Verse/PreChorus/Chorus/Bridge/Outro = 6) would
+    otherwise multiply LLM calls 6× per instrument. We cap to `_slice_cap`
+    by merging adjacent sections into balanced chunks; a single-section
+    skeleton still works through the same code path."""
+    sections = skeleton_ctx.get("sections") or []
+    num_bars = int(skeleton_ctx.get("num_bars") or 16)
+    cap = _slice_cap(num_bars)
+    if not sections:
+        return _split_range(0, num_bars, name_prefix="all", cap=cap)
+    slices = [
+        {
+            "name": s.get("name") or "section",
+            "start_bar": int(s.get("start_bar", 0)),
+            "end_bar": int(s.get("end_bar", 0)),
+            "energy": s.get("energy") or "medium",
+        }
+        for s in sections
     ]
-    return llm.invoke(messages)
+    if len(slices) <= cap:
+        return slices
+    total = sum(s["end_bar"] - s["start_bar"] for s in slices)
+    target = max(1, total // cap)
+    merged: list[dict[str, Any]] = []
+    cur_name: list[str] = []
+    cur_start = slices[0]["start_bar"]
+    cur_end = cur_start
+    for s in slices:
+        cur_name.append(s["name"])
+        cur_end = s["end_bar"]
+        if cur_end - cur_start >= target and len(merged) < cap - 1:
+            merged.append({
+                "name": "+".join(cur_name),
+                "start_bar": cur_start,
+                "end_bar": cur_end,
+                "energy": s.get("energy") or "medium",
+            })
+            cur_name = []
+            cur_start = cur_end
+    if cur_start < cur_end or not merged:
+        merged.append({
+            "name": "+".join(cur_name) if cur_name else "outro",
+            "start_bar": cur_start,
+            "end_bar": max(cur_end, cur_start + 1),
+            "energy": "medium",
+        })
+    return merged
+
+
+def _split_range(start: int, end: int, *, name_prefix: str, cap: int) -> list[dict[str, Any]]:
+    """Break bar-range [start,end) into equal chunks capped at
+    `_MAX_BARS_PER_SLICE` bars each, up to `cap` chunks."""
+    length = end - start
+    if length <= 0:
+        return [{"name": name_prefix, "start_bar": start, "end_bar": max(end, start + 1), "energy": "medium"}]
+    n = max(1, min(cap, (length + _MAX_BARS_PER_SLICE - 1) // _MAX_BARS_PER_SLICE))
+    chunk = (length + n - 1) // n
+    out: list[dict[str, Any]] = []
+    for i in range(n):
+        s = start + i * chunk
+        e = min(end, s + chunk)
+        if s >= e:
+            break
+        out.append({
+            "name": f"{name_prefix}_{i + 1}",
+            "start_bar": s,
+            "end_bar": e,
+            "energy": "medium",
+        })
+    return out
+
+
+def _fill_section(
+    skeleton_ctx: dict[str, Any],
+    instrument: InstrumentDecl,
+    section: dict[str, Any],
+) -> list[NotePlan]:
+    """Compose one (instrument, section) unit. Returns notes clipped to the
+    slice bar-range, or an empty list if both rich and minimal schemas failed.
+    Per-unit granularity is what lets `_fills_node` run slices for the same
+    instrument in parallel — the previous `_fill_one` iterated slices in a
+    for-loop, which is what dominated the 800s walltime."""
+    start = int(section.get("start_bar", 0))
+    end = int(section.get("end_bar", start))
+    if end <= start:
+        return []
+    llm = make_llm(role="instrument")
+    rich = llm.with_structured_output(InstrumentFill)
+    minimal = llm.with_structured_output(_MinimalFill)
+    inst_json = instrument.model_dump(mode="json")
+    prompt_kwargs = dict(
+        bar_start=start,
+        bar_end=end,
+        section_name=section.get("name") or "",
+        section_energy=section.get("energy") or "",
+    )
+    msgs = [
+        SystemMessage(content=FILL_SYSTEM_PROMPT),
+        HumanMessage(content=fill_user_prompt(skeleton_ctx, inst_json, **prompt_kwargs)),
+    ]
+
+    import time as _time
+
+    # Rich schema first; empty is legitimate (a lead can rest through an
+    # intro), so we only retry with the lean schema when rich actually THREW.
+    t0 = _time.monotonic()
+    try:
+        fill_rich: InstrumentFill = rich.invoke(msgs)
+        notes = _clip_notes(fill_rich.notes, start, end)
+        _log.info(
+            "fill TIMING rich ok %s bars %d-%d: %.1fs, %d notes",
+            instrument.id, start, end - 1, _time.monotonic() - t0, len(notes),
+        )
+        return notes
+    except Exception as exc:
+        _log.warning(
+            "fill TIMING rich FAIL %s bars %d-%d: %.1fs, %s: %s",
+            instrument.id, start, end - 1, _time.monotonic() - t0,
+            type(exc).__name__, str(exc)[:300],
+        )
+
+    t0 = _time.monotonic()
+    try:
+        fill_min: _MinimalFill = minimal.invoke(msgs)
+        notes = _clip_notes(fill_min.notes, start, end)
+        _log.info(
+            "fill TIMING minimal ok %s bars %d-%d: %.1fs, %d notes",
+            instrument.id, start, end - 1, _time.monotonic() - t0, len(notes),
+        )
+        return notes
+    except Exception as exc:
+        _log.warning(
+            "fill TIMING minimal FAIL %s bars %d-%d: %.1fs, %s: %s",
+            instrument.id, start, end - 1, _time.monotonic() - t0,
+            type(exc).__name__, str(exc)[:300],
+        )
+        return []
+
+
+def _clip_notes(notes: list[NotePlan], start_bar: int, end_bar: int) -> list[NotePlan]:
+    """Drop any notes the model emitted outside the requested section range —
+    models occasionally leak notes for other bars into a section slice; we
+    prune them so concatenation doesn't double-emit bars."""
+    return [n for n in notes if start_bar <= n.bar < end_bar]
 
 
 def _compose_node(state: _AgentState) -> _AgentState:
@@ -236,14 +493,17 @@ def _compose_node(state: _AgentState) -> _AgentState:
 
 
 def _intent_node(state: _AgentState) -> _AgentState:
+    import time as _time
     prompt = state.get("style", "")
     llm = make_llm(role="director").with_structured_output(IntentDecision)
     messages = [
         SystemMessage(content=INTENT_SYSTEM_PROMPT),
         HumanMessage(content=intent_user_prompt(prompt)),
     ]
+    _t0 = _time.monotonic()
     try:
         decision: IntentDecision = llm.invoke(messages)
+        _log.info("intent TIMING: %.1fs", _time.monotonic() - _t0)
     except Exception:
         # If the classifier hiccups, fall through to compose — replicate is
         # the more expensive path (external HTTP + no re-generation), so
@@ -373,19 +633,34 @@ def stream_compose(style: str) -> Iterator[tuple[dict[str, Any], Optional[SongSt
     """Yield `(event, song_snapshot)` pairs matching the `ComposeSong.event_streamer`
     contract, so the FastAPI stream handler stays unchanged.
 
-    Order:
-      1. `progress[research]` — research is done, no song yet.
-      2. `progress[skeleton]` — skeleton LLM call finished.
-      3. `progress[fills]`    — per-instrument fills finished.
+    Uses langgraph's `stream(mode="updates")` so progress events reach the SSE
+    client AS EACH NODE FINISHES rather than piled up at the end. Without this,
+    the browser (and Vercel's 300 s route maxDuration) would time out waiting
+    for the first byte of progress even though the pipeline is running fine.
+
+    Order (typical compose path):
+      1. `progress[research]` — after `_research_node`.
+      2. `progress[skeleton]` — after `_skeleton_node`.
+      3. `progress[fills]`    — after `_fills_node`.
       4. `director`           — header + roster; carries the final song snapshot.
       5. sentinel `({}, song)` so the caller renders artifacts + emits `done`.
     """
     initial: _AgentState = {"style": style, "events": []}
-    final: _AgentState = _graph().invoke(initial)  # type: ignore[assignment]
+    emitted: set[int] = set()
+    final_state: _AgentState = {}
+    for update in _graph().stream(initial, stream_mode="values"):
+        # `stream_mode="values"` yields the accumulated state after each node.
+        # We diff against events already sent so the same progress line isn't
+        # emitted twice as later nodes echo the earlier `events` list.
+        final_state = update  # type: ignore[assignment]
+        for ev in update.get("events", []):
+            key = id(ev)
+            if key in emitted:
+                continue
+            emitted.add(key)
+            yield ev, None
 
-    for ev in final.get("events", []):
-        yield ev, None
-
-    song = final["song"]
-    yield _director_event(song), song
-    yield {}, song
+    song = final_state.get("song")
+    if song is not None:
+        yield _director_event(song), song
+        yield {}, song

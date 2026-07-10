@@ -9,6 +9,7 @@ from music_assistant.agents.instrument import (
     MAX_REPAIRS,
     InstrumentOutput,
     InstrumentTurnOutput,
+    MinimalInstrumentOutput,
     _chord_map_text,
     _negotiation_etiquette,
     _peer_context,
@@ -37,11 +38,21 @@ class FakeLLM:
         self.structured = _FakeStructured(outputs)
 
     def with_structured_output(self, schema):
-        assert schema is InstrumentOutput
+        # compose_part tries the rich schema, then retries with the minimal
+        # one; the seeded fallback's local _SeedOutput may also pass through.
+        assert schema is not None
         return self.structured
 
 
-HEADER = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
+# chord_progression present because the deterministic fallback (like the real
+# skeleton output) needs an active chord per bar to emit notes.
+HEADER = Header(
+    genre="disco",
+    key="C major",
+    tempo_bpm=120,
+    num_bars=4,
+    chord_progression=[ChordSpan(bar=0, chord="C"), ChordSpan(bar=2, chord="F")],
+)
 BASS = RosterItem(id="bass", instrument="electric_bass", role="groove")
 ROSTER = [BASS, RosterItem(id="drums", instrument="kit", role="beat", is_drum=True)]
 
@@ -72,18 +83,21 @@ def test_compose_part_accepts_valid_output_first_try():
     assert llm.structured.calls == 1  # no repair needed
 
 
-def test_compose_part_repairs_after_validation_failure():
-    llm = FakeLLM([_invalid_output(), _valid_output()])
+def test_compose_part_clips_out_of_range_notes_then_falls_back():
+    # bar 99 is outside num_bars=4: the section clip empties both schema
+    # tiers, and the deterministic fallback fills the section instead —
+    # there is no repair loop in the section-scoped compose path anymore.
+    llm = FakeLLM([_invalid_output(), _invalid_output()])
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
-    assert part.notes[0].bar == 0  # the valid retry landed
-    assert llm.structured.calls == 2  # one repair round-trip
+    assert part.notes  # deterministic fallback shipped something
+    assert all(0 <= n.bar < HEADER.num_bars for n in part.notes)
 
 
-def test_compose_part_never_crashes_when_repairs_exhausted():
-    llm = FakeLLM([_invalid_output()])  # always invalid
+def test_compose_part_never_crashes_when_all_llm_tiers_fail():
+    llm = FakeLLM([_invalid_output()])  # every tier gets the same bad answer
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
-    assert part.notes[0].bar == 99  # shipped as-is even though bar is out of range
-    assert llm.structured.calls == 1 + MAX_REPAIRS
+    assert part.notes
+    assert all(0 <= n.bar < HEADER.num_bars for n in part.notes)
 
 
 def test_compose_part_falls_back_when_structured_output_is_none():
@@ -91,9 +105,8 @@ def test_compose_part_falls_back_when_structured_output_is_none():
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
 
     assert part.instrument_id == "bass"
-    assert part.notes == []
-    assert "structured output" in part.notes_summary
-    assert llm.structured.calls == 2
+    assert part.notes  # deterministic fallback, not silence
+    assert all(0 <= n.bar < HEADER.num_bars for n in part.notes)
 
 
 def test_compose_part_propagates_quota_errors_instead_of_empty_fallback():

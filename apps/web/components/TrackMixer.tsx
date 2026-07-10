@@ -9,7 +9,8 @@ import {
   getSongDurationSeconds,
   type TrackEvent,
 } from "@/lib/trackMixerLogic.mjs";
-import { buildMidiWithChannels, loadSoundBank, workletUrl } from "@/lib/spessasynthPlayer";
+import { buildMidiWithChannels, loadSoundBank, usesNativeSynth, workletUrl } from "@/lib/spessasynthPlayer";
+import { NativeSynthLayer } from "@/lib/nativeSynthLayer";
 
 type WorkletSynth = import("spessasynth_lib").WorkletSynthesizer;
 type SeqType = import("spessasynth_lib").Sequencer;
@@ -24,6 +25,8 @@ interface TrackMixerProps {
   song: SongState;
   mutedTrackIds?: Set<string>;
   soloTrackIds?: Set<string>;
+  /** Per-track volume 0..1 (default 1). Applied live to both engines. */
+  trackGains?: Record<string, number>;
   onMutedChange?: (next: Set<string>) => void;
   onSoloChange?: (next: Set<string>) => void;
 }
@@ -58,6 +61,7 @@ export default function TrackMixer({
   song,
   mutedTrackIds: mutedProp,
   soloTrackIds: soloProp,
+  trackGains,
   onMutedChange,
   onSoloChange,
 }: TrackMixerProps) {
@@ -82,6 +86,10 @@ export default function TrackMixer({
   const channelMapRef = useRef<Map<string, number>>(new Map());
   const rafRef = useRef<number | null>(null);
   const engineSongRef = useRef<SongState | null>(null);
+  // Second engine for `synth_preset` tracks. Runs on the same AudioContext
+  // as spessasynth so both share a clock and mix into the same destination.
+  const nativeLayerRef = useRef<NativeSynthLayer | null>(null);
+  const nativePartIdsRef = useRef<Set<string>>(new Set());
 
   const audibleTrackIds = useMemo(
     () => getAudibleTrackIds(trackIds, mutedTrackIds, soloTrackIds),
@@ -90,15 +98,31 @@ export default function TrackMixer({
 
   const applyMuteState = useCallback(() => {
     const synth = synthRef.current;
-    if (!synth) return;
-    const map = channelMapRef.current;
-    for (const [partId, ch] of map) {
-      const audible = audibleTrackIds.has(partId);
-      try {
-        synth.midiChannels[ch]?.setSystemParameter("isMuted", !audible);
-      } catch { /* channel may not exist yet during first ready cycle */ }
+    const layer = nativeLayerRef.current;
+    // A native-handled part is one where the Tone.js layer is up AND actually
+    // instantiated a synth for it. Muted-on-SF3 while native plays it prevents
+    // doubling; if native isn't up, SF3 keeps the part audible as GM fallback.
+    const nativeActiveIds = layer ? nativePartIdsRef.current : new Set<string>();
+    if (synth) {
+      const map = channelMapRef.current;
+      for (const [partId, ch] of map) {
+        const nativeCoversThis = nativeActiveIds.has(partId);
+        const audible = audibleTrackIds.has(partId) && !nativeCoversThis;
+        const gain = trackGains?.[partId] ?? 1;
+        try {
+          synth.midiChannels[ch]?.setSystemParameter("isMuted", !audible);
+          // Per-track volume rides MIDI CC7 so it survives note-ons.
+          synth.controllerChange(ch, 7, Math.round(Math.max(0, Math.min(1, gain)) * 127));
+        } catch { /* channel may not exist yet during first ready cycle */ }
+      }
     }
-  }, [audibleTrackIds]);
+    if (layer) {
+      for (const partId of nativePartIdsRef.current) {
+        const gain = trackGains?.[partId] ?? 1;
+        layer.setAudible(partId, audibleTrackIds.has(partId), gain);
+      }
+    }
+  }, [audibleTrackIds, trackGains]);
 
   useEffect(() => { applyMuteState(); }, [applyMuteState]);
 
@@ -117,6 +141,7 @@ export default function TrackMixer({
     if (seq.isFinished || t >= seq.duration - 0.01) {
       seq.pause();
       seq.currentTime = 0;
+      try { nativeLayerRef.current?.pause(); } catch { /* noop */ }
       setPosition(0);
       setPlaying(false);
       stopRaf();
@@ -130,6 +155,9 @@ export default function TrackMixer({
     try { seqRef.current?.pause(); } catch { /* noop */ }
     seqRef.current = undefined as unknown as SeqType;
     seqRef.current = null;
+    try { nativeLayerRef.current?.dispose(); } catch { /* noop */ }
+    nativeLayerRef.current = null;
+    nativePartIdsRef.current = new Set();
     const ctx = ctxRef.current;
     if (ctx && ctx.state !== "closed") ctx.close().catch(() => { /* noop */ });
     ctxRef.current = null;
@@ -188,6 +216,30 @@ export default function TrackMixer({
       seqRef.current = seq;
       channelMapRef.current = channelByPartId;
       engineSongRef.current = song;
+
+      // Prepare the Tone.js layer for any `synth_preset` tracks. Shares the
+      // same AudioContext as spessasynth so both engines have one clock
+      // and mix into the same destination.
+      const wantsNative = song.roster.some((item) => usesNativeSynth(item));
+      if (wantsNative) {
+        try {
+          const layer = new NativeSynthLayer(ctx);
+          await layer.prepare(song);
+          // Trust the layer's `coveredPartIds()`, not the roster's flag —
+          // only parts whose synth actually got built get their SF3 channel
+          // muted; the rest fall back to SF3 GM instead of going silent.
+          if (layer.hasAnyTracks()) {
+            nativeLayerRef.current = layer;
+            nativePartIdsRef.current = layer.coveredPartIds();
+          } else {
+            layer.dispose();
+          }
+        } catch (err) {
+          // Never let a Tone.js failure kill playback — SF3 alone is a
+          // valid degraded state. Log so we can debug in dev.
+          console.warn("NativeSynthLayer failed to prepare; falling back to SF3-only", err);
+        }
+      }
       applyMuteState();
     } finally {
       setLoading(false);
@@ -198,6 +250,7 @@ export default function TrackMixer({
     setError(null);
     if (playing) {
       try { seqRef.current?.pause(); } catch { /* noop */ }
+      try { nativeLayerRef.current?.pause(); } catch { /* noop */ }
       stopRaf();
       setPlaying(false);
       return;
@@ -213,14 +266,19 @@ export default function TrackMixer({
     if (!seq || !ctx) return;
     if (ctx.state === "suspended") await ctx.resume();
     // If we're resuming from the end, restart from 0.
+    let startAt = position;
     if (position >= seq.duration - 0.01) {
       seq.currentTime = 0;
       setPosition(0);
+      startAt = 0;
     } else if (Math.abs(seq.currentTime - position) > 0.02) {
       seq.currentTime = position;
     }
     applyMuteState();
     seq.play();
+    // Native layer plays in lockstep: schedule from the same offset the
+    // sequencer resumes at. Both engines share ctx.currentTime.
+    try { nativeLayerRef.current?.play(startAt); } catch { /* noop */ }
     setPlaying(true);
     stopRaf();
     rafRef.current = requestAnimationFrame(tick);
@@ -232,6 +290,16 @@ export default function TrackMixer({
     const seq = seqRef.current;
     if (seq) {
       try { seq.currentTime = clamped; } catch { /* noop */ }
+    }
+    // Native layer has no seek — cancel scheduled sounds and reschedule
+    // on next play. If we're already playing, restart the native tracks
+    // from the new offset so they stay aligned with spessasynth.
+    const layer = nativeLayerRef.current;
+    if (layer) {
+      layer.pause();
+      if (playing) {
+        try { layer.play(clamped); } catch { /* noop */ }
+      }
     }
   }
 

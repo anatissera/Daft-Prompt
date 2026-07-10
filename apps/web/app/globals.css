@@ -1193,7 +1193,10 @@ code, pre, .mono { font-family: var(--font-mono); }
 }
 .song-deck > .embedded-panel .roster-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  /* 300px min: an agent card must fit a full patch name ("electronic_drums")
+     on ONE line next to three controls (M, S, volume knob). 220px was fine
+     with two buttons; the knob pushed long names into ellipsis. */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 8px;
 }
 .song-deck > .embedded-panel .roster-item {
@@ -1837,3 +1840,794 @@ input[type="number"], select {
   .app-sidebar { display: none; }
   .chat-thread, .chat-composer { padding-left: var(--space-4); padding-right: var(--space-4); }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * MINIMAL OVERRIDES — flatten decorative chrome without deleting the maximalist
+ * baseline. Neutral typography, thin borders, no gradients/glows.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Inter", system-ui, sans-serif;
+  --font-tech: "Inter", sans-serif;
+  --font-eyebrow: "Inter", sans-serif;
+  --border-hair: rgba(255, 255, 255, 0.08);
+  --surface-1: #1f2027;
+  --surface-2: #262830;
+}
+
+body { background: #1e2028; }
+.app-main { background: #262931; }
+.chat-thread { background: transparent; }
+:root {
+  --surface-1: #2f333d;
+  --surface-2: #363b45;
+  --border-hair: rgba(255, 255, 255, 0.09);
+}
+
+/* Sidebar: matte black slab, no gradient */
+.app-sidebar { background: #0d0e11; border-right: 1px solid var(--border-hair); }
+.app-sidebar::after { display: none; }
+
+/* Top bar: flat, small */
+.app-topbar {
+  background: transparent;
+  border-bottom: 1px solid var(--border-hair);
+  padding: 12px 20px;
+}
+.app-topbar-title {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 15px;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--text);
+}
+.app-topbar-dot { display: none; }
+.app-topbar-meta { color: var(--text-muted); font-size: 12px; }
+
+/* Chat bubbles: flatten, no ::before/::after helmet decorations */
+.chat-message-user p,
+.chat-message-assistant p,
+.chat-message-system p {
+  border-radius: 10px;
+  box-shadow: none;
+  padding: 10px 14px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* Silver bubble for the user — flat, dark text */
+.chat-message-user p {
+  background: var(--silver-bright);
+  color: var(--text-on-metal);
+  -webkit-text-fill-color: var(--text-on-metal);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+/* Gold bubble for the agent — flat, matches SEND */
+.chat-message-assistant p {
+  background: var(--gold-bright);
+  color: #1a1204;
+  -webkit-text-fill-color: #1a1204;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+.chat-message-system p {
+  background: var(--surface-1);
+  border: 1px solid var(--border-hair);
+  color: var(--text);
+  -webkit-text-fill-color: currentColor;
+}
+.chat-message-user p::before,
+.chat-message-user p::after,
+.chat-message-assistant p::before,
+.chat-message-assistant p::after,
+.chat-message-system p::before,
+.chat-message-system p::after { display: none; }
+.chat-role { color: var(--text-faint); letter-spacing: 0.04em; }
+/* The ✦ sparkle was a helmet decoration for the maximalist bubble;
+ * in the flat design it just overlaps the text. Hide it everywhere. */
+.bubble-sparkle { display: none; }
+
+/* Song deck: plain card */
+.song-deck {
+  background: var(--surface-1);
+  border: 1px solid var(--border-hair);
+  border-radius: 10px;
+  box-shadow: none;
+  padding: 18px;
+  gap: 14px;
+}
+.song-deck::before, .song-deck::after { display: none; }
+.song-deck-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.song-deck-title {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  margin: 0;
+}
+.song-deck-specs-inline {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+.song-deck-specs-inline [data-fit] { color: var(--text); }
+
+/* Roster inside deck: plain list rows */
+.embedded-panel, .card {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.section-title, .source-tag, .header-meta { display: none; }
+.roster-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.roster-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  /* background is set inline from instrumentColor(id) */
+  color: var(--text-on-metal);
+}
+.roster-item .avatar { display: none; }
+/* Kill leftover ::before / ::after accent stripes from the maximalist look */
+.roster-item::before, .roster-item::after,
+.song-deck > .embedded-panel .roster-item::before,
+.song-deck > .embedded-panel .roster-item::after { display: none !important; content: none !important; }
+.roster-item-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.roster-item-controls { margin-left: auto; display: flex; gap: 4px; }
+.roster-item-name {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: var(--text-on-metal);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.roster-item-role {
+  font-family: var(--font-sans);
+  color: rgba(0, 0, 0, 0.62);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  /* Long playing_style sentences wrap under the name instead of running
+     beneath the M/S controls. Names stay nowrap; roles are prose. */
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.35;
+}
+/* Reclaim room for full patch names ("overdriven guitar", "distortion
+ * guitar") so they fit on one line: tighter item padding, smaller gap,
+ * shrunk M/S buttons. */
+/* The embedded-panel rule higher up lays these out as a `38px 1fr auto`
+   grid whose first column belonged to the (now hidden) avatar — the text
+   landed in that 38px column and either clipped or overflowed under the
+   M/S buttons. Flat look: simple flex row, text takes the free space. */
+.song-deck .roster-item,
+.song-deck > .embedded-panel .roster-item {
+  display: flex;
+  padding: 8px 10px;
+  gap: 6px;
+  align-items: flex-start;
+}
+.song-deck .roster-item-controls { gap: 3px; }
+.song-deck .roster-toggle { padding: 2px 6px; font-size: 10px; }
+.roster-item-body { overflow: hidden; }
+/* Controls never shrink or get overlapped — the body column wraps first. */
+.roster-item-controls { flex-shrink: 0; align-self: flex-start; align-items: center; }
+
+/* Per-agent volume knob: hardware-pot look, driven by the mouse wheel.
+   The pointer sweeps -135° (silent) → +135° (full). */
+.volume-knob {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255,255,255,0.35), rgba(255,255,255,0) 45%),
+    linear-gradient(180deg, #3a3d46, #14161b);
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25) inset,
+    0 2px 4px rgba(0, 0, 0, 0.4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  flex-shrink: 0;
+}
+.volume-knob-pointer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 9px;
+  margin-left: -1px;
+  margin-top: -9px;
+  transform-origin: 50% 100%;
+  border-radius: 1px;
+  background: var(--gold-bright, #f3c45a);
+  box-shadow: 0 0 4px rgba(243, 196, 90, 0.8);
+}
+/* Attenuated tracks dim the pointer so mix tweaks are visible at a glance. */
+.volume-knob[data-dimmed] .volume-knob-pointer {
+  background: #c9cdd8;
+  box-shadow: 0 0 3px rgba(200, 205, 220, 0.5);
+}
+.roster-toggle {
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  color: var(--text-on-metal);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.roster-toggle-mute, .roster-toggle-solo {
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--gold-spec);
+  border-color: rgba(0, 0, 0, 0.7);
+}
+
+/* Track mixer: flat transport, plain rows */
+.track-mixer {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mixer-transport,
+.song-deck .mixer-transport {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hair);
+  border-radius: 8px;
+  box-shadow: none;
+}
+.transport-button,
+.song-deck .mixer-transport .transport-button {
+  background: var(--gold-bright);
+  color: #1a1204;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: none;
+  text-shadow: none;
+}
+.transport-button:hover:not(:disabled),
+.song-deck .mixer-transport .transport-button:hover {
+  background: var(--gold-spec);
+  box-shadow: none;
+}
+.transport-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.transport-time,
+.song-deck .mixer-transport .transport-time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 42px;
+  text-shadow: none;
+  font-variant-numeric: tabular-nums;
+}
+.transport-range,
+.song-deck .mixer-transport .transport-range {
+  flex: 1;
+  accent-color: var(--gold-bright);
+}
+
+.mixer-track-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mixer-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-hair);
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.6;
+}
+.mixer-track-active { opacity: 1; }
+.mixer-track .avatar {
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+.mixer-toggle {
+  background: transparent;
+  border: 1px solid var(--border-hair);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 5px;
+  font-family: var(--font-sans);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.mixer-toggle-on {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+/* Download buttons: plain outlined links */
+.artifact-link {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border-hair);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: none;
+  transition: background 0.15s;
+}
+.artifact-link:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
+.song-deck > .artifact-link-row { margin: 0; }
+
+/* Gold pill download buttons — short labels ("MIDI", "MP3") */
+.download-chip {
+  background: var(--gold-bright);
+  color: #1a1204;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: none;
+  min-width: 64px;
+}
+.download-chip:hover:not(:disabled) { background: var(--gold-spec); }
+.download-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Details panels: quiet dividers, not chunky frames */
+.details-panel, .score-frame {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border-hair);
+  border-radius: 0;
+  padding: 10px 0 0;
+  margin: 0;
+  box-shadow: none;
+}
+.details-summary {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+/* Chat composer: pure black inline area, gold send */
+.chat-composer {
+  background: transparent;
+  border-top: 1px solid var(--border-hair);
+  padding: 12px 20px;
+  box-shadow: none;
+}
+.chat-composer-pill {
+  background: #000;
+  border: 1px solid var(--border-hair);
+  border-radius: 10px;
+  padding: 6px 8px 6px 14px;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chat-composer-pill:focus-within {
+  border-color: var(--gold-mid);
+  box-shadow: none;
+}
+.chat-composer .chat-input,
+.chat-composer textarea,
+.chat-composer input[type="text"] {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  border-radius: 0;
+  padding: 8px 0;
+  font-family: var(--font-sans);
+  box-shadow: none;
+  resize: none;
+  outline: none;
+}
+.chat-composer .chat-input::placeholder { color: var(--text-faint); }
+.chat-composer .attach-button {
+  background: transparent;
+  border: 1px solid var(--border-hair);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  text-transform: none;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+.chat-composer .send-button,
+.chat-composer button[type="submit"] {
+  background: var(--gold-bright);
+  color: #1a1204;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 14px;
+  box-shadow: none;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+}
+.chat-composer .send-button:hover:not(:disabled) {
+  background: var(--gold-spec);
+}
+.chat-composer .send-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-composer-caption { color: var(--text-faint); }
+
+/* Prompt queue row: sits above the composer, chips with an × to cancel. */
+.chat-composer-queue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.chat-composer-queue-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin-right: 4px;
+}
+.chat-composer-queue-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hair);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.2;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-composer-queue-cancel {
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+.chat-composer-queue-cancel:hover { color: var(--gold-bright); }
+
+/* ─── Working indicator: boutique DAW oscilloscope reading ─────────────────
+ * The busy pill is styled as a small studio-hardware panel: amber machined
+ * face, faint recessed baseline, an ink-black signal traveling as a sine,
+ * a mono hardware-readout label, and a micro kill-switch STOP. The
+ * `.busy-header` p wraps everything; the 15 spans inside `.sound-wave`
+ * sample one sinusoidal keyframe at evenly staggered phases so at any
+ * instant they trace a coherent traveling wave. */
+
+.chat-message-system .busy-header {
+  position: relative;
+  display: inline-flex;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: min(580px, 100%);
+  /* Match the assistant chat bubble (flat gold) so the working pill and
+   * the assistant reply read as one visual family. */
+  background: var(--gold-bright);
+  color: #1a1204;
+  -webkit-text-fill-color: #1a1204;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  padding: 8px 10px 8px 12px;
+  border-radius: 8px;
+  gap: 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 190, 0.55),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    inset 1px 0 0 rgba(0, 0, 0, 0.12),
+    inset -1px 0 0 rgba(0, 0, 0, 0.12),
+    0 1px 0 rgba(0, 0, 0, 0.55),
+    0 4px 12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  isolation: isolate;
+  font-feature-settings: "tnum" 1;
+}
+/* Two tiny screw-heads at the panel corners — subtle, but they sell the
+ * "instrument face" character. Right side stays unadorned so the eye
+ * lands on the STOP button. */
+.chat-message-system .busy-header::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 30%,
+      #f7d570 0%,
+      #8a6b1a 60%,
+      #3a2c0a 100%);
+  box-shadow:
+    0 3px 0 -1px #3a2c0a,
+    64px 0 0 -1px #f7d570,  /* rough right dot (positive x offset) */
+    64px 3px 0 -2px #3a2c0a;
+  z-index: 2;
+  pointer-events: none;
+  display: none;  /* keep off by default — enable if we want screws */
+}
+/* Subtle diagonal machined-brass texture behind the signal. Kept extremely
+ * faint (opacity 0.12) so the pill still reads flat. */
+.chat-message-system .busy-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    115deg,
+    rgba(0, 0, 0, 0) 0 6px,
+    rgba(0, 0, 0, 0.05) 6px 7px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+.chat-message-system .busy-header > * { position: relative; z-index: 1; }
+
+/* Hardware readout: monospace, uppercase, tight tracking. */
+.chat-message-system .busy-header {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  align-items: center;
+}
+/* "THINKING…" text — sits between the wave and the segment display. */
+.chat-message-system .busy-header .busy-label-text {
+  color: #2b1a06;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  padding: 0 2px;
+  text-shadow: 0 1px 0 rgba(255, 240, 190, 0.35);
+}
+/* Time in a small recessed "segment display" chip — dark plate, amber
+ * LED text, tabular so the seconds counter doesn't jitter. */
+.chat-message-system .busy-header .chat-meta-inline {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin-left: 6px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #1a1206 0%, #241a09 100%);
+  color: #f7d16a;
+  -webkit-text-fill-color: #f7d16a;
+  border: 1px solid #100904;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 4px rgba(247, 209, 106, 0.5);
+  box-shadow:
+    inset 0 1px 1px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 220, 130, 0.06);
+}
+
+/* Kill-switch STOP: oxblood chip with pale-cream text — universal "stop"
+ * red, kept saturated but earthy so it sits with the gold panel instead
+ * of screaming. Matches the sine-wave signal color so the eye reads them
+ * as one system. Slightly tighter proportions than before. */
+.chat-message-system .busy-header .cancel-button,
+.chat-message-system .busy-header .cancel-button:link,
+.chat-message-system .busy-header .cancel-button:visited {
+  background: linear-gradient(180deg, #931f2d 0%, #6d1420 100%);
+  color: #fdeacd !important;
+  -webkit-text-fill-color: #fdeacd !important;
+  border: 1px solid #2c0810;
+  border-radius: 3px;
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-left: auto;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.32),
+    0 1px 0 rgba(0, 0, 0, 0.55),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+.chat-message-system .busy-header .cancel-button:hover {
+  filter: brightness(1.15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 230, 180, 0.5),
+    0 1px 0 rgba(0, 0, 0, 0.45);
+}
+.chat-message-system .busy-header .cancel-button:active {
+  transform: translateY(1px);
+  filter: brightness(0.95);
+}
+
+/* Equalizer-style wave: 15 burgundy bars sitting on the gold panel around a
+ * center baseline. Each bar scales its own height on a symmetric sine
+ * keyframe with evenly staggered phases so together they trace a
+ * traveling wave envelope. A subtle horizontal baseline behind the bars
+ * anchors them as a proper signal readout. */
+.busy-header .sound-wave {
+  position: relative;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 2px 6px;
+  height: 24px;
+  min-width: 96px;
+  gap: 2px;
+  margin-right: 4px;
+  overflow: visible;
+  align-items: center;
+  justify-content: center;
+}
+.busy-header .sound-wave::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(0, 0, 0, 0.25) 15%,
+    rgba(0, 0, 0, 0.25) 85%,
+    transparent 100%
+  );
+  transform: translateY(-0.5px);
+  pointer-events: none;
+}
+.busy-header .sound-wave::before { content: none; display: none; }
+.busy-header .sound-wave span {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  /* Oxblood — classic amber+red pairing (brass-in-a-velvet-case). Reads
+   * as a warm signal on the gold panel, matches the STOP button so the
+   * eye groups them as "signal + kill switch". */
+  background: #7a1e2a;
+  box-shadow: 0 0 3px rgba(122, 30, 42, 0.4);
+  transform-origin: 50% 50%;
+  animation: sine-eq 1.4s cubic-bezier(0.36, 0, 0.64, 1) infinite;
+}
+/* Evenly staggered phase offsets so 15 bars sample the sine envelope at
+ * shifted instants and read as a coherent traveling wave of heights. */
+.busy-header .sound-wave span:nth-child(1)  { animation-delay: 0s; }
+.busy-header .sound-wave span:nth-child(2)  { animation-delay: -0.093s; }
+.busy-header .sound-wave span:nth-child(3)  { animation-delay: -0.187s; }
+.busy-header .sound-wave span:nth-child(4)  { animation-delay: -0.280s; }
+.busy-header .sound-wave span:nth-child(5)  { animation-delay: -0.373s; }
+.busy-header .sound-wave span:nth-child(6)  { animation-delay: -0.467s; }
+.busy-header .sound-wave span:nth-child(7)  { animation-delay: -0.560s; }
+.busy-header .sound-wave span:nth-child(8)  { animation-delay: -0.653s; }
+.busy-header .sound-wave span:nth-child(9)  { animation-delay: -0.747s; }
+.busy-header .sound-wave span:nth-child(10) { animation-delay: -0.840s; }
+.busy-header .sound-wave span:nth-child(11) { animation-delay: -0.933s; }
+.busy-header .sound-wave span:nth-child(12) { animation-delay: -1.027s; }
+.busy-header .sound-wave span:nth-child(13) { animation-delay: -1.120s; }
+.busy-header .sound-wave span:nth-child(14) { animation-delay: -1.213s; }
+.busy-header .sound-wave span:nth-child(15) { animation-delay: -1.307s; }
+
+/* scaleY from a low floor (0.22) to full height — bars visibly grow and
+ * shrink, and because neighbours are phase-shifted, the crests form a
+ * moving sinusoidal envelope across the equalizer. */
+@keyframes sine-eq {
+  0%   { transform: scaleY(0.22); }
+  50%  { transform: scaleY(1);    }
+  100% { transform: scaleY(0.22); }
+}
+
+/* "WORKING" label above the pill: add a small pulsing red-amber ready
+ * indicator so it reads as a hardware status LED. */
+.chat-message-system > .chat-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.chat-message-system > .chat-role::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f4c85a;
+  box-shadow: 0 0 6px rgba(244, 200, 90, 0.75);
+  animation: working-led 1.4s ease-in-out infinite;
+}
+@keyframes working-led {
+  0%, 100% { opacity: 0.35; box-shadow: 0 0 3px rgba(244, 200, 90, 0.35); }
+  50%      { opacity: 1;    box-shadow: 0 0 8px rgba(244, 200, 90, 0.9); }
+}
+
+/* Scrollbar: neutral */
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+

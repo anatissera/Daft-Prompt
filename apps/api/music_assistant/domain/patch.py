@@ -143,6 +143,11 @@ PATCH_SPEC: dict[str, dict] = {
     "pluck": {"kind": "synth", "preset": "pluck"},
     "warm_pad": {"kind": "synth", "preset": "warm_pad"},
     "vocal_fx": {"kind": "synth", "preset": "vocal_fx"},
+    # LFO-modulated filter bass — the genre-defining timbre of dubstep /
+    # brostep / riddim ("wub wub"). MIDI can't carry filter modulation, so
+    # sampled GM basses always play it flat; this preset synthesizes the
+    # LFO on the frontend, tempo-synced.
+    "wobble_bass": {"kind": "synth", "preset": "wobble_bass"},
 }
 
 
@@ -174,19 +179,34 @@ Patch = Literal[
     "gm_square_lead", "gm_sawtooth_lead", "gm_new_age_pad", "gm_warm_pad",
     "sitar", "banjo", "kalimba", "steel_drums",
     "supersaw_lead", "sub_bass", "pluck", "warm_pad", "vocal_fx",
+    "wobble_bass",
 ]
 
 
-SynthPreset = Literal["supersaw_lead", "sub_bass", "pluck", "warm_pad", "vocal_fx"]
+SynthPreset = Literal[
+    "supersaw_lead", "sub_bass", "pluck", "warm_pad", "vocal_fx", "wobble_bass"
+]
+
+
+class UnknownPatchError(ValueError):
+    """Raised when the director LLM emits a patch name outside the closed vocab.
+    Callers catch this and DROP the offending instrument rather than silently
+    substituting grand piano — the latter produced a piano bias across every
+    genre where the LLM slipped on the patch name."""
+
+    def __init__(self, patch: str):
+        super().__init__(f"unknown patch: {patch!r}")
+        self.patch = patch
 
 
 def resolve_patch(patch: str) -> tuple[int, str | None]:
     """Return (midi_program, synth_preset). midi_program is 0 for synth-only
-    patches (frontend won't use it in that case). Unknown patches fall back to
-    (0, None) — grand piano — so downstream never crashes on a bad literal."""
+    patches (frontend won't use it in that case). Raises UnknownPatchError for
+    names outside PATCH_SPEC so the caller can drop that instrument instead of
+    inheriting the old silent grand-piano fallback."""
     spec = PATCH_SPEC.get(patch)
     if spec is None:
-        return 0, None
+        raise UnknownPatchError(patch)
     if spec["kind"] == "synth":
         return 0, spec["preset"]
     return spec["program"], None

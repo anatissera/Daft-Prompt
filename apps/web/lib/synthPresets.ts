@@ -83,5 +83,17 @@ export function makeSynth(Tone: typeof ToneType, preset: SynthPreset): ToneInstr
         filterEnvelope: { attack: 0.02, decay: 0.2, sustain: 0.4, release: 0.2, baseFrequency: 1200, octaves: 1.5 },
         volume: -12,
       }) as unknown as ToneType.PolySynth;
+
+    case "wobble_bass":
+      // Simplified flat variant used only by this legacy factory (offline
+      // renders); live playback builds the tempo-synced LFO version in
+      // NativeSynthLayer.makeWobbleBass, which needs the song tempo.
+      return new Tone.MonoSynth({
+        oscillator: { type: "sawtooth" },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 0.95, release: 0.1 },
+        filter: { type: "lowpass", frequency: 700, Q: 5 },
+        filterEnvelope: { attack: 0.01, decay: 0.12, sustain: 0.4, release: 0.1, baseFrequency: 250, octaves: 2.5 },
+        volume: -6,
+      });
   }
 }

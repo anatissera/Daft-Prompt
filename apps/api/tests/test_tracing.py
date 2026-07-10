@@ -60,7 +60,9 @@ def test_run_director_writes_trace(tmp_path: Path, monkeypatch):
     assert payload["prompt_messages"][0]["role"] == "system"
     # The director's own decision must be present for the "why did it pick X" audit.
     assert payload["output"]["tempo_bpm"] == 140.0
-    assert any(i["instrument"] == "electric_guitar" for i in payload["output"]["instruments"])
+    # `instrument` free-text was dropped from ArrangementInstrument — `patch`
+    # from the closed vocabulary is the single source of truth for the sound.
+    assert any(i["patch"] == "distortion_guitar" for i in payload["output"]["instruments"])
 
 
 def test_run_director_without_trace_still_works():

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from ..corpus.retrieve import LakhExample, retrieve_style_examples
 from ..domain.audio_profile import ReferenceProfile
 from ..domain.errors import OffTopicRequest
-from ..domain.patch import PATCH_SPEC, Patch, resolve_patch
+from ..domain.patch import PATCH_SPEC, Patch, UnknownPatchError, resolve_patch
 from ..domain.song_state import (
     ChordSpan,
     CompositionGroup,
@@ -85,10 +85,31 @@ class ArrangementInstrument(BaseModel):
             "pitched vocal fragments). Use these for EDM, future bass, trap, "
             "synthwave, house — they sound modern; GM synth patches sound "
             "8-bit.\n"
-            "Leave null ONLY if the drum kit (set is_drum=true instead)."
+            "Leave null ONLY if the drum kit (set is_drum=true instead) — "
+            "otherwise a null or unrecognised name causes the instrument to "
+            "be DROPPED from the roster (there is no piano fallback anymore, "
+            "so a slip means fewer instruments, not a mystery piano).\n"
+            "IMPORTANT anti-bias note: do NOT default to a piano patch for a "
+            "harmony / comping role. Piano fits jazz, ballads, pop, gospel, "
+            "singer-songwriter; for rock, metal, punk, funk, EDM, hip-hop, "
+            "reggae, country, salsa, cumbia, R&B etc. the harmony/comping "
+            "role is a guitar, organ, Rhodes, brass section, synth pad, or "
+            "similar — never grand piano. Pick piano only when a musician "
+            "who plays this genre would say 'that's a piano song'."
         ),
     )
     role: str = Field(description="this instrument's musical role in the arrangement")
+    fits_style: str = Field(
+        "",
+        description=(
+            "One sentence justifying why THIS specific patch appears on typical "
+            "records of the requested style. Name the mechanism ('drives the "
+            "riff', 'anchors the low end', 'provides the shimmer over the "
+            "chorus'), not a generic 'fits the genre'. If you cannot write "
+            "this sentence honestly, you picked the wrong patch — swap it "
+            "before finalising. Empty only for is_drum=true items."
+        ),
+    )
     playing_style: str = Field(
         description=(
             "1-2 sentences of idiomatic technique for this instrument in this genre. "
@@ -135,6 +156,41 @@ class DirectorOutput(BaseModel):
             "off_topic=true."
         ),
     )
+    canonical_instruments: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Concrete list (3-8 entries) of the instrument families that would "
+            "appear on a typical record of this style, e.g. "
+            "['distortion guitar', 'bass guitar', 'drum kit', 'lead vocals'] "
+            "for dark metal, or ['acoustic piano', 'upright bass', 'brush "
+            "drums', 'tenor sax'] for a jazz ballad. Fill this AFTER "
+            "style_analysis and BEFORE picking `instruments`. The patches you "
+            "choose downstream must each be an obvious realisation of one of "
+            "these families — if you find yourself picking a patch that is "
+            "not on this list, either add it here (only if it honestly "
+            "belongs on canonical records) or drop it. Empty only when "
+            "off_topic=true."
+        ),
+    )
+    rhythmic_feel: str = Field(
+        "",
+        description=(
+            "3-6 sentences committing to the RHYTHMIC IDIOM of the requested "
+            "style — the concrete groove skeleton the per-instrument agents "
+            "will follow. Be specific per role: where the kick and snare sit "
+            "(e.g. 'half-time: snare on beat 3, kicks on 1 and the offbeat "
+            "of 3, hats in straight 16ths with accents on the -a of every "
+            "beat'), what subdivision the bass articulates ('sub bass in "
+            "sustained 8ths with pitch-drops at the top of every 2 bars'), "
+            "how the harmony instruments phrase ('supersaw plays syncopated "
+            "16th stabs on the offbeats, never on the downbeat'), and any "
+            "signature feel like swing %, halftime, shuffle, four-on-the-"
+            "floor, laid-back, or rushing. Do NOT default to a generic "
+            "quarter-note pop feel. This field is a commitment: every "
+            "per-instrument agent will read it and compose notes that fit "
+            "it. Empty only when off_topic=true."
+        ),
+    )
     genre: str = ""
     key: str = Field("", description="e.g. 'F# minor', 'C major'")
     tempo_bpm: float = Field(120.0, gt=0)
@@ -169,6 +225,10 @@ Otherwise set off_topic=false and, given a style description, produce a complete
 
 Before anything else, fill `style_analysis` with 2-4 sentences committing to the canonical instrumentation, tempo range, key/mode tendency, and mood of the requested style. Be concrete about which instrument families actually appear on records of this genre (and which ones would sound out of place). Everything you emit afterwards MUST be consistent with what you just committed to here — do not pick a roster that contradicts your own analysis.
 
+Then fill `canonical_instruments`: a concrete 3-8 item list of the instrument families that would honestly appear on a typical record of this style (e.g. dark metal → ['distortion guitar', 'bass guitar', 'drum kit', 'lead vocals']; jazz ballad → ['acoustic piano', 'upright bass', 'brush drums', 'tenor sax']). This is your working shortlist. Every patch you pick later must be an obvious realisation of an entry on this list — a `distortion_guitar` patch realises 'distortion guitar', a `string_ensemble` patch does NOT realise 'distortion guitar'. If a patch you want isn't covered here, either add its family to the list (only if it honestly belongs on canonical records of the style) or don't pick it.
+
+Then fill `rhythmic_feel`: 3-6 sentences committing to the CONCRETE groove of this style. This is what the per-instrument agents will read to compose their notes. Be specific per role: kick/snare placement, hat subdivision, bass articulation, harmony phrasing, and any signature feel (half-time, swung, four-on-the-floor, laid-back, syncopated, on-top). Examples of the level of detail expected: 'Dubstep half-time: kick on 1 and 3.5, snare exactly on 3, hats in 16ths with accents on every -a; sub bass sustained across each bar with an octave-drop pickup on bar 4; supersaw stabs on the 2-and-3-and of every bar, never on downbeats; drop hits on bar 5 and 13.' Do NOT default to generic pop quarter-notes. A weak rhythmic_feel makes the arrangement sound like a chorale regardless of the roster you picked.
+
 1. ARRANGEMENT: key, tempo, time signature, num_bars ({MIN_BARS}-{MAX_BARS}). Reason about what genuinely fits the style.
 
 2. SONG FORM: 3-6 named sections (e.g. Intro, Verse, PreChorus, Chorus, Bridge, Outro). Each section has start_bar, end_bar, and an energy level: "low", "medium", or "high". Sections must cover all bars 0..num_bars-1 without overlap or gap.
@@ -176,8 +236,9 @@ Before anything else, fill `style_analysis` with 2-4 sentences committing to the
 3. CHORD PROGRESSION: one ChordSpan per bar covering every bar (0..num_bars-1). Use chord names like "Dm7", "G7", "Cm9". Chords must fit the key and genre idiom.
 
 4. INSTRUMENTATION: {MIN_ROSTER}-{MAX_ROSTER} instruments. For each instrument:
-   - A `patch` chosen from the closed vocabulary (see the field description on ArrangementInstrument.patch). The patch IS the instrument's identity — its value (e.g. 'distortion_guitar', 'electric_bass', 'warm_pad') is what the audience will hear AND how the instrument will be labelled downstream. Do NOT pick a patch that contradicts the role you have in mind: if you want a rock rhythm guitar, the patch must be a guitar-family value (`distortion_guitar`, `overdriven_guitar`, `clean_electric_guitar`, …), never a piano or a sax. Cross-check every patch against your `style_analysis` before finalising.
+   - A `patch` chosen from the closed vocabulary (see the field description on ArrangementInstrument.patch). The patch IS the instrument's identity — its value (e.g. 'distortion_guitar', 'electric_bass', 'warm_pad') is what the audience will hear AND how the instrument will be labelled downstream. Do NOT pick a patch that contradicts the role you have in mind: if you want a rock rhythm guitar, the patch must be a guitar-family value (`distortion_guitar`, `overdriven_guitar`, `clean_electric_guitar`, …), never a piano or a sax. Cross-check every patch against `canonical_instruments` and `style_analysis` before finalising.
    - Its musical role. All percussion must be a single drum-kit roster item with is_drum=true — do NOT create separate entries for kick, snare, hi-hat, cymbals, or toms; those are MIDI pitches inside the one kit.
+   - A `fits_style` sentence naming the concrete mechanism by which THIS patch fits the requested style ("drives the main riff with palm-muted power chords", "carries the low-end pulse alongside the kick"). This is a self-check: if you cannot write a specific, honest sentence, you picked the wrong patch. A generic "fits the genre" is not acceptable.
    - A playing_style: 1-2 sentences of idiomatic technique a real musician of this instrument in this genre would immediately recognise. Be specific about rhythm, articulation, and register. Examples:
      * Funk bass: "Anchor beat 1 firmly. Use ghost notes between the 2 and 4. Slap on the upbeat 16th just before beat 3 in bar-ending phrases."
      * Funk guitar: "Short 16th-note chord stabs on beats 2 and 4 with percussive muting between hits. Wah on fill bars. Stay in the mid register."
@@ -421,8 +482,10 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
         num_bars=num_bars,
         sections=_clamp_sections(out.sections, num_bars),
         chord_progression=list(out.chord_progression),
+        rhythmic_feel=out.rhythmic_feel,
     )
     roster = []
+    dropped_ids: set[str] = set()
     for i in clamped_instruments:
         # Derive numeric fields from the semantic patch. Drums bypass the
         # lookup and keep the mapping empty — playback uses the fixed
@@ -430,10 +493,22 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
         if i.is_drum:
             program, preset = 0, None
             patch = None
+            display = "drum_kit"
         else:
-            program, preset = resolve_patch(i.patch or "acoustic_grand_piano")
+            # DROP instead of silently substituting grand piano. The old
+            # `i.patch or "acoustic_grand_piano"` fallback quietly turned
+            # every null/typo patch into a piano, which produced a piano
+            # bias across genres where the director slipped on the vocab.
+            if not i.patch:
+                dropped_ids.add(i.id)
+                continue
+            try:
+                program, preset = resolve_patch(i.patch)
+            except UnknownPatchError:
+                dropped_ids.add(i.id)
+                continue
             patch = i.patch
-        display = "drum_kit" if i.is_drum else str(i.patch or "acoustic_grand_piano")
+            display = str(i.patch)
         roster.append(
             RosterItem(
                 id=i.id,
@@ -446,6 +521,16 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
                 is_drum=i.is_drum,
             )
         )
+    # Prune any composition-group references to instruments we dropped so
+    # downstream `_validate_groups`-style checks stay consistent.
+    if dropped_ids:
+        groups = [
+            g.model_copy(update={
+                "instrument_ids": [iid for iid in g.instrument_ids if iid not in dropped_ids]
+            })
+            for g in groups
+        ]
+        groups = [g for g in groups if g.instrument_ids]
     return SongState(
         request=style,
         header=header,
@@ -475,6 +560,110 @@ def _research_style(query: str, *, timeout_seconds: float) -> ReferenceProfile |
         return None
 
 
+class _CritiqueSwap(BaseModel):
+    instrument_id: str = Field(description="id of the instrument being reviewed")
+    verdict: Literal["keep", "replace"] = Field(
+        description="'keep' if the patch fits the style, 'replace' if it doesn't"
+    )
+    new_patch: Optional[Patch] = Field(
+        None,
+        description=(
+            "REQUIRED when verdict='replace'. A patch from the same closed "
+            "vocabulary that a musician of the requested genre would honestly "
+            "put on this record for this role. Do not swap patches for cosmetic "
+            "reasons — only when the current pick would sound out of place."
+        ),
+    )
+    reason: str = Field(
+        "",
+        description=(
+            "One sentence naming the concrete idiomatic mismatch (e.g. 'string "
+            "ensemble as harmony layer does not appear on typical dark-metal "
+            "records; rock organ or another distorted guitar is the honest "
+            "swap'). Empty for verdict='keep'."
+        ),
+    )
+
+
+class RosterCritique(BaseModel):
+    swaps: list[_CritiqueSwap] = Field(
+        default_factory=list,
+        description=(
+            "One entry per instrument in the current roster. Most entries "
+            "should be 'keep' — only mark 'replace' when the patch clearly "
+            "would not appear on canonical records of the requested style."
+        ),
+    )
+
+
+_CRITIC_SYSTEM = """You are a senior music producer reviewing another director's instrument choices for a specific style. You will get:
+  - the requested style
+  - the director's own style_analysis and canonical_instruments (their commitment)
+  - the roster they picked (id, patch, role, fits_style)
+
+Your job is to catch instruments that would not honestly appear on canonical records of the requested style — the kind of mismatch a working musician of that genre would immediately flag ('there is no string ensemble on a dark-metal record', 'a grand piano would not be the harmony layer on a reggaeton track').
+
+For each instrument in the roster, emit one entry with verdict='keep' or 'replace'. When 'replace', propose a new_patch from the same closed vocabulary that fits the role AND the style. Be conservative: only replace when the mismatch is real. If the roster is already fine, return all 'keep'.
+
+Do NOT change roles or ids — just patches."""
+
+
+def _critique_roster(
+    style: str,
+    out: DirectorOutput,
+    llm,
+) -> RosterCritique | None:
+    """Second-pass review of the director's roster. Returns None on any
+    failure — never blocks the compose flow. Skips drums (their patch is
+    None and their identity is fixed)."""
+    reviewable = [
+        {"id": i.id, "patch": i.patch, "role": i.role, "fits_style": i.fits_style}
+        for i in out.instruments
+        if not i.is_drum and i.patch
+    ]
+    if not reviewable:
+        return None
+    try:
+        structured = llm.with_structured_output(RosterCritique)
+        payload = (
+            f"Requested style: {style}\n\n"
+            f"Director's style_analysis: {out.style_analysis}\n\n"
+            f"Director's canonical_instruments: {out.canonical_instruments}\n\n"
+            f"Roster to review:\n{reviewable}"
+        )
+        critique = structured.invoke([("system", _CRITIC_SYSTEM), ("human", payload)])
+        # Some models (and test fakes) answer with whatever schema they feel
+        # like; only a real RosterCritique is usable downstream.
+        if not isinstance(critique, RosterCritique):
+            return None
+        return critique
+    except Exception:
+        return None
+
+
+def _apply_swaps(out: DirectorOutput, critique: RosterCritique) -> tuple[DirectorOutput, list[tuple[str, str, str]]]:
+    """Apply the critic's 'replace' verdicts to the director output. Returns
+    the mutated output plus a log of (instrument_id, from_patch, to_patch) so
+    the trace can record what changed."""
+    swaps_by_id = {
+        s.instrument_id: s
+        for s in critique.swaps
+        if s.verdict == "replace" and s.new_patch
+    }
+    if not swaps_by_id:
+        return out, []
+    log: list[tuple[str, str, str]] = []
+    new_instruments: list[ArrangementInstrument] = []
+    for inst in out.instruments:
+        swap = swaps_by_id.get(inst.id)
+        if swap and swap.new_patch and inst.patch != swap.new_patch:
+            log.append((inst.id, str(inst.patch), str(swap.new_patch)))
+            new_instruments.append(inst.model_copy(update={"patch": swap.new_patch}))
+        else:
+            new_instruments.append(inst)
+    return out.model_copy(update={"instruments": new_instruments}), log
+
+
 @traceable(run_type="chain", name="director")
 def run_director(style: str, llm=None, *, trace=None) -> SongState:
     """Run the director. Pass `llm` (a chat model) to inject a fake in tests;
@@ -493,6 +682,30 @@ def run_director(style: str, llm=None, *, trace=None) -> SongState:
     research = _research_style(style, timeout_seconds=15.0)
     messages = _prompt(style, examples, research)
     out: DirectorOutput = structured.invoke(messages)
+    if out.off_topic:
+        if trace is not None:
+            trace.write_director(
+                prompt_messages=messages,
+                corpus_examples=examples,
+                research=research,
+                output=out,
+            )
+        raise OffTopicRequest(out.refusal.strip() or _DEFAULT_REFUSAL)
+    # Critic pass — reviews the roster against the director's own
+    # style_analysis/canonical_instruments and swaps out patches that a
+    # musician of the requested style would not honestly put on the record.
+    # Any failure is silently ignored: the original roster still ships.
+    critique = _critique_roster(style, out, llm)
+    swap_log: list[tuple[str, str, str]] = []
+    if critique is not None:
+        out, swap_log = _apply_swaps(out, critique)
+    if swap_log:
+        import logging
+        logging.getLogger(__name__).info(
+            "director critic swapped %d instrument(s): %s",
+            len(swap_log),
+            ", ".join(f"{iid}: {frm}→{to}" for iid, frm, to in swap_log),
+        )
     if trace is not None:
         trace.write_director(
             prompt_messages=messages,
@@ -500,6 +713,4 @@ def run_director(style: str, llm=None, *, trace=None) -> SongState:
             research=research,
             output=out,
         )
-    if out.off_topic:
-        raise OffTopicRequest(out.refusal.strip() or _DEFAULT_REFUSAL)
     return arrangement_to_song(style, out)
