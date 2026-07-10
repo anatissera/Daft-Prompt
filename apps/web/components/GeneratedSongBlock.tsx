@@ -129,9 +129,7 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
               className="download-chip"
               title={`Download MIDI (${hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full mix"})`}
               onClick={() => {
-                const partIds = Object.keys(song.parts);
-                const audible = getAudibleTrackIds(partIds, mutedTrackIds, soloTrackIds);
-                triggerMidiDownload(song, audible, trackGains);
+                triggerMidiDownload(song, audibleTrackIds, trackGains);
               }}
             >
               MIDI
@@ -139,13 +137,13 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             <button
               type="button"
               className="download-chip"
-              title="Download rendered MP3"
+              title={`Download rendered MP3 (${hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full mix"})`}
               disabled={mp3State === "rendering"}
               onClick={async () => {
                 setMp3State("rendering");
                 setMp3Error(null);
                 try {
-                  await triggerMp3Download(song, trackGains);
+                  await triggerMp3Download(song, trackGains, audibleTrackIds);
                   setMp3State("idle");
                 } catch (e) {
                   setMp3Error(String((e as Error).message ?? e));

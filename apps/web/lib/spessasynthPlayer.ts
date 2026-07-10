@@ -25,15 +25,17 @@ export function usesNativeSynth(roster: { synth_preset?: string | null } | undef
  *  Returns bytes + a map from partId → SF3 channel used by the mute logic. */
 export function buildMidiWithChannels(
   song: SongState,
-  options: { gains?: Record<string, number> } = {},
+  options: { gains?: Record<string, number>; audible?: Set<string> } = {},
 ): {
   bytes: Uint8Array;
   channelByPartId: Map<string, number>;
 } {
-  // `gains` bakes per-track knob volume into note velocities. Only offline
-  // consumers (MP3 render) pass it — live playback leaves velocities raw
-  // and rides CC7 instead, so wheel changes apply without a rebuild.
+  // `gains` bakes per-track knob volume into note velocities and `audible`
+  // drops muted/non-solo tracks entirely. Only offline consumers (MP3
+  // render) pass them — live playback leaves velocities raw and rides
+  // CC7/channel-mute instead, so mixer changes apply without a rebuild.
   const gains = options.gains;
+  const audible = options.audible;
   const events = buildTrackEvents(song);
   const midi = new Midi();
   midi.header.setTempo(song.header.tempo_bpm);
@@ -48,6 +50,7 @@ export function buildMidiWithChannels(
   let nextMelodic = 0;
 
   for (const [partId] of Object.entries(song.parts)) {
+    if (audible && !audible.has(partId)) continue;
     const roster = rosterById.get(partId);
     const isDrum = roster ? resolveIsDrum(roster) : false;
     let ch: number;
