@@ -48,7 +48,9 @@ PATCH_SPEC: dict[str, dict] = {
     "pick_bass": {"kind": "sampler", "program": 34},
     "fretless_bass": {"kind": "sampler", "program": 35},
     "slap_bass": {"kind": "sampler", "program": 36},
+    "guitar_harmonics": {"kind": "sampler", "program": 31},
     "gm_synth_bass": {"kind": "sampler", "program": 38},
+    "gm_synth_bass_2": {"kind": "sampler", "program": 39},
 
     # ---- Piano / Keys (0-7) ---------------------------------------------
     "acoustic_grand_piano": {"kind": "sampler", "program": 0},
@@ -77,6 +79,9 @@ PATCH_SPEC: dict[str, dict] = {
     "reed_organ": {"kind": "sampler", "program": 20},
     "accordion": {"kind": "sampler", "program": 21},
     "harmonica": {"kind": "sampler", "program": 22},
+    # GM 23 — the bandoneon-style voice; THE tango lead instrument.
+    "tango_accordion": {"kind": "sampler", "program": 23},
+    "dulcimer": {"kind": "sampler", "program": 15},
 
     # ---- Solo strings (40-47) -------------------------------------------
     "violin": {"kind": "sampler", "program": 40},
@@ -118,7 +123,10 @@ PATCH_SPEC: dict[str, dict] = {
     "flute": {"kind": "sampler", "program": 73},
     "recorder": {"kind": "sampler", "program": 74},
     "pan_flute": {"kind": "sampler", "program": 75},
+    "blown_bottle": {"kind": "sampler", "program": 76},
     "shakuhachi": {"kind": "sampler", "program": 77},
+    "whistle": {"kind": "sampler", "program": 78},
+    "ocarina": {"kind": "sampler", "program": 79},
 
     # ---- GM synth leads / pads (80-95) ---------------------------------
     # These are the SAMPLED versions of synth timbres. Prefer the native
@@ -126,14 +134,42 @@ PATCH_SPEC: dict[str, dict] = {
     # modern EDM sound — they sound fuller and detune correctly.
     "gm_square_lead": {"kind": "sampler", "program": 80},
     "gm_sawtooth_lead": {"kind": "sampler", "program": 81},
+    "gm_calliope_lead": {"kind": "sampler", "program": 82},
+    "gm_chiff_lead": {"kind": "sampler", "program": 83},
+    "gm_charang_lead": {"kind": "sampler", "program": 84},
+    "gm_voice_lead": {"kind": "sampler", "program": 85},
+    "gm_fifths_lead": {"kind": "sampler", "program": 86},
+    "gm_bass_lead": {"kind": "sampler", "program": 87},
     "gm_new_age_pad": {"kind": "sampler", "program": 88},
     "gm_warm_pad": {"kind": "sampler", "program": 89},
+    "gm_polysynth_pad": {"kind": "sampler", "program": 90},
+    "gm_choir_pad": {"kind": "sampler", "program": 91},
+    "gm_bowed_pad": {"kind": "sampler", "program": 92},
+    "gm_metallic_pad": {"kind": "sampler", "program": 93},
+    "gm_halo_pad": {"kind": "sampler", "program": 94},
+    "gm_sweep_pad": {"kind": "sampler", "program": 95},
+    "gm_fx_atmosphere": {"kind": "sampler", "program": 99},
+    "gm_fx_crystal": {"kind": "sampler", "program": 98},
+    "gm_fx_echoes": {"kind": "sampler", "program": 102},
 
-    # ---- Ethnic (104-111) -----------------------------------------------
+    # ---- Ethnic / world (104-111) ----------------------------------------
     "sitar": {"kind": "sampler", "program": 104},
     "banjo": {"kind": "sampler", "program": 105},
+    "shamisen": {"kind": "sampler", "program": 106},
+    "koto": {"kind": "sampler", "program": 107},
     "kalimba": {"kind": "sampler", "program": 108},
+    "bagpipe": {"kind": "sampler", "program": 109},
+    "fiddle": {"kind": "sampler", "program": 110},
+    "shanai": {"kind": "sampler", "program": 111},
+
+    # ---- Percussive / melodic percussion (112-119) -------------------------
+    "tinkle_bell": {"kind": "sampler", "program": 112},
+    "agogo": {"kind": "sampler", "program": 113},
     "steel_drums": {"kind": "sampler", "program": 114},
+    "woodblock": {"kind": "sampler", "program": 115},
+    "taiko_drum": {"kind": "sampler", "program": 116},
+    "melodic_tom": {"kind": "sampler", "program": 117},
+    "synth_drum": {"kind": "sampler", "program": 118},
 
     # ---- Native Tone.js synth presets (modern EDM) ----------------------
     # These skip the sampler entirely and instantiate a Tone.Synth on the
@@ -157,16 +193,16 @@ PATCH_SPEC: dict[str, dict] = {
 Patch = Literal[
     "acoustic_guitar_nylon", "acoustic_guitar_steel",
     "jazz_electric_guitar", "clean_electric_guitar", "muted_electric_guitar",
-    "overdriven_guitar", "distortion_guitar",
+    "overdriven_guitar", "distortion_guitar", "guitar_harmonics",
     "acoustic_bass", "electric_bass", "pick_bass", "fretless_bass",
-    "slap_bass", "gm_synth_bass",
+    "slap_bass", "gm_synth_bass", "gm_synth_bass_2",
     "acoustic_grand_piano", "bright_acoustic_piano", "electric_grand_piano",
     "honky_tonk_piano", "electric_piano_rhodes", "electric_piano_dx",
     "harpsichord", "clavinet",
     "celesta", "glockenspiel", "music_box", "vibraphone", "marimba",
-    "xylophone", "tubular_bells",
+    "xylophone", "tubular_bells", "dulcimer",
     "hammond_organ", "percussive_organ", "rock_organ", "church_organ",
-    "reed_organ", "accordion", "harmonica",
+    "reed_organ", "accordion", "harmonica", "tango_accordion",
     "violin", "viola", "cello", "contrabass",
     "tremolo_strings", "pizzicato_strings", "orchestral_harp", "timpani",
     "string_ensemble", "gm_synth_strings", "choir_aahs", "voice_oohs",
@@ -175,9 +211,17 @@ Patch = Literal[
     "brass_section",
     "soprano_sax", "alto_sax", "tenor_sax", "baritone_sax",
     "oboe", "english_horn", "bassoon", "clarinet",
-    "piccolo", "flute", "recorder", "pan_flute", "shakuhachi",
-    "gm_square_lead", "gm_sawtooth_lead", "gm_new_age_pad", "gm_warm_pad",
-    "sitar", "banjo", "kalimba", "steel_drums",
+    "piccolo", "flute", "recorder", "pan_flute", "blown_bottle",
+    "shakuhachi", "whistle", "ocarina",
+    "gm_square_lead", "gm_sawtooth_lead", "gm_calliope_lead", "gm_chiff_lead",
+    "gm_charang_lead", "gm_voice_lead", "gm_fifths_lead", "gm_bass_lead",
+    "gm_new_age_pad", "gm_warm_pad", "gm_polysynth_pad", "gm_choir_pad",
+    "gm_bowed_pad", "gm_metallic_pad", "gm_halo_pad", "gm_sweep_pad",
+    "gm_fx_atmosphere", "gm_fx_crystal", "gm_fx_echoes",
+    "sitar", "banjo", "shamisen", "koto", "kalimba", "bagpipe", "fiddle",
+    "shanai",
+    "tinkle_bell", "agogo", "steel_drums", "woodblock", "taiko_drum",
+    "melodic_tom", "synth_drum",
     "supersaw_lead", "sub_bass", "pluck", "warm_pad", "vocal_fx",
     "wobble_bass",
 ]
@@ -215,3 +259,130 @@ def resolve_patch(patch: str) -> tuple[int, str | None]:
 # Sanity check exposed for a small unit test.
 def patch_literal_covers_spec() -> bool:
     return set(get_args(Patch)) == set(PATCH_SPEC.keys())
+
+
+# ---------------------------------------------------------------------------
+# instrument-name ↔ patch consistency
+# ---------------------------------------------------------------------------
+#
+# The skeleton schema carries BOTH a free-text `instrument` (display name)
+# and a closed-vocab `patch` (the sound). LLMs occasionally desynchronise
+# them — `instrument="guitar_rhythm"` with `patch="electric_grand_piano"` —
+# which is how "rock guitars sometimes sound like pianos". This is a pure
+# consistency repair between two fields the model itself emitted; it maps
+# no genres and invents no instruments.
+
+# Instrument families: which vocab patches legitimately cover a family, and
+# the keywords in a free-text name that identify it. Order matters — more
+# specific families (e.g. bass before guitar is unnecessary since keywords
+# differ, but "synth" is checked last so "synth bass" hits bass first).
+_FAMILIES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
+    # (family, name keywords, member patches)
+    ("bass", ("bass", "bajo", "sub"), (
+        "acoustic_bass", "electric_bass", "pick_bass", "fretless_bass",
+        "slap_bass", "gm_synth_bass", "gm_synth_bass_2", "sub_bass",
+        "wobble_bass", "contrabass", "tuba", "gm_bass_lead",
+    )),
+    ("guitar", ("guitar", "guitarra"), (
+        "acoustic_guitar_nylon", "acoustic_guitar_steel",
+        "jazz_electric_guitar", "clean_electric_guitar",
+        "muted_electric_guitar", "overdriven_guitar", "distortion_guitar",
+        "guitar_harmonics",
+    )),
+    ("piano", ("piano", "keys", "rhodes", "keyboard"), (
+        "acoustic_grand_piano", "bright_acoustic_piano",
+        "electric_grand_piano", "honky_tonk_piano", "electric_piano_rhodes",
+        "electric_piano_dx", "harpsichord", "clavinet",
+    )),
+    ("organ", ("organ", "hammond", "órgano", "organo"), (
+        "hammond_organ", "percussive_organ", "rock_organ", "church_organ",
+        "reed_organ",
+    )),
+    ("accordion", ("accordion", "bandoneon", "bandoneón", "acordeón", "acordeon"), (
+        "accordion", "tango_accordion", "harmonica",
+    )),
+    ("violin", ("violin", "violín", "fiddle", "viola", "cello", "strings", "cuerdas"), (
+        "violin", "viola", "cello", "contrabass", "fiddle",
+        "tremolo_strings", "pizzicato_strings", "string_ensemble",
+        "gm_synth_strings", "orchestral_harp",
+    )),
+    ("brass", ("trumpet", "trombone", "horn", "brass", "trompeta", "tuba"), (
+        "trumpet", "trombone", "tuba", "muted_trumpet", "french_horn",
+        "brass_section",
+    )),
+    ("sax", ("sax",), (
+        "soprano_sax", "alto_sax", "tenor_sax", "baritone_sax",
+    )),
+    ("flute", ("flute", "flauta", "piccolo", "whistle", "ocarina", "pan"), (
+        "piccolo", "flute", "recorder", "pan_flute", "blown_bottle",
+        "shakuhachi", "whistle", "ocarina",
+    )),
+    ("vocal", ("vocal", "voice", "voz", "choir", "coro", "chop"), (
+        "choir_aahs", "voice_oohs", "vocal_fx", "gm_choir_pad", "gm_voice_lead",
+    )),
+    ("pad", ("pad", "atmosphere", "atmos", "texture"), (
+        "warm_pad", "gm_new_age_pad", "gm_warm_pad", "gm_polysynth_pad",
+        "gm_choir_pad", "gm_bowed_pad", "gm_metallic_pad", "gm_halo_pad",
+        "gm_sweep_pad", "gm_fx_atmosphere",
+    )),
+    ("lead_synth", ("lead", "saw", "arp", "synth", "pluck", "stab"), (
+        "supersaw_lead", "pluck", "gm_square_lead", "gm_sawtooth_lead",
+        "gm_calliope_lead", "gm_chiff_lead", "gm_charang_lead",
+        "gm_voice_lead", "gm_fifths_lead", "gm_bass_lead",
+    )),
+]
+
+# Per-family default when the emitted patch is outside the family: adjectives
+# in the name refine the pick; otherwise the family's most neutral member.
+_GUITAR_ADJECTIVES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("dist", "metal", "heavy", "power"), "distortion_guitar"),
+    (("overdrive", "over", "crunch", "rock"), "overdriven_guitar"),
+    (("nylon", "classical", "spanish", "flamenco"), "acoustic_guitar_nylon"),
+    (("acoustic", "steel", "folk"), "acoustic_guitar_steel"),
+    (("jazz",), "jazz_electric_guitar"),
+    (("muted", "mute", "funk"), "muted_electric_guitar"),
+)
+_FAMILY_DEFAULTS: dict[str, str] = {
+    "bass": "electric_bass",
+    "guitar": "clean_electric_guitar",
+    "piano": "acoustic_grand_piano",
+    "organ": "hammond_organ",
+    "accordion": "tango_accordion",
+    "violin": "violin",
+    "brass": "trumpet",
+    "sax": "alto_sax",
+    "flute": "flute",
+    "vocal": "choir_aahs",
+    "pad": "warm_pad",
+    "lead_synth": "gm_sawtooth_lead",
+}
+
+
+def _normalize_name(name: str) -> str:
+    return name.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def reconcile_patch(instrument_name: str, patch: str) -> str:
+    """Return a patch consistent with the human-readable instrument name.
+
+    - If the name itself IS a vocab patch (normalized), trust the name.
+    - If the name clearly belongs to a family and the emitted patch does
+      not, repair to a family member (adjective-refined for guitars).
+    - Otherwise keep the emitted patch — the name may be a role nickname
+      ("wobble", "chops") where the patch is the real signal.
+    """
+    name_n = _normalize_name(instrument_name)
+    if not name_n:
+        return patch
+    if name_n in PATCH_SPEC and name_n != patch:
+        return name_n
+    for family, keywords, members in _FAMILIES:
+        if any(kw in name_n for kw in keywords):
+            if patch in members:
+                return patch  # already consistent
+            if family == "guitar":
+                for adjectives, pick in _GUITAR_ADJECTIVES:
+                    if any(a in name_n for a in adjectives):
+                        return pick
+            return _FAMILY_DEFAULTS[family]
+    return patch

@@ -64,6 +64,8 @@ class InstrumentPlan(BaseModel):
     role: str = ""
     is_drum: bool = False
     playing_style: str = ""
+    onset_grid: str = ""
+    max_notes_per_bar: int = 0
     notes: list[NotePlan] = Field(default_factory=list)
 
 
@@ -71,6 +73,8 @@ class BandSpec(BaseModel):
     """Fully-specified plan (skeleton + notes)."""
 
     genre: str
+    rhythmic_feel: str = ""
+    arrangement_plan: str = ""
     key: str = "C major"
     tempo_bpm: float = Field(default=120.0, gt=20.0, lt=300.0)
     time_signature_numerator: int = Field(default=4, ge=1, le=12)
@@ -110,6 +114,17 @@ class InstrumentDecl(BaseModel):
     role: str = ""
     is_drum: bool = False
     playing_style: str = ""
+    # The instrument's one-bar rhythmic cell as a 16th-note grid: one char
+    # per 16th ("x" = onset, "." = rest; 16 chars for 4/4). This is DATA,
+    # not prose — genre rhythms like dembow or habanera are exact onset
+    # grids, and prose descriptions kept getting lost between the director
+    # and the (smaller) fill models. A deterministic validator snaps or
+    # drops fill notes that land off this grid. Empty = free phrasing
+    # (director grants it to leads/melodies).
+    onset_grid: str = ""
+    # Hard density budget per bar; 0 = unlimited. Deterministically
+    # enforced after fills — "sparse" as a number instead of an adjective.
+    max_notes_per_bar: int = Field(default=0, ge=0, le=64)
 
 
 class BandSkeleton(BaseModel):
@@ -149,6 +164,12 @@ class BandSkeleton(BaseModel):
     sections: list[SectionPlan] = Field(default_factory=list)
     chord_progression: list[ChordSpanPlan] = Field(default_factory=list)
     instruments: list[InstrumentDecl] = Field(default_factory=list)
+    # Emitted AFTER the roster (field order = generation order) so it can
+    # reference the actual instrument ids: which octave range each voice
+    # owns, which rhythmic slot it occupies, and how many voices may be
+    # busy at once. Every fill call reads this — it is the glue that stops
+    # parallel-composed instruments from stepping on each other.
+    arrangement_plan: str = ""
 
 
 class InstrumentFill(BaseModel):
@@ -171,6 +192,8 @@ def spec_from_skeleton(
     """
     return BandSpec(
         genre=skeleton.genre,
+        rhythmic_feel=skeleton.rhythmic_feel,
+        arrangement_plan=skeleton.arrangement_plan,
         key=skeleton.key,
         tempo_bpm=skeleton.tempo_bpm,
         time_signature_numerator=skeleton.time_signature_numerator,
@@ -186,6 +209,8 @@ def spec_from_skeleton(
                 role=decl.role,
                 is_drum=decl.is_drum,
                 playing_style=decl.playing_style,
+                onset_grid=decl.onset_grid,
+                max_notes_per_bar=decl.max_notes_per_bar,
                 notes=fills.get(decl.id, []),
             )
             for decl in skeleton.instruments

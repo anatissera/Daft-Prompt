@@ -1,6 +1,7 @@
 import type { Header, RosterItem } from "@/lib/types";
 import { instrumentColor } from "@/lib/colors";
 import VolumeKnob from "@/components/VolumeKnob";
+import { DaftHelmetIcon } from "@/components/icons";
 
 interface RosterViewProps {
   header: Header;
@@ -55,6 +56,9 @@ export default function RosterView({
               className="roster-item"
               style={{ background: instrumentColor(r.id) }}
             >
+              <span className="roster-item-helmet" aria-hidden="true">
+                <DaftHelmetIcon size={20} />
+              </span>
               <span className="roster-item-body">
                 <span className="roster-item-name">{r.instrument}</span>
                 <span className="roster-item-role">{r.role}</span>

@@ -2,6 +2,7 @@ import type { ChatMessage } from "@/lib/chatTypes";
 import AnalysisResultBlock from "@/components/AnalysisResultBlock";
 import GeneratedSongBlock from "@/components/GeneratedSongBlock";
 import Typewriter from "@/components/Typewriter";
+import { DaftHelmetIcon } from "@/components/icons";
 
 export type PipelineStageIdx = 0 | 1 | 2 | 3;
 
@@ -107,12 +108,19 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
       {messages.map((message) => (
         <article key={message.id} className={`chat-message chat-message-${message.role}`}>
           <span className="chat-role">{message.role}</span>
-          <p>
-            <span className="bubble-sparkle" aria-hidden="true">✦</span>
-            {message.role === "assistant"
-              ? <Typewriter text={message.text} />
-              : message.text}
-          </p>
+          <div className="chat-bubble-row">
+            {message.role === "assistant" ? (
+              <span className="chat-avatar" aria-hidden="true">
+                <DaftHelmetIcon size={22} />
+              </span>
+            ) : null}
+            <p>
+              <span className="bubble-sparkle" aria-hidden="true">✦</span>
+              {message.role === "assistant"
+                ? <Typewriter text={message.text} />
+                : message.text}
+            </p>
+          </div>
           {message.meta ? <span className="chat-meta">{message.meta}</span> : null}
           {message.kind === "analysis" ? <AnalysisResultBlock profile={message.profile} /> : null}
           {message.kind === "composition" ? <GeneratedSongBlock message={message} /> : null}
