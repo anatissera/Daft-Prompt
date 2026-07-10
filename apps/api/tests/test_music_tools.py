@@ -27,7 +27,11 @@ from music_assistant.infrastructure.web_research.songsterr_tabs import (
 
 
 class FakeResearcher:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
     def research(self, query: str) -> ReferenceProfile:
+        self.calls.append(query)
         return ReferenceProfile(
             reference_id="ref_space_cowboy",
             source=ReferenceSource(
@@ -173,6 +177,22 @@ def test_research_song_tool_persists_profile_and_returns_compact_output():
     assert "Research found" in output.summary
     assert output.error is None
     assert output.evidence_count == 1
+
+
+def test_research_song_explains_how_to_leave_offline_mode_without_calling_provider():
+    researcher = FakeResearcher()
+    tools = MusicTools(
+        reference_store=InMemoryReferenceStore(),
+        answer_music_question=AnswerMusicQuestion(),
+        song_researcher=researcher,
+        enable_web_research=False,
+    )
+
+    output = tools.research_song(ResearchSongToolInput(query="Get Lucky by Daft Punk"))
+
+    assert output.error == "web_research_disabled"
+    assert "ENABLE_WEB_RESEARCH=true" in output.answer
+    assert researcher.calls == []
 
 
 def test_get_chords_tool_uses_profile_query_and_returns_evidence():

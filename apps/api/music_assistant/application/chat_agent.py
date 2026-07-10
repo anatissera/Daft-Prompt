@@ -37,7 +37,10 @@ class ChatAgent:
 
     def run(self, request: Any) -> ChatAgentResult:
         decision = self.chat_model.with_structured_output(ChatAgentDecision).invoke(
-            _decision_messages(request)
+            _decision_messages(
+                request,
+                web_research_enabled=bool(getattr(self.tools, "enable_web_research", True)),
+            )
         )
         output = self._execute(decision, request)
         if decision.tool == "clarify":
@@ -128,18 +131,24 @@ def _required_reference(reference_id: str | None) -> str:
     return reference_id
 
 
-def _decision_messages(request: Any) -> list[dict[str, str]]:
+def _decision_messages(request: Any, *, web_research_enabled: bool) -> list[dict[str, str]]:
     reference_context = request.reference_id or ", ".join(request.reference_ids) or "none"
     profile_context = getattr(request, "reference_context", "") or "No current profile."
     conversation_context = getattr(request, "conversation_context", "") or "No earlier turns in this session."
+    research_instruction = (
+        "Use research_song before answering about an unresearched named song. "
+        "If the user asks to analyze a named song without an attached/local audio file, "
+        "use research_song with a clean title and artist query. "
+        if web_research_enabled
+        else "Web research is disabled for this session. Do not choose research_song or imply that a named song was looked up; "
+        "briefly explain that ENABLE_WEB_RESEARCH=true enables song lookup. "
+    )
     return [
         {
             "role": "system",
             "content": (
                 "You are LLMinem's chat agent. Choose exactly one explicit music tool. "
-                "Use research_song before answering about an unresearched named song. "
-                "If the user asks to analyze a named song without an attached/local audio file, "
-                "use research_song with a clean title and artist query. If they ask to analyze "
+                f"{research_instruction}If they ask to analyze "
                 "this audio/file but no reference is listed, clarify that they need to attach audio. "
                 "Use get_chords/get_sections/get_instruments/get_instrument_summary/get_tab_excerpt "
                 "for existing profiles. Use request_composition for composition and keep composition "

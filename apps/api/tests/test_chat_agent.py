@@ -29,6 +29,7 @@ class FakeChatModel:
 class FakeTools:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
+        self.enable_web_research = True
 
     def research_song(self, payload):
         self.calls.append(("research_song", payload))
@@ -147,3 +148,16 @@ def test_chat_agent_includes_bounded_session_context_in_its_decision_prompt():
     prompt = "\n".join(message["content"] for message in model.invoker.calls[0])
     assert "Recent in-session conversation" in prompt
     assert "I chose a 110 BPM groove" in prompt
+
+
+def test_chat_agent_hides_song_research_when_offline_mode_is_enabled():
+    tools = FakeTools()
+    tools.enable_web_research = False
+    model = FakeChatModel([ChatAgentDecision(tool="clarify", clarification="Song lookup is unavailable offline.")])
+    agent = ChatAgent(chat_model=model, tools=tools)
+
+    agent.run(ChatRequest(message="Look up Get Lucky by Daft Punk"))
+
+    prompt = "\n".join(message["content"] for message in model.invoker.calls[0])
+    assert "Do not choose research_song" in prompt
+    assert "ENABLE_WEB_RESEARCH=true" in prompt

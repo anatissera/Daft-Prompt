@@ -92,7 +92,7 @@ Out of scope for the MVP:
 - YouTube search;
 - YouTube download or conversion;
 - commercial-song acquisition;
-- external music catalog integrations;
+- external music catalog integrations beyond bounded Songsterr/web research;
 - persistent reference libraries.
 
 The analysis tools should extract:
@@ -112,7 +112,15 @@ use language such as:
 When possible, the answer should include confidence language: high, medium, low,
 or an equivalent score.
 
-### 3. Music Explanation
+### 3. Named-Song Research
+
+Songsterr/web research is available by default for named-song questions. It
+creates a compact, source-backed profile for follow-up questions and
+reference-guided composition. The runtime may be placed in offline mode with
+`ENABLE_WEB_RESEARCH=false`; in that mode the assistant must explain how to
+enable research and must not make a network request.
+
+### 4. Music Explanation
 
 The assistant explains songs using the analysis results as evidence.
 
@@ -128,7 +136,7 @@ Good answers should connect technical observations to musical interpretation:
 The assistant should avoid pretending to know more than the tools support. If an
 estimate is uncertain, it should say so.
 
-### 4. Composition From Scratch
+### 5. Composition From Scratch
 
 The user can compose without analyzing a prior song.
 
@@ -145,7 +153,7 @@ This uses the existing multi-agent composition pipeline:
 
 Composition from scratch is a first-class path, not a fallback.
 
-### 5. Composition From Reference
+### 6. Composition From Reference
 
 After analyzing a local audio file, the user can ask the assistant to compose
 using that reference.
@@ -169,7 +177,7 @@ The user should be able to override this conversationally:
 - "Use the same chords as a guide."
 - "Ignore the reference and compose from scratch."
 
-### 6. Playable Output
+### 7. Playable Output
 
 Generated songs should be playable in the UI.
 
