@@ -21,6 +21,7 @@ Last reviewed: 2026-07-10
 - The director now explicitly batches independent rhythm instruments together, retaining dependency-ordered composition while avoiding needless one-instrument waves.
 - Streamed agent passes carry their director-defined composition-group name, and the compact negotiation feed displays it beside round duration for dependency-aware latency diagnosis.
 - An opt-in `docker-compose.vertex.yml` mounts existing host ADC read-only and requires an explicit project id, so the local Docker stack can use Vertex AI without committing credentials; its resolved configuration and `/health` startup were verified locally.
+- Pydantic's protected-namespace configuration now preserves the existing `MODEL_*` environment contract without emitting distracting startup warnings.
 
 ## Current architecture
 

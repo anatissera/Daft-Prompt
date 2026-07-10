@@ -56,7 +56,14 @@ class Settings(BaseSettings):
     enable_melody_transcription: bool = False
     enable_web_research: bool = False
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Model role settings intentionally retain their explicit MODEL_* environment
+    # names; only reserve the settings-specific namespace to avoid Pydantic's
+    # warning for these stable public configuration fields.
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+        protected_namespaces=("settings_",),
+    )
 
     def api_key_for(self, provider: str) -> Optional[str]:
         if provider == "vertexai":
