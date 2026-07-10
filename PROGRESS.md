@@ -22,8 +22,11 @@ Last reviewed: 2026-07-10
   Compose forwards the matching API-key variables. The README is a concise
   clone-to-chat guide with Vertex ADC as the preferred provider and explicit
   default, Vertex, audio, and combined runtime commands.
-- Next: perform the final clean-image/default-Compose smoke check using the
-  documented commands.
+- A clean default image build and `docker compose up --force-recreate` smoke
+  check passed. The direct API and browser proxy both return useful no-provider
+  chat guidance; the disabled audio endpoint returns the documented 503 opt-in
+  guidance. The validated default image is about 1.63 GB locally, down from the
+  previous 2.57 GB audio-included image while retaining Vertex support.
 
 ## Completed milestones
 
@@ -81,14 +84,14 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Complete the developer-experience pass: a clean clone should reach a useful
-chat without configuration, Vertex should be a documented first-class default,
-and local audio analysis should remain a clearly documented opt-in capability.
+No active implementation task. The developer-experience pass is complete:
+default startup reaches a useful chat without credentials, Vertex is
+first-class, and local audio analysis remains opt-in.
 
 ## Remaining milestones
 
-1. Re-run default Compose startup and primary chat-flow verification from the
-   documented path.
+No required milestones remain. Future work should begin only from an observed
+quality, reliability, or user-experience gap.
 
 ## Completion audit (current evidence)
 
