@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type * as ToneType from "tone";
 import type { RosterItem, SongState } from "@/lib/types";
+import type { PlayerApi } from "@/lib/playerApi";
 import { instrumentColor } from "@/lib/colors";
 import {
   buildTrackEvents,
@@ -33,11 +34,30 @@ interface TrackMixerProps {
   soloTrackIds?: Set<string>;
   onMutedChange?: (next: Set<string>) => void;
   onSoloChange?: (next: Set<string>) => void;
+  // Populated with an engine-agnostic clock handle so a piano roll can share
+  // this transport's playhead. See lib/playerApi.ts.
+  playerApiRef?: MutableRefObject<PlayerApi | null>;
 }
 
 // Lazy import keeps Tone.js out of the initial bundle.
 async function loadTone(): Promise<typeof ToneType> {
   return (await import("tone")) as unknown as typeof ToneType;
+}
+
+// Notes are scheduled in tempo-derived seconds against the transport at this
+// base tempo; speed changes then scale wall-clock via Transport.bpm while the
+// tick timeline (and thus musical seconds below) stays fixed.
+const BASE_BPM = 120;
+
+// Musical seconds = the tempo timeline buildTrackEvents produced, read straight
+// from the transport tick counter so it is invariant to the playback rate.
+function musicalSeconds(Tone: typeof ToneType): number {
+  const ticksPerSecond = (Tone.Transport.PPQ * BASE_BPM) / 60;
+  return ticksPerSecond > 0 ? Tone.Transport.ticks / ticksPerSecond : 0;
+}
+
+function musicalSecondsToTicks(Tone: typeof ToneType, seconds: number): number {
+  return Math.round((seconds * Tone.Transport.PPQ * BASE_BPM) / 60);
 }
 
 // 5 sparse base notes give Tone.Sampler enough anchors to pitch-shift smoothly.
@@ -66,6 +86,7 @@ export default function TrackMixer({
   soloTrackIds: soloProp,
   onMutedChange,
   onSoloChange,
+  playerApiRef,
 }: TrackMixerProps) {
   const rows = useMemo(() => buildRows(song), [song]);
   const trackIds = useMemo(() => rows.map((row) => row.id), [rows]);
@@ -86,6 +107,7 @@ export default function TrackMixer({
   const samplersRef = useRef<Map<string, ToneType.Sampler>>(new Map());
   const gainsRef = useRef<Map<string, ToneType.Gain>>(new Map());
   const timerRef = useRef<number | null>(null);
+  const rateRef = useRef(1);
 
   const audibleTrackIds = useMemo(
     () => getAudibleTrackIds(trackIds, mutedTrackIds, soloTrackIds),
@@ -100,6 +122,35 @@ export default function TrackMixer({
   }, [audibleTrackIds]);
 
   useEffect(() => () => stopAndCleanup(true), []);
+
+  // Publish an engine-agnostic handle so a piano roll can read this transport's
+  // playhead and scrub through it. getTime is the tick-derived musical clock, so
+  // the roll and the transport time display never diverge.
+  useEffect(() => {
+    const ref = playerApiRef;
+    if (!ref) return;
+    const api: PlayerApi = {
+      getTime: () => {
+        const Tone = toneRef.current;
+        return Tone ? musicalSeconds(Tone) : 0;
+      },
+      getDuration: () => duration,
+      isPlaying: () => playing,
+      seek: (seconds) => seek(seconds),
+      setRate: (rate) => {
+        const clamped = Math.min(1.5, Math.max(0.5, rate));
+        rateRef.current = clamped;
+        const Tone = toneRef.current;
+        if (Tone && playing) Tone.Transport.bpm.value = BASE_BPM * clamped;
+      },
+      getRate: () => rateRef.current,
+    };
+    ref.current = api;
+    return () => {
+      if (ref.current === api) ref.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerApiRef, duration, playing]);
 
   const toggleMuted = useCallback(
     (id: string) => {
@@ -175,10 +226,13 @@ export default function TrackMixer({
     await Tone.start();
     await ensureSamplers(Tone);
 
-    // Clear any leftover scheduled events from a previous run.
+    // Clear any leftover scheduled events from a previous run. Pin the base
+    // tempo so each note's seconds→ticks conversion is stable regardless of the
+    // current playback rate; the rate is re-applied via bpm just before start.
     Tone.Transport.cancel(0);
+    Tone.Transport.bpm.value = BASE_BPM;
     const start = position >= duration ? 0 : position;
-    Tone.Transport.seconds = start;
+    Tone.Transport.ticks = musicalSecondsToTicks(Tone, start);
 
     for (const row of rows) {
       const sampler = samplersRef.current.get(row.id);
@@ -198,10 +252,13 @@ export default function TrackMixer({
       }
     }
 
+    // Apply the selected speed just before playing (tick positions are already
+    // fixed, so this only scales wall-clock rate, not the note timeline).
+    Tone.Transport.bpm.value = BASE_BPM * rateRef.current;
     Tone.Transport.start();
     setPlaying(true);
     timerRef.current = window.setInterval(() => {
-      const elapsed = Tone.Transport.seconds;
+      const elapsed = musicalSeconds(Tone);
       if (elapsed >= duration) {
         stopAndCleanup(true);
         return;
@@ -216,7 +273,7 @@ export default function TrackMixer({
     if (wasPlaying) stopAndCleanup(false);
     setPosition(next);
     const Tone = toneRef.current;
-    if (Tone) Tone.Transport.seconds = next;
+    if (Tone) Tone.Transport.ticks = musicalSecondsToTicks(Tone, next);
   }
 
   return (

@@ -319,15 +319,18 @@ code, pre, .mono { font-family: var(--font-mono); }
 
 .sidebar-footer {
   margin-top: auto;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   font-family: var(--font-tech);
   font-size: 11px;
+  line-height: 1.4;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 6px 4px;
+  padding: 6px 4px 12px;
 }
 
 .sidebar-model-dot {
@@ -1818,4 +1821,124 @@ input[type="number"], select {
   .app-shell { grid-template-columns: 1fr; }
   .app-sidebar { display: none; }
   .chat-thread, .chat-composer { padding-left: var(--space-4); padding-right: var(--space-4); }
+}
+
+/* ── Falling-notes piano roll ──────────────────────────────────────────────
+   Visualizer in components/PianoRoll.tsx. Class names are namespaced .piano-*
+   so they never collide with the product-direction branch's .melody-* /
+   .arrangement-* rules. The stage doubles as the fullscreen target. */
+.song-deck .piano-stage { margin: 0 18px; }
+
+.piano-stage {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(243, 196, 90, 0.28);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: linear-gradient(180deg, #0a0c14, #050608);
+  box-shadow:
+    0 1px 0 rgba(215, 218, 230, 0.09) inset,
+    0 14px 30px -18px rgba(0, 0, 0, 0.85);
+}
+
+.piano-stage-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(243, 196, 90, 0.18);
+  background: radial-gradient(120% 130% at 0% 0%, rgba(243, 196, 90, 0.07), transparent 68%);
+}
+.piano-stage-eyebrow {
+  font-family: var(--font-tech);
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+  opacity: 0.72;
+}
+.piano-stage-controls { display: flex; align-items: center; gap: 10px; }
+
+.piano-speed {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid rgba(243, 196, 90, 0.22);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.42);
+}
+.piano-speed-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  padding: 3px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.piano-speed-btn:hover { color: var(--gold-bright); }
+.piano-speed-btn.is-active {
+  color: var(--night);
+  background: var(--gold-bright);
+  box-shadow: 0 0 10px rgba(243, 196, 90, 0.4);
+}
+.piano-speed-btn:focus-visible,
+.piano-fs-btn:focus-visible {
+  outline: 2px solid var(--gold-spec);
+  outline-offset: 1px;
+}
+
+.piano-fs-btn {
+  font-family: var(--font-tech);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+  background: var(--night);
+  border: 1px solid rgba(243, 196, 90, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.piano-fs-btn:hover {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 12px rgba(243, 196, 90, 0.35);
+}
+
+.piano-stage-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 340px;
+  background: #05070d;
+}
+.piano-stage-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+.piano-stage-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.piano-stage:fullscreen {
+  background: #05070d;
+  border: 0;
+  border-radius: 0;
+}
+.piano-stage:fullscreen .piano-stage-canvas-wrap { height: calc(100vh - 42px); }
+
+@media (max-width: 760px) {
+  .piano-stage-canvas-wrap { height: 260px; }
 }
