@@ -95,6 +95,58 @@ def test_audio_web_conflict_is_preserved_as_profile_note():
     assert any(note.code == "web_audio_key_conflict" for note in enriched.audio.analysis_notes)
 
 
+def web_profile_with_tempo(tempo_text: str) -> ReferenceProfile:
+    tempo_claim = EvidenceClaim(
+        claim_id="web_tempo",
+        claim_type="tempo",
+        value=tempo_text,
+        source_name="Web",
+        source_url="https://web.test",
+        extraction_method="site_parser",
+        confidence=0.7,
+        snippet=f"Tempo: {tempo_text}",
+    )
+    return ReferenceProfile(
+        reference_id="ref_web",
+        source=source("ref_web"),
+        knowledge=SongKnowledgeProfile(
+            profile_id="song_demo",
+            identity=SongIdentity(title="Demo Song", artist="Fixture Artist"),
+            evidence_claims=[tempo_claim],
+        ),
+    )
+
+
+def test_audio_web_tempo_disagreement_is_preserved_as_conflict():
+    enriched = enrich_profile_with_audio(
+        audio_profile(tempo=111.0), base_profile=web_profile_with_tempo("150 BPM")
+    )
+
+    assert enriched.knowledge is not None
+    tempo_conflicts = [c for c in enriched.knowledge.conflicts if c.claim_type == "tempo"]
+    assert tempo_conflicts and tempo_conflicts[0].conflict_id == "web_audio_tempo_conflict"
+    assert any(note.code == "web_audio_tempo_conflict" for note in enriched.audio.analysis_notes)
+
+
+def test_audio_web_half_double_tempo_is_flagged_distinctly():
+    enriched = enrich_profile_with_audio(
+        audio_profile(tempo=90.0), base_profile=web_profile_with_tempo("180 BPM")
+    )
+
+    assert enriched.knowledge is not None
+    tempo_conflicts = [c for c in enriched.knowledge.conflicts if c.claim_type == "tempo"]
+    assert tempo_conflicts and tempo_conflicts[0].conflict_id == "web_audio_tempo_half_double"
+
+
+def test_audio_web_tempo_within_tolerance_is_not_a_conflict():
+    enriched = enrich_profile_with_audio(
+        audio_profile(tempo=111.0), base_profile=web_profile_with_tempo("112 BPM")
+    )
+
+    assert enriched.knowledge is not None
+    assert not any(c.claim_type == "tempo" for c in enriched.knowledge.conflicts)
+
+
 def test_low_confidence_audio_estimates_are_marked_approximate():
     enriched = enrich_profile_with_audio(audio_profile(key_confidence=0.32))
 

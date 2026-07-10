@@ -46,6 +46,14 @@ def enrich_profile_with_audio(
                 severity="warning",
             )
         )
+    if any(conflict.claim_type == "tempo" for conflict in conflicts):
+        notes.append(
+            AnalysisNote(
+                code="web_audio_tempo_conflict",
+                message="Audio tempo estimate disagrees with at least one web source.",
+                severity="warning",
+            )
+        )
     enriched_audio = audio.model_copy(update={"analysis_notes": notes})
     knowledge = SongKnowledgeProfile(
         profile_id=base_knowledge.profile_id if base_knowledge else audio_profile.reference_id.replace("ref_", "song_", 1),
@@ -293,7 +301,56 @@ def _web_audio_conflicts(
                     claims=[*disagreeing, audio_key],
                 )
             )
+    conflicts.extend(_web_audio_tempo_conflicts(existing_claims, audio_claims))
     return conflicts
+
+
+# Tempo estimates rarely match to the decimal, so ignore small drift and only
+# surface disagreements a listener would actually notice. Half/double-time is
+# called out separately because it is a metering interpretation, not an error.
+_TEMPO_TOLERANCE_BPM = 3.0
+_TEMPO_HALF_DOUBLE_TOLERANCE = 0.1
+
+
+def _web_audio_tempo_conflicts(
+    existing_claims: list[EvidenceClaim],
+    audio_claims: list[EvidenceClaim],
+) -> list[EvidenceConflict]:
+    conflicts: list[EvidenceConflict] = []
+    web_tempos = [claim for claim in existing_claims if claim.claim_type == "tempo"]
+    audio_tempos = [claim for claim in audio_claims if claim.claim_type == "tempo"]
+    for audio_tempo in audio_tempos:
+        audio_bpm = _tempo_bpm(audio_tempo.value)
+        if audio_bpm is None:
+            continue
+        for web_tempo in web_tempos:
+            web_bpm = _tempo_bpm(web_tempo.value)
+            if web_bpm is None or abs(web_bpm - audio_bpm) <= _TEMPO_TOLERANCE_BPM:
+                continue
+            ratio = max(web_bpm, audio_bpm) / min(web_bpm, audio_bpm)
+            if abs(ratio - 2.0) <= _TEMPO_HALF_DOUBLE_TOLERANCE:
+                description = (
+                    "Web evidence and audio estimate differ by roughly half/double-time; "
+                    "they likely describe the same pulse counted differently."
+                )
+                conflict_id = "web_audio_tempo_half_double"
+            else:
+                description = "Web evidence and audio estimate disagree on the tempo."
+                conflict_id = "web_audio_tempo_conflict"
+            conflicts.append(
+                EvidenceConflict(
+                    conflict_id=conflict_id,
+                    claim_type="tempo",
+                    description=description,
+                    claims=[web_tempo, audio_tempo],
+                )
+            )
+    return conflicts
+
+
+def _tempo_bpm(value: str) -> float | None:
+    match = re.search(r"\d+(?:\.\d+)?", value)
+    return float(match.group()) if match else None
 
 
 def _normalize_key(value: str) -> str:
