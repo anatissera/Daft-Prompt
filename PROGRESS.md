@@ -11,6 +11,7 @@ Last reviewed: 2026-07-09
 - Generated MIDI remains canonical and independently editable per part; targeted generated-part revisions are supported.
 - Spanish reference questions and reference-guided composition route through the same deterministic workflow as English.
 - The local Docker API runtime builds and passes its `/health` smoke test without requiring machine-specific cloud credentials.
+- Docker setup documentation now matches that self-contained runtime and explains how to opt into a provider through an uncommitted `.env` file.
 - LLM sampling is provider-agnostic and role-specific: director/reviewer defaults favor stable planning, while instrument agents retain expressive variance. All three values are environment-configurable.
 - Composition SSE events now include cumulative and per-stage elapsed time; artifact completion reports total elapsed time. This is the profiling baseline before any concurrency redesign.
 - The compact negotiation detail now displays actual per-stage durations, keeping responsiveness visible without a dashboard-first workflow.

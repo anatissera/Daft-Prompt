@@ -207,14 +207,10 @@ with their own local credentials.
 
 ### Docker (both services)
 
-If you want the whole app with Vertex AI using a single command from the repo
-root, first make sure ADC exists locally:
-
-```bash
-gcloud auth application-default login
-```
-
-Then run:
+The default Compose runtime is self-contained: it starts the local API and UI
+without cloud credentials, uses the configurable local uploads/output mounts,
+and returns clear provider guidance if you request LLM composition before
+configuring one. Run:
 
 ```bash
 docker compose up --build
@@ -222,11 +218,16 @@ docker compose up --build
 # UI:  http://localhost:3000
 ```
 
-The compose stack mounts your local ADC file from
-`~/.config/gcloud/application_default_credentials.json` into the API container
-as read-only, configures `LLM_PROVIDER=vertexai`, points at the billed
-`daft-promt` project, and uses `GOOGLE_CLOUD_LOCATION=global` for
-`gemini-3.5-flash`.
+To use an LLM inside Compose, place your own provider values in an uncommitted
+root `.env` file, for example:
+
+```bash
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your-key
+```
+
+Vertex AI remains supported through the local backend setup above; keep ADC
+and project settings outside version control.
 
 ---
 
