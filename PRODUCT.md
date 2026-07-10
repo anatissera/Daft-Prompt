@@ -3,11 +3,11 @@
 LLMinem is a conversational music workspace.
 
 The product lets a user talk with an assistant that understands songs, analyzes
-local audio files with music tools, and can compose new songs either from a text
+local audio files with music tools when that optional capability is enabled, and can compose new songs either from a text
 prompt or from a previously analyzed reference.
 
 The core experience is a chat. The user should not need to choose a rigid mode
-before acting. They can ask a question, upload a local audio file, request a new
+before acting. They can ask a question, upload a local audio file when analysis is enabled, request a new
 composition, or ask the system to compose using a reference. The system infers
 the intent, uses the right tools, and asks a short follow-up only when the
 request is ambiguous.
@@ -75,14 +75,17 @@ The user can write naturally:
 The assistant should route the request to the right use case:
 
 - answer from existing context;
-- analyze an attached local audio file;
+- analyze an attached local audio file when the optional audio runtime is enabled;
 - compose from a text prompt;
 - compose from a previously analyzed `ReferenceProfile`;
 - ask one short clarification if needed.
 
 ### 2. Local Audio Analysis
 
-The MVP accepts local audio files only.
+The MVP accepts local audio files only when the optional audio-analysis runtime
+is enabled. It is intentionally excluded from the default image because its
+PyTorch/Demucs/MIR dependencies materially increase build time and image size.
+The default chat and composition experience must remain fully usable without it.
 
 Out of scope for the MVP:
 
@@ -304,7 +307,7 @@ The MVP is successful when a user can:
 
 1. Open the app locally.
 2. Chat naturally with the assistant.
-3. Upload or select a local audio file.
+3. When audio analysis is enabled, upload or select a local audio file.
 4. Ask for tempo, key, sections, energy, and probable chords.
 5. Receive an evidence-based answer with uncertainty where appropriate.
 6. Ask for a new composition from scratch.
@@ -312,4 +315,3 @@ The MVP is successful when a user can:
 8. Hear the generated result.
 9. Mute or solo generated instruments.
 10. Understand, at a high level, which tools and agents were involved.
-

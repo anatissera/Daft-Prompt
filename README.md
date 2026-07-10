@@ -1,369 +1,147 @@
-<div style="display: flex; align-items: center; gap: 32px; margin-bottom: 48px; padding: 24px; background: linear-gradient(135deg, rgba(3,3,5,0.8), rgba(11,11,18,0.8)); border: 1px solid rgba(0,212,255,0.2); border-radius: 12px; backdrop-filter: blur(10px);">
-  <img src="./apps/web/public/helmet-icon.png" alt="Daft Punk Helmet" style="width: 120px; height: 120px; object-fit: contain; filter: drop-shadow(0 0 20px rgba(0,212,255,0.4));" />
-  <div>
-    <h1 style="margin: 0; font-family: 'Orbitron', monospace; font-size: 48px; font-weight: 900; color: #a8a8c0; text-shadow: 0 0 30px rgba(168,168,192,0.4); letter-spacing: 4px;">DAFT PROMPT</h1>
-    <p style="margin: 12px 0 0; color: #8888a8; font-size: 16px; letter-spacing: 2px; font-family: monospace;">Upload • Analyze • Compose • Understand</p>
-  </div>
-</div>
+# Daft Prompt
 
-Upload a track for harmonic analysis. Ask music questions grounded in evidence. Compose new sketches inspired by references. All from one chat.
+Daft Prompt is a chat-first music workspace. Ask it to compose an original
+sketch, explore a musical idea, or—when explicitly enabled—analyze a local
+audio reference. Generated songs are playable and exportable as MIDI and
+MusicXML.
 
-Powered by multi-agent LLMs, real music information retrieval, and a retro-futuristic UI.
-
----
-
-## What This Is
-
-Daft Prompt is a conversational music workspace that bridges AI agents with real music analysis.
-
-**The flow**
-1. Upload a local audio file
-2. Real MIR extracts tempo, key, chord progressions, and structure (bar-aligned)
-3. Ask musical questions → evidence-grounded answers
-4. Compose from scratch or guided by the analyzed reference
-5. Play, inspect, and export your generated song
-
-**The tech stack**
-* Python FastAPI backend with clean architecture
-* Demucs + librosa for stem separation and harmonic analysis
-* Krumhansl-Schmuckler key estimation with relative ambiguity detection
-* Per-bar triad chord estimation and A/B/C structure detection
-* LangGraph multi-agent composition with negotiation rounds
-* Next.js UI with Daft Punk retro-futuristic aesthetic
-
----
-
-## Current Status
-
-### Working Now (MVP Foundation)
-
-Backend analysis
-* Stem separation (drums, bass, vocals, other) via Demucs htdemucs
-* Harmonic source extraction (bass + other stems preferred, HPSS fallback)
-* Tempo grid with beat and bar boundaries (assumed 4/4)
-* Key candidates via Krumhansl-Schmuckler profiles
-* Per-bar triad chord estimation (major/minor/diminished) with smoothing
-* A/B/C structure detection from chord patterns
-* Analysis notes for degradation cases (separation unavailable, weak bar grid)
-* Full orchestration → `ReferenceProfile` with legacy compat fields
-
-UI
-* Chat-first workspace with reference context sidebar
-* File upload for local audio analysis
-* Realtime analysis progress (SSE) → future streaming
-* Music question answering over `ReferenceProfile` (deterministic)
-* Composition from scratch or reference-guided
-* Song playback, MIDI inspection, export
-
-Composition engine
-* Director agent picks arrangement and roster
-* Instrument agents compose parts via negotiation
-* Arbiter resolves ties through shared song state
-* MIDI and MusicXML rendering
-* SSE event streaming for UI feedback
-
-Tests
-* 112 unit tests for analysis (phases 2-7)
-* Feature module tests with injectable fakes (fast, no heavy audio)
-* Orchestrator tests for full assembly
-* HTTP boundary tests for upload/analysis/composition routes
-* Architecture boundary tests (clean layers)
-
-### Not Yet (Post-MVP Backlog)
-
-From [`plans/deep-music-analysis.md`](./plans/deep-music-analysis.md) (future vision)
-* Melodic transcription and voice-leading analysis
-* Per-stem spectral timbre and dynamics
-* Groove/rhythm micro-timing
-* Ensemble view with cross-stem relationships
-* UI components for timeline, spectrogram, voice-leading viz
-
-From Phase 8-10 of [`plans/deep-harmonic-analysis.md`](./plans/deep-harmonic-analysis.md)
-* Analysis progress streaming (SSE events per stage)
-* Frontend rendering of harmony/structure with key candidates and progressions
-* Evidence-grounded Q&A deterministic logic (probabilistic language)
-
----
-
-## Source Of Truth
-
-* [`PRODUCT.md`](./PRODUCT.md) → Product behavior and MVP scope
-* [`DESIGN.md`](./DESIGN.md) → UX direction and chat-first flow
-* [`AGENTS.md`](./AGENTS.md) → Agent responsibilities, constraints, security boundaries
-* [`docs/architecture.md`](./docs/architecture.md) → Technical layers and boundaries
-* [`plans/deep-harmonic-analysis.md`](./plans/deep-harmonic-analysis.md) → Phases 0-7 (MVP) with checkboxes
-* [`plans/deep-music-analysis.md`](./plans/deep-music-analysis.md) → Future vision (post-MVP tracks)
-* [`plans/chat-musical-mvp.md`](./plans/chat-musical-mvp.md) → Chat product roadmap
-
----
-
-## Architecture
-
-### Backend Layers
-
-```
-apps/api/music_assistant/
-  domain/           → AudioProfile, ReferenceProfile, SongState models
-  application/      → AnalyzeReference, ComposeSong, AnswerMusicQuestion
-  ports/            → LLM, StemSeparator, AudioAnalyzer, TranscriptionService
-  infrastructure/
-    mir/            → DeepHarmonicAnalyzer (Phases 2-7), feature modules
-    storage/        → ArtifactStore (local/S3), song rendering
-    llm/            → LLM provider routing (Gemini, Groq, OpenRouter)
-  interfaces/       → FastAPI routes, SSE streaming, models
-```
-
-### Analysis Pipeline (Phases 2-7)
-
-```
-ReferenceSource (local file path)
-  → Phase 1: Demucs stem separation (4 stems: drums/bass/vocals/other)
-  → Phase 2: Harmonic source (bass+other preferred, HPSS fallback, mix last resort)
-  → Phase 3: Tempo grid (beat + bar boundaries, drum-preferred onset detection)
-  → Phase 4: Key profile (Krumhansl-Schmuckler, 8 candidates, relative ambiguity flag)
-  → Phase 5: Chord spans (per-bar triads, confidence weighted by separation)
-  → Phase 6: Structure (A/B/C labels from chord patterns, 4-bar phrases)
-  → Phase 7: Assembly → ReferenceProfile (harmony + structure + legacy compat)
-```
-
-### Composition Pipeline
-
-```
-style prompt + optional ReferenceProfile
-  → director (arrangement intent + roster)
-  → instrument agents compose via negotiation rounds
-  → shared SongState consensus
-  → convergence or arbiter tiebreak
-  → MIDI + MusicXML rendering
-  → SSE event stream to UI
-```
-
----
+The normal runtime favors responsive composition: it includes the Vertex AI
+Gemini provider, but leaves the large local audio-analysis stack out of the
+image. Audio analysis is available as a deliberate opt-in.
 
 ## Quick Start
 
-### Frontend (Next.js + React)
+### 1. Start the app
+
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), then
+run this from the cloned repository:
 
 ```bash
-cd apps/web
-npm install
-npm run dev        # http://localhost:3001
+docker compose up --build
 ```
 
-### Backend (Python FastAPI)
+Open [http://localhost:3000](http://localhost:3000). The chat is usable with
+no account configuration and explains how to enable composition when a provider
+has not been configured. API health is available at
+[http://localhost:8000/health](http://localhost:8000/health).
+
+### 2. Enable your preferred Vertex AI Gemini provider
+
+Vertex is the first-class provider in the default image; it uses your existing
+Google Application Default Credentials (ADC), not an API key.
 
 ```bash
-cd apps/api
-
-# Create venv
-python3 -m venv venv
-source venv/bin/activate
-
-# Install
-pip install -e .
-
-# Gemini and the default OpenRouter fallback are included in the base install.
-# Install an extra only for Groq or Vertex AI:
-pip install -e ".[groq]"          # or [vertexai]
-
-# Set env
-export LLM_PROVIDER=gemini
-export GEMINI_API_KEY=xxx
-
-# Run
-uvicorn music_assistant.interfaces.api:app --reload --port 8000
-```
-
-### Vertex AI with the billed Daft Prompt project
-
-To use Google Cloud billing/credits through the `daft-promt` project instead of
-the Gemini API-key path:
-
-```bash
-cd apps/api
-source .venv/bin/activate
-pip install -e ".[vertexai]"
 gcloud auth application-default login
+cp .env.example .env
 ```
 
-Set these local environment variables in your uncommitted `.env`:
+Set `GOOGLE_CLOUD_PROJECT` in the uncommitted root `.env` to your project ID,
+then start the Vertex-enabled stack:
 
 ```bash
-LLM_PROVIDER=vertexai
-GOOGLE_CLOUD_PROJECT=daft-promt
-GOOGLE_CLOUD_LOCATION=global
-MODEL_DIRECTOR=gemini-3.5-flash
-MODEL_INSTRUMENT=gemini-3.5-flash
-MODEL_ARBITER=gemini-3.5-flash
-```
-
-`global` is the safest default for Gemini 3.5 through the current Vertex AI
-LangChain adapter. Single-region endpoints such as `us-central1` can return
-`404 Publisher model ... was not found` for `gemini-3.5-flash` even when the
-project, billing, and ADC are configured correctly.
-
-For the local Docker stack, mount your existing ADC directory through the
-credential-free override rather than copying a key into the image or repo:
-
-```bash
-export GOOGLE_CLOUD_PROJECT=your-project-id
 export GCP_ADC_HOST_PATH="$HOME/.config/gcloud"
 docker compose -f docker-compose.yml -f docker-compose.vertex.yml up --build
 ```
 
-The mount is read-only and is required only by this opt-in override. Keep both
-variables in your shell or an uncommitted local environment file.
+Now ask for a composition in the chat, for example: “Compose an eight-bar
+French-house groove with a warm bassline.” The credential directory is mounted
+read-only; no key or credential is copied into the image or repository.
 
-Other developers can keep using `LLM_PROVIDER=gemini`, `openrouter`, or `groq`
-with their own local credentials.
+If your ADC lives elsewhere, set `GCP_ADC_HOST_PATH` to that directory. Use
+`gcloud config get-value project` to discover the active project ID.
 
-### Docker (both services)
+### 3. Enable local audio analysis only if you need it
 
-The default Compose runtime is self-contained: it starts the local API and UI
-without cloud credentials, uses the configurable local uploads/output mounts,
-and returns clear provider guidance if you request LLM composition before
-configuring one. Run:
-
-```bash
-docker compose up --build
-# API: http://localhost:8000
-# UI:  http://localhost:3000
-```
-
-To use an LLM inside Compose, place your own provider values in an uncommitted
-root `.env` file, for example:
+Audio uploads install PyTorch, Demucs, MIR libraries, `ffmpeg`, and native build
+tools. That makes the image much slower and larger, so it is intentionally
+separate:
 
 ```bash
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=your-key
+docker compose -f docker-compose.yml -f docker-compose.audio.yml up --build
 ```
 
-Vertex AI remains supported through the local backend setup above; keep ADC
-and project settings outside version control.
-
----
-
-## Testing
+To use Vertex and uploads together, include both overlays:
 
 ```bash
-cd apps/api
-
-# All tests (unit + integration)
-pytest
-
-# Just analysis features (fast, no heavy audio)
-pytest tests/test_*_features.py tests/test_deep_harmonic_analyzer.py
-
-# With coverage
-pytest --cov=music_assistant tests/
+export GCP_ADC_HOST_PATH="$HOME/.config/gcloud"
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.vertex.yml \
+  -f docker-compose.audio.yml \
+  up --build
 ```
 
-Key test strategy: All feature modules accept injectable fakes for speed. The test suite skips real Demucs separation (too slow) but covers fallback paths, confidence adjustments, and graceful degradation.
+The attachment control appears only in this audio-enabled runtime. Calling an
+upload endpoint without it returns a clear opt-in instruction rather than a
+missing-dependency error.
 
----
+## Configuration
 
-## Key Concepts
+[.env.example](./.env.example) is the single configuration template. Copy it
+to a root `.env` only when a provider or optional feature is needed; `.env` is
+ignored by Git.
 
-### Bar-Aligned Representation
+The supported provider choices are `vertexai`, `gemini`, `groq`, and
+`openrouter`. The Compose runtime forwards their documented key variables. For
+the non-Vertex alternatives, select `LLM_PROVIDER` and set its matching key in
+the root `.env`, then run `docker compose up --build`.
 
-All harmonic and structural features use `start_bar` / `end_bar` (integer indices) instead of seconds. This matches the composer's intent and makes synchronization with the tempo grid trivial.
+For a non-Docker backend workflow, copy the same template to `apps/api/.env`,
+install the desired extras, and run the API from `apps/api`:
 
-**Example**: A chord span at bars 5-8 covers exactly 4 bars of the song, regardless of tempo variations or fractional beats.
-
-### Harmonic Source Strategy
-
-For accurate key and chord estimation, we blend stems:
-* **Preferred**: bass + other stems (vocals and drums removed for cleaner pitch)
-* **Fallback 1**: HPSS harmonic component from mix
-* **Fallback 2**: Raw mix as last resort
-
-Each fallback adjusts confidence accordingly. Analysis notes flag when degradation happens.
-
-### Key Estimation: Krumhansl-Schmuckler
-
-We profile the chroma vector against 12 major and 12 minor profiles. Relative major/minor ambiguity is flagged when the top two candidates are within 0.04 confidence margin.
-
-### Chord Smoothing
-
-Single-bar outliers between two identical, high-confidence neighbors get corrected automatically. This handles spurious transcription errors without losing real harmonic movement.
-
-### Structure from Chords
-
-A/B/C labels come from 4-bar phrase windows. Same chord-tuple signature within a window = same letter. Consecutive same-letter windows merge into a single structural section.
-
----
-
-## Development Workflow
-
-Branches
-* `main` → Deployable, protected (PR-only)
-* `develop` → Integration branch, frequent commits
-* `feat/*` → Feature branches off develop, merged via PR
-
-Typical flow
 ```bash
-git checkout develop
-git pull origin develop
-git checkout -b feat/your-feature
-# ... code ...
-git push -u origin feat/your-feature
-# → create PR to develop
-# → review + merge
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[vertexai]"
+uvicorn music_assistant.interfaces.api:app --reload --port 8000
 ```
 
-Environment
-* Python 3.10+
-* Node.js 18+
-* Demucs requires torch (installed via pip)
-* PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 required (ROS launch_testing plugin conflict on some systems)
+Install local analysis dependencies only when required:
 
----
-
-## Docs
-
-* [`PRODUCT.md`](./PRODUCT.md) → What users can do and why
-* [`DESIGN.md`](./DESIGN.md) → Chat UX flows and interaction patterns
-* [`AGENTS.md`](./AGENTS.md) → Agent rules, tools, constraints, security
-* [`docs/architecture.md`](./docs/architecture.md) → Clean layers, ports, boundaries
-* [`plans/`](./plans/) → Implementation phases, roadmaps, vision
-
----
-
-## Troubleshooting
-
-**Port 3000 already in use?**
-Dev server falls back to 3001 automatically. Check http://localhost:3001.
-
-**Librosa import error?**
 ```bash
-pip install librosa>=0.10
+pip install -e ".[audio-analysis]"
 ```
 
-**Demucs slow or OOM?**
-Demucs (4.0+) uses about 6GB VRAM. On limited hardware, tests skip real separation (use fakes).
+## What it does
 
-**PYTEST_DISABLE_PLUGIN_AUTOLOAD not set?**
+- Conversational composition from a text prompt or compact analyzed reference.
+- Vertex/Gemini-backed director, instrument, negotiation, and arbiter agents.
+- Browser playback, per-track mute/solo, MIDI export, and MusicXML export.
+- Optional local audio analysis with clearly probabilistic chord, key, tempo,
+  and section estimates.
+- Optional web research that remains separate from the interactive composition
+  pipeline.
+
+## Architecture
+
+```text
+Next.js chat UI
+  -> FastAPI HTTP/SSE boundary
+  -> application use cases
+  -> domain models and ports
+  -> provider, storage, research, and optional MIR adapters
+
+Composition: director -> grouped instrument agents -> negotiation -> arbiter
+             -> canonical SongState -> MIDI/MusicXML/playback
+```
+
+The architecture keeps raw audio adapters out of composition. Agents receive a
+compact `ReferenceProfile`, never provider clients or audio-analyzer details.
+
+## Validation
+
 ```bash
-export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
-pytest
+cd apps/api && python -m pytest
+cd apps/web && npm run typecheck && node --test lib/*.test.mjs && npm run build
 ```
-(ROS launch_testing plugin interferes; this disables auto-discovery.)
 
-**LLM provider not configured?**
-```bash
-export LLM_PROVIDER=gemini
-export GEMINI_API_KEY=your-key
-```
-OpenRouter is included in the base backend install. Set its key to enable the
-default fallback:
-```bash
-export OPENROUTER_API_KEY=your-key
-```
-Without the matching extra/API key, composition still fails gracefully and `/chat`
-returns a structured error response.
+The backend suite uses fakes for expensive local MIR work, so it does not need
+Demucs models or network access.
 
----
+## Further documentation
 
-Built by [UdeSA NLP Group](https://udesa.edu.ar). Music analysis meets multi-agent reasoning. Retro-futuristic vibes guaranteed.
-
-**[ DIGITAL STUDIO // AI MUSIC LAB ]**
+- [Product behavior](./PRODUCT.md)
+- [Chat-first UX direction](./DESIGN.md)
+- [Architecture boundaries](./docs/architecture.md)
+- [Implementation roadmap](./plans/chat-musical-mvp.md)
+- [Current engineering progress](./PROGRESS.md)

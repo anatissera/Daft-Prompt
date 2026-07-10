@@ -18,9 +18,12 @@ Last reviewed: 2026-07-10
 - The dependency installation layer is isolated from application source, so
   ordinary backend edits reuse the provider dependency layer during Docker
   rebuilds. The default image also avoids `ffmpeg` and a compiler toolchain.
-- Next: consolidate duplicate environment examples, forward the documented
-  provider values through Compose, and replace the README setup sections with
-  a clone-to-chat Quick Start.
+- A single root `.env.example` now documents the optional provider values and
+  Compose forwards the matching API-key variables. The README is a concise
+  clone-to-chat guide with Vertex ADC as the preferred provider and explicit
+  default, Vertex, audio, and combined runtime commands.
+- Next: perform the final clean-image/default-Compose smoke check using the
+  documented commands.
 
 ## Completed milestones
 
@@ -84,11 +87,7 @@ and local audio analysis should remain a clearly documented opt-in capability.
 
 ## Remaining milestones
 
-1. Add one root environment template and forward the selected provider values
-   through Compose.
-2. Rewrite README setup as a verified clone-to-chat Quick Start, including
-   Vertex credentials and optional audio analysis.
-3. Re-run default Compose startup and primary chat-flow verification from the
+1. Re-run default Compose startup and primary chat-flow verification from the
    documented path.
 
 ## Completion audit (current evidence)
