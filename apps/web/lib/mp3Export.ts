@@ -6,12 +6,16 @@ const MP3_KBPS = 128;
 const MP3_FRAME = 1152; // lamejs encodes 1152 samples per MP3 frame.
 const TAIL_SECONDS = 2; // reverb tail after last note.
 
-async function renderSongToAudioBuffer(song: SongState, gains?: Record<string, number>): Promise<AudioBuffer> {
+async function renderSongToAudioBuffer(
+  song: SongState,
+  gains?: Record<string, number>,
+  audible?: Set<string>,
+): Promise<AudioBuffer> {
   // Include native-synth tracks with their GM fallback — offline render
   // can't run the Tone.js scheduler, so the MP3 falls back to sampled
   // approximations. Live preview still uses real synthesis. Knob volumes
   // are baked into velocities so the exported mix matches what you hear.
-  const { bytes } = buildMidiWithChannels(song, { gains });
+  const { bytes } = buildMidiWithChannels(song, { gains, audible });
   const arrayBuf = bytes.buffer.slice(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
@@ -71,13 +75,21 @@ async function audioBufferToMp3Blob(buf: AudioBuffer): Promise<Blob> {
   return new Blob(chunks as unknown as BlobPart[], { type: "audio/mpeg" });
 }
 
-export async function renderSongToMp3Blob(song: SongState, gains?: Record<string, number>): Promise<Blob> {
-  const audio = await renderSongToAudioBuffer(song, gains);
+export async function renderSongToMp3Blob(
+  song: SongState,
+  gains?: Record<string, number>,
+  audible?: Set<string>,
+): Promise<Blob> {
+  const audio = await renderSongToAudioBuffer(song, gains, audible);
   return audioBufferToMp3Blob(audio);
 }
 
-export async function triggerMp3Download(song: SongState, gains?: Record<string, number>): Promise<void> {
-  const blob = await renderSongToMp3Blob(song, gains);
+export async function triggerMp3Download(
+  song: SongState,
+  gains?: Record<string, number>,
+  audible?: Set<string>,
+): Promise<void> {
+  const blob = await renderSongToMp3Blob(song, gains, audible);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   const safeName = (song.header.genre || "song").replace(/[^a-z0-9-_]+/gi, "_").toLowerCase();
