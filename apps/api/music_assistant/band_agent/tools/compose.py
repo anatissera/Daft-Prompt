@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from music_assistant.domain.patch import resolve_patch
+from music_assistant.domain.patch import UnknownPatchError, resolve_patch
 from music_assistant.domain.song_state import (
     ChordSpan,
     Header,
@@ -91,7 +91,13 @@ def compose_band(
         # roster would otherwise lie to the frontend about what's playing.
         if not notes and not inst.is_drum:
             continue
-        program, preset = resolve_patch(inst.patch)
+        # Drop instruments whose patch is unrecognised — the old resolve_patch
+        # silently substituted grand piano, which drove a piano bias whenever
+        # the LLM slipped on the vocab.
+        try:
+            program, preset = resolve_patch(inst.patch)
+        except UnknownPatchError:
+            continue
         roster.append(
             RosterItem(
                 id=inst.id,

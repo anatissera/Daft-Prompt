@@ -79,6 +79,7 @@ export default function Home() {
   const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [pipeline, setPipeline] = useState<PipelineState | null>(null);
+  const [promptQueue, setPromptQueue] = useState<string[]>([]);
   const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
   const sessionTitledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -121,7 +122,19 @@ export default function Home() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    const text = prompt.trim();
+    if (!text && !selectedFile) return;
+
+    // If the studio is already working, queue the raw text (compose intent
+    // only — file uploads never queue because attachments can't be
+    // deferred). Enqueued prompts stack visibly above the composer and
+    // drain automatically as previous jobs finish.
+    if (busy) {
+      if (!text) return;
+      setPromptQueue((prev) => [...prev, text]);
+      setPrompt("");
+      return;
+    }
 
     const action = chooseChatAction({
       prompt,
@@ -140,6 +153,21 @@ export default function Home() {
     }
     await chat(action.messageText);
   }
+
+  // Drain the queue whenever the studio goes idle. We pull the first entry,
+  // append it as a user message, and fire chat() — this loop keeps running
+  // until the queue empties because every chat() completion re-triggers the
+  // effect via activeWork transitioning back to null.
+  useEffect(() => {
+    if (busy) return;
+    if (promptQueue.length === 0) return;
+    const [next, ...rest] = promptQueue;
+    setPromptQueue(rest);
+    appendMessage(createTextMessage("user", next, nextMessageIndex()));
+    setError(null);
+    void chat(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, promptQueue]);
 
   async function chat(message: string) {
     startWork("Thinking…");
@@ -228,7 +256,7 @@ export default function Home() {
       maybeTitleSession(message);
       const idx = nextMessageIndex();
 
-      if (doneEvent) {
+      if (doneEvent && doneEvent.song && doneEvent.artifacts) {
         const composeResponse = {
           job_id: doneEvent.job_id ?? "chat",
           source: (doneEvent.source ?? "director") as "director" | "canned",
@@ -389,6 +417,8 @@ export default function Home() {
           onPromptChange={setPrompt}
           onFileChange={setSelectedFile}
           onSubmit={submit}
+          queuedPrompts={promptQueue}
+          onCancelQueued={(i) => setPromptQueue((prev) => prev.filter((_, idx) => idx !== i))}
         />
       </section>
     </main>

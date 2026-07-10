@@ -27,7 +27,8 @@ export type SynthPreset =
   | "sub_bass"
   | "pluck"
   | "warm_pad"
-  | "vocal_fx";
+  | "vocal_fx"
+  | "wobble_bass";
 
 export interface RosterItem {
   id: string;

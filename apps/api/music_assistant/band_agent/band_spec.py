@@ -117,9 +117,30 @@ class BandSkeleton(BaseModel):
 
     Emitted by the first (skeleton) LLM call. Small enough that the local
     llama-server returns it quickly and reliably even for structured output.
+
+    Field order is deliberate: `style_summary` → `canonical_instruments` →
+    `rhythmic_feel` come BEFORE `instruments`, so a structured-output LLM
+    (which generates JSON in schema order) commits to a style analysis and
+    an idiomatic instrument palette before it writes the roster. This
+    autoregressive conditioning is what keeps a dubstep request from getting
+    a jazz combo — the roster must be drawn from the already-emitted
+    canonical list.
     """
 
     genre: str
+    # 2-4 sentences naming the style/artist's signature sound, grounded in
+    # the research excerpts when present: subgenre, era, production hallmarks.
+    style_summary: str = ""
+    # The 5-10 instruments that are IDIOMATIC for this style — the closed
+    # palette the roster below must be drawn from.
+    canonical_instruments: list[str] = Field(default_factory=list)
+    # Director's commitment to the concrete rhythmic idiom of the requested
+    # style: kick/snare placement, subdivision, bass articulation, harmony
+    # phrasing, any signature feel (half-time, swung, 4-on-the-floor,
+    # syncopated, laid-back). Downstream fill calls read this so every
+    # instrument agent composes notes that fit the same groove instead of
+    # each one defaulting to generic pop quarter-notes.
+    rhythmic_feel: str = ""
     key: str = "C major"
     tempo_bpm: float = Field(default=120.0, gt=20.0, lt=300.0)
     time_signature_numerator: int = Field(default=4, ge=1, le=12)

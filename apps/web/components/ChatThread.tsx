@@ -128,9 +128,9 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
                 <span /><span /><span /><span /><span />
                 <span /><span /><span /><span /><span />
               </span>
-              {busyLabel}
+              <span className="busy-label-text">{busyLabel}</span>
               {typeof busyElapsedMs === "number" ? (
-                <span className="chat-meta-inline"> · {(busyElapsedMs / 1000).toFixed(1)}s</span>
+                <span className="chat-meta-inline">{(busyElapsedMs / 1000).toFixed(1)}s</span>
               ) : null}
               {onCancel ? (
                 <button type="button" className="cancel-button" onClick={onCancel}>

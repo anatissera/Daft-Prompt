@@ -35,6 +35,10 @@ class Header(BaseModel):
     num_bars: int
     sections: list[Section] = Field(default_factory=list)
     chord_progression: list[ChordSpan] = Field(default_factory=list)
+    # Director's commitment to the rhythmic idiom of the requested style.
+    # Free-text 3-6 sentences that the per-instrument agent reads before
+    # composing notes. Empty for older Songs (backwards-compatible default).
+    rhythmic_feel: str = ""
 
 
 from .patch import Patch, SynthPreset  # re-exported for backward compat

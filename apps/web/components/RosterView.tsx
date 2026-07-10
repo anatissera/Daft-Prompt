@@ -1,5 +1,6 @@
 import type { Header, RosterItem } from "@/lib/types";
 import { instrumentColor } from "@/lib/colors";
+import VolumeKnob from "@/components/VolumeKnob";
 
 interface RosterViewProps {
   header: Header;
@@ -8,8 +9,10 @@ interface RosterViewProps {
   embedded?: boolean;
   mutedTrackIds?: Set<string>;
   soloTrackIds?: Set<string>;
+  trackGains?: Record<string, number>;
   onToggleMute?: (id: string) => void;
   onToggleSolo?: (id: string) => void;
+  onGainChange?: (id: string, gain: number) => void;
 }
 
 export default function RosterView({
@@ -19,8 +22,10 @@ export default function RosterView({
   embedded = false,
   mutedTrackIds,
   soloTrackIds,
+  trackGains,
   onToggleMute,
   onToggleSolo,
+  onGainChange,
 }: RosterViewProps) {
   const hasControls = Boolean(onToggleMute && onToggleSolo);
 
@@ -45,10 +50,11 @@ export default function RosterView({
           const muted = mutedTrackIds?.has(r.id) ?? false;
           const solo = soloTrackIds?.has(r.id) ?? false;
           return (
-            <li key={`${r.id || "agent"}-${idx}`} className="roster-item">
-              <span className="avatar" style={{ background: instrumentColor(r.id) }}>
-                {r.instrument.slice(0, 1).toUpperCase()}
-              </span>
+            <li
+              key={`${r.id || "agent"}-${idx}`}
+              className="roster-item"
+              style={{ background: instrumentColor(r.id) }}
+            >
               <span className="roster-item-body">
                 <span className="roster-item-name">{r.instrument}</span>
                 <span className="roster-item-role">{r.role}</span>
@@ -69,6 +75,13 @@ export default function RosterView({
                     aria-pressed={solo}
                     title={solo ? "Unsolo" : "Solo"}
                   >S</button>
+                  {onGainChange ? (
+                    <VolumeKnob
+                      gain={trackGains?.[r.id] ?? 1}
+                      onChange={(g) => onGainChange(r.id, g)}
+                      label={r.instrument}
+                    />
+                  ) : null}
                 </span>
               ) : null}
             </li>

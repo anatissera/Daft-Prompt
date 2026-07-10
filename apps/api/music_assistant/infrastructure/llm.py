@@ -242,7 +242,14 @@ def _build_chat_model(provider: str, model: str, settings: Settings, role: str =
         elif is_local:
             max_tokens = None
         else:
-            max_tokens = 8000
+            # Flat-fee gateway (opencode.ai): budget must fit the LARGEST
+            # structured output we ask for. A dense 8-bar drum slice is
+            # ~200 notes ≈ 5-6k tokens of JSON plus the model's reasoning
+            # tokens — 8000 truncated exactly those calls, which then
+            # burned a rich+minimal retry pair per slice before falling to
+            # the deterministic pattern (the "drums never sound like the
+            # genre" failure mode).
+            max_tokens = 16000
         # Streaming ON only for real openrouter.ai — everything else
         # (llama.cpp, opencode.ai) mangles the OpenAI SSE format enough that
         # `with_structured_output` fails at the incremental JSON parse
