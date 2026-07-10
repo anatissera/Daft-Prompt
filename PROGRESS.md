@@ -50,14 +50,29 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Perform the final completion audit and an interactive local smoke path. Any
-further style provider must remain optional, local-only, and evidence-driven.
+Run a configured-provider composition benchmark that captures the new stage
+timings and checks generated MIDI quality. This is required before deciding on
+parallelism or declaring end-to-end composition responsiveness verified.
 
 ## Remaining milestones
 
-1. Run a full completion audit against PRODUCT.md and the user goal, including an interactive local smoke path.
-2. Use captured timing data from a configured LLM run to decide whether bounded parallelism is justified.
-3. Evaluate optional, local-only style-card/groove providers only if they can improve an observed quality gap without becoming a required runtime dependency.
+1. Run a configured-provider composition benchmark and use its timing data to decide whether bounded parallelism is justified.
+2. Evaluate optional, local-only style-card/groove providers only if they can improve an observed quality gap without becoming a required runtime dependency.
+3. Exercise optional Basic Pitch and live Songsterr behavior when their respective runtimes/permissions are available.
+
+## Completion audit (current evidence)
+
+| Requirement area | Evidence | Status |
+| --- | --- | --- |
+| Chat-first local analysis and Q&A | FastAPI routes, bounded chat context, deterministic profile answers, 555 backend tests | Verified locally |
+| Compact music rendering | Native tab, chord, melody, generated-song, mixer, MIDI, and score components; frontend build/test suite | Verified locally |
+| Canonical editable MIDI and targeted revisions | `SongState`, renderer, mixer/export, targeted-revision tests | Verified locally |
+| Multi-agent composition | Director/grouped instrument/negotiation/arbiter flow, stream timing, repair and quality tests | Verified structurally |
+| Bilingual conversation | Spanish routing, answer and revision tests | Verified locally |
+| Songsterr integration | Modular loader/store, normalized tab contracts and fixtures | Verified with fixtures; live availability remains external |
+| Optional transcription | Basic Pitch adapter and graceful unavailable path tests | Verified at adapter/contract level; runtime model not installed here |
+| Container runtime | Compose config, API image build, and no-build `/health` smoke | Verified locally |
+| Real composition quality and latency | Requires a configured LLM provider and representative runs | Unverified: credentials/provider runtime unavailable in this session |
 
 ## Known technical debt and risks
 
