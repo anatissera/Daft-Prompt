@@ -25,8 +25,9 @@ attempted.
   - Fix/test/browser: client classifies research/composition/edit/answer workflow
     before starting work and renders distinct stage contracts. Pure regression
     tests pass. Browser validation at 0.5 s showed `Researching reference…` plus
-    the five research stages and no composition wording. Commit/push pending.
-- [ ] Visible tablature: reproduce research/generation → guitar-tab request,
+    the five research stages and no composition wording. Committed as
+    `efa82de`; push attempted and rejected non-fast-forward.
+- [x] Visible tablature: reproduce research/generation → guitar-tab request,
   verify meaningful visible tab content, and surface rendering failures clearly.
   - Reproduced: research loaded three meaningful 89-measure guitar tracks for
     `Adiós`, but the follow-up returned prose and `tab_excerpt: null`.
@@ -34,6 +35,13 @@ attempted.
     `AnswerMusicQuestion`, bypassing `get_tab_excerpt`; generated `SongState`
     has no tab projection; UI failure handling only renders text and provides no
     explicit tab-unavailable attachment state.
+  - Fix/test/browser: reference and generated-song tab requests now create a
+    native excerpt attachment, skip leading rest-only windows, and preserve an
+    explicit error attachment. Fresh Adiós research followed by guitar tab
+    returned four visible measures with 37 playable string/fret events;
+    unavailable piano tab rendered a friendly alert. Backend regressions, UI
+    tests, and Playwright pass. Committed as `2b075ff`; push attempted and
+    rejected non-fast-forward.
 - [x] Respectful conversation auto-follow: reproduce missing scroll-to-latest,
   follow progress/completion near the bottom, preserve manual upward scrolling,
   resume near-bottom/send behavior, and validate fixed-composer offset in browser.
@@ -45,8 +53,9 @@ attempted.
     scrolling, and resumes near bottom/send. The composer remains outside the
     scroll viewport. Playwright populates an overflowing conversation, checks
     send/response completion, manual-scroll protection, resume, and composer
-    clearance; 1 browser test passes. Commit/push pending.
-- [ ] Reliable famous-song lookup and entity resolution: reproduce `Adiós` by
+    clearance; 1 browser test passes. Committed as `f7e9310`; push attempted and
+    rejected non-fast-forward.
+- [x] Reliable famous-song lookup and entity resolution: reproduce `Adiós` by
   Gustavo Cerati and `I Kissed a Girl` by Katy Perry; support featured artists,
   collaborations, multiple primaries, remixes/live versions, aliases, accents,
   punctuation, translated/alternate titles, and provider fallbacks. Build and
@@ -58,6 +67,17 @@ attempted.
     accent normalization, collaboration/version model, scored entity matching,
     neutral metadata provider, query variants, cross-provider acceptance rule,
     or reusable researcher cache.
+  - Fix/test/browser: structured entity resolution now models primary,
+    featured, collaborating, producer, remix, version, and alternate-title
+    credits. Normalized variants feed bounded parallel providers; MusicBrainz
+    supplies conservatively scored metadata with retry, other research sources
+    and Songsterr remain independent fallbacks, and profiles are cached. Live
+    chat returned 18 claims for Adiós, 31 for I Kissed a Girl, and 54 for Uptown
+    Funk. The 40-track benchmark measured 97.5% identification, 97.5% correct
+    artist resolution, 90% featured-artist resolution, 97.5% usable evidence,
+    2.608 s average latency, 5% fallback frequency, and 2.5% false matches;
+    provider usage was MusicBrainz 38, Songsterr 1, Wikipedia 1. Committed as
+    `cc441db`; push attempted and rejected non-fast-forward.
 
 Prior completion audit gap: Priority 1 was marked complete from focused source
 and unit evidence without browser-validating these full chat workflows. That
@@ -65,10 +85,11 @@ claim is withdrawn until all four items above have reproduction evidence, root
 causes, fixes, regression tests, end-to-end browser validation, atomic commits,
 and push attempts.
 
-Priority 1 completion audit: verified 2026-07-10. Full backend suite: 567
-passed, 1 skipped. Full frontend suite: TypeScript clean, 60 tests passed, and
-the production Next.js build completed. Each fix is committed locally and each
-push was attempted; all pushes were rejected because the remote branch is ahead.
+Priority 1 completion audit: verified again 2026-07-10 after reopening. Full
+backend suite: 587 passed, 1 skipped. Full frontend suite: TypeScript clean, 64
+tests passed, 2 Playwright browser tests passed, and the production Next.js
+build completed. Each fix is committed locally and each push was attempted; all
+pushes were rejected because the remote branch is ahead.
 
 - [x] Browser playback: reproduce remote soundfont/load failures.
   - Status: fixed and verified.
