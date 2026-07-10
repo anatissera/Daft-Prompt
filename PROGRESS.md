@@ -11,6 +11,11 @@ attempted.
 
 ### Priority 1 — Existing regressions
 
+Priority 1 completion audit: verified 2026-07-10. Full backend suite: 567
+passed, 1 skipped. Full frontend suite: TypeScript clean, 60 tests passed, and
+the production Next.js build completed. Each fix is committed locally and each
+push was attempted; all pushes were rejected because the remote branch is ahead.
+
 - [x] Browser playback: reproduce remote soundfont/load failures.
   - Status: fixed and verified.
   - Root cause/evidence: `TrackMixer` creates one `Tone.Sampler` per row and
@@ -22,7 +27,8 @@ attempted.
     `Tone.PolySynth` voices and makes zero soundfont/sample network requests
     (previously 5 requests per melodic track and up to 47 for a drum track).
     Mixer behavior tests, the no-remote-playback architecture regression test,
-    TypeScript, and a production Next.js build pass. Commit/push pending.
+    TypeScript, and a production Next.js build pass. Committed as `b1e1f27`;
+    push attempted and rejected non-fast-forward.
 - [x] Score rendering: reproduce complete score-generation failures and verify
   that missing notation can currently interrupt the product flow.
   - Status: fixed and verified.
@@ -34,7 +40,8 @@ attempted.
     a notation failure preserves MIDI. The score UI validates HTTP responses,
     catches import/fetch/parse/render errors, explains that playback/MIDI remain
     available, and offers retry. Converter/resilience tests, TypeScript, and the
-    production frontend build pass. Commit/push pending.
+    production frontend build pass. Committed as `7192005`; push attempted and
+    rejected non-fast-forward.
 - [x] Chat keyboard behavior: reproduce Enter not sending and establish the
   current Shift+Enter behavior.
   - Status: fixed and verified.
@@ -43,7 +50,8 @@ attempted.
     newline. `ChatComposer` has no `onKeyDown` submission behavior.
   - Fix/tests/commit/push: Enter now requests form submission, Shift+Enter keeps
     its native newline, and IME composition is protected. TypeScript and 12
-    focused frontend tests pass. Commit/push pending.
+    focused frontend tests pass. Committed as `572fc25`; push attempted and
+    rejected non-fast-forward.
 - [x] Chat-first asset workflow: reproduce notation/tab/MIDI/preview rendering
   interrupting or blocking continued conversation.
   - Status: fixed and verified.
@@ -56,7 +64,7 @@ attempted.
     Local playback and client-side MIDI export are immediately usable. On a
     canned sketch, synchronous artifact rendering took 32.446 ms while task
     scheduling took 0.016 ms. Focused API/architecture/stream tests pass.
-    Commit/push pending.
+    Committed as `7192005`; push attempted and rejected non-fast-forward.
 - [x] Research conversation continuity: reproduce follow-up questions losing
   freshly gathered song/artist/album evidence.
   - Status: fixed and verified.
@@ -70,11 +78,11 @@ attempted.
     LLM routing call. Evidence/findings questions summarize the five strongest
     source-backed claims. A full research-then-follow-up regression test passes
     with an LLM stub that raises if invoked; 68 focused chat/query/answer tests
-    pass. Commit/push pending.
+    pass. Committed as `e02208d`; push attempted and rejected non-fast-forward.
 
-### Later priorities (do not start before Priority 1 is verified)
+### Later priorities
 
-- [ ] Priority 2: non-destructive incremental composition editing.
+- [ ] Priority 2: non-destructive incremental composition editing (active).
 - [ ] Priority 3: genre-aware, purpose-driven minimal instrumentation.
 - [ ] Priority 4: research-pipeline evaluation and benchmarked Giner comparison.
 - [ ] Full Phase 2 completion audit.
@@ -166,8 +174,8 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Phase 2 Priority 1 regression reproduction. All five named regressions must be
-reproduced before the first product-code fix.
+Phase 2 Priority 2: reproduce destructive composition edits, define preservation
+invariants, and make current-song revisions non-destructive.
 
 ## Remaining milestones
 
