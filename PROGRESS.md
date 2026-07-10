@@ -1,6 +1,6 @@
 # Daft Prompt progress
 
-Last reviewed: 2026-07-09
+Last reviewed: 2026-07-10
 
 ## Completed milestones
 
@@ -16,6 +16,9 @@ Last reviewed: 2026-07-09
 - Composition SSE events now include cumulative and per-stage elapsed time; artifact completion reports total elapsed time. This is the profiling baseline before any concurrency redesign.
 - The compact negotiation detail now displays actual per-stage durations, keeping responsiveness visible without a dashboard-first workflow.
 - Bass/lead/solo/melody parts receive deterministic overlap validation, allowing the existing repair loop to reject physically implausible monophonic note collisions without restricting harmony tracks.
+- The default Gemini-to-OpenRouter provider fallback is now installable in the standard backend runtime, matching its default configuration instead of failing only after a Gemini outage or quota event.
+- Vertex AI Gemini is verified against a real project through Application Default Credentials; no API key is required or stored by the repository.
+- The director now explicitly batches independent rhythm instruments together, retaining dependency-ordered composition while avoiding needless one-instrument waves.
 
 ## Current architecture
 
@@ -50,13 +53,14 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Run a configured-provider composition benchmark that captures the new stage
-timings and checks generated MIDI quality. This is required before deciding on
-parallelism or declaring end-to-end composition responsiveness verified.
+Use the measured Vertex timings to evaluate the next responsiveness improvement:
+make composition-group boundaries visible in the streamed agent detail, then
+compare representative arrangements before changing LangGraph concurrency.
 
 ## Remaining milestones
 
-1. Run a configured-provider composition benchmark and use its timing data to decide whether bounded parallelism is justified.
+1. Surface composition-group boundaries in the streamed agent detail, then run
+   comparable Vertex benchmarks before changing LangGraph concurrency.
 2. Evaluate optional, local-only style-card/groove providers only if they can improve an observed quality gap without becoming a required runtime dependency.
 3. Exercise optional Basic Pitch and live Songsterr behavior when their respective runtimes/permissions are available.
 
@@ -72,7 +76,7 @@ parallelism or declaring end-to-end composition responsiveness verified.
 | Songsterr integration | Modular loader/store, normalized tab contracts and fixtures | Verified with fixtures; live availability remains external |
 | Optional transcription | Basic Pitch adapter and graceful unavailable path tests | Verified at adapter/contract level; runtime model not installed here |
 | Container runtime | Compose config, API image build, and no-build `/health` smoke | Verified locally |
-| Real composition quality and latency | Requires a configured LLM provider and representative runs | Unverified: credentials/provider runtime unavailable in this session |
+| Real composition quality and latency | Vertex AI Gemini (`daft-promt`, ADC) streamed a short four-part funk sketch in 18.2s with no errors and 0.879 overall harmonic fit; director stage 7.5s | Verified for a short paid-Vertex run; broader arrangement benchmarks remain useful before changing graph concurrency |
 
 ## Known technical debt and risks
 
@@ -80,3 +84,4 @@ parallelism or declaring end-to-end composition responsiveness verified.
 - Deep audio analysis can be slow for long songs and stem separation is best-effort.
 - Existing Pydantic/third-party deprecation warnings should be addressed separately from product work.
 - The Docker image is necessarily large because local MIR depends on Torch/Demucs.
+- Short Vertex results are encouraging but are not a full latency SLO: real performance varies with arrangement size, group dependencies, and Vertex service latency. Preserve the current bounded negotiation unless comparable benchmarks show a graph-level bottleneck.

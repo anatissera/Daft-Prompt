@@ -73,6 +73,14 @@ def test_run_director_maps_to_songstate():
     assert song.roster[0].is_drum is True
 
 
+def test_director_prompt_groups_independent_rhythm_parts_for_responsiveness():
+    role, system_prompt = _prompt("mellow funk groove")[0]
+
+    assert role == "system"
+    assert "drum kit and bass together in the first batch" in system_prompt
+    assert "Do not create one-instrument batches" in system_prompt
+
+
 def test_roster_is_capped():
     song = run_director("huge orchestra", llm=FakeLLM(_output(12)))
     assert len(song.roster) == MAX_ROSTER
