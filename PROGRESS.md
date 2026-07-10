@@ -22,6 +22,7 @@ Last reviewed: 2026-07-10
 - Streamed agent passes carry their director-defined composition-group name, and the compact negotiation feed displays it beside round duration for dependency-aware latency diagnosis.
 - An opt-in `docker-compose.vertex.yml` mounts existing host ADC read-only and requires an explicit project id, so the local Docker stack can use Vertex AI without committing credentials; its resolved configuration and `/health` startup were verified locally.
 - Pydantic's protected-namespace configuration now preserves the existing `MODEL_*` environment contract without emitting distracting startup warnings.
+- Comparable live Vertex graph benchmarks are recorded: a short funk sketch streamed its director plan at 8.6s and completed at 21.0s; an 8-bar, four-part sketch streamed its plan at the same stage, completed at 23.0s with no errors, and reached 0.858 overall harmonic fit. The small latency increase does not justify a graph-concurrency redesign.
 
 ## Current architecture
 
@@ -56,16 +57,17 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Run comparable Vertex benchmarks across small and fuller arrangements. Change
-LangGraph concurrency only if those measurements reveal an avoidable graph-level
-bottleneck.
+Perform a requirement-by-requirement completion audit against the goal objective
+and product documentation, then address only a concrete uncovered gap.
 
 ## Remaining milestones
 
-1. Run comparable Vertex benchmarks across arrangement sizes and dependency
-   waves before changing LangGraph concurrency.
-2. Evaluate optional, local-only style-card/groove providers only if they can improve an observed quality gap without becoming a required runtime dependency.
-3. Exercise optional Basic Pitch and live Songsterr behavior when their respective runtimes/permissions are available.
+1. Complete a requirement-by-requirement evidence audit and address only a
+   concrete uncovered gap.
+2. Evaluate optional, local-only style-card/groove providers only if they can
+   improve an observed quality gap without becoming a required runtime dependency.
+3. Exercise optional Basic Pitch and live Songsterr behavior when their
+   respective runtimes/permissions are available.
 
 ## Completion audit (current evidence)
 
@@ -79,7 +81,7 @@ bottleneck.
 | Songsterr integration | Modular loader/store, normalized tab contracts and fixtures | Verified with fixtures; live availability remains external |
 | Optional transcription | Basic Pitch adapter and graceful unavailable path tests | Verified at adapter/contract level; runtime model not installed here |
 | Container runtime | Compose config, API image build, and no-build `/health` smoke | Verified locally |
-| Real composition quality and latency | Vertex AI Gemini (`daft-promt`, ADC) streamed a short four-part funk sketch in 18.2s with no errors and 0.879 overall harmonic fit; director stage 7.5s | Verified for a short paid-Vertex run; broader arrangement benchmarks remain useful before changing graph concurrency |
+| Real composition quality and latency | Vertex AI Gemini (`daft-promt`, ADC) benchmarked a short funk graph at 21.0s (director 8.6s) and an 8-bar four-part graph at 23.0s, with no errors and 0.858 overall harmonic fit | Verified for comparable paid-Vertex runs; retain the current grouped LangGraph orchestration because no graph-level bottleneck was observed |
 
 ## Known technical debt and risks
 
@@ -87,4 +89,4 @@ bottleneck.
 - Deep audio analysis can be slow for long songs and stem separation is best-effort.
 - Existing Pydantic/third-party deprecation warnings should be addressed separately from product work.
 - The Docker image is necessarily large because local MIR depends on Torch/Demucs.
-- Short Vertex results are encouraging but are not a full latency SLO: real performance varies with arrangement size, group dependencies, and Vertex service latency. Preserve the current bounded negotiation unless comparable benchmarks show a graph-level bottleneck.
+- Short Vertex results are encouraging but are not a full latency SLO: real performance varies with arrangement size, group dependencies, and Vertex service latency. Preserve the current bounded negotiation unless a future benchmark shows a graph-level bottleneck.
