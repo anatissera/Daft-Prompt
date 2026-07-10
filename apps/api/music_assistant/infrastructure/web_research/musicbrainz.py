@@ -65,11 +65,12 @@ class MusicBrainzConnector:
         first_date = str(recording.get("first-release-date") or "")
         year = int(first_date[:4]) if first_date[:4].isdigit() else query.year
         primary = [artist for artist in artists if artist not in featured] or artists
+        effective_featured = featured or query.featured_artists
         canonical = query.model_copy(update={
             "title": str(recording.get("title") or query.title),
             "artist": " & ".join(primary) if primary else query.artist,
             "primary_artists": primary,
-            "featured_artists": featured or query.featured_artists,
+            "featured_artists": effective_featured,
             "collaborating_artists": primary[1:],
             "album": album,
             "year": year,
@@ -80,12 +81,12 @@ class MusicBrainzConnector:
             _claim("recording", "metadata", f"MusicBrainz recording: {canonical.title}", source_url, 0.9, f"Matched recording at {score:.2f}"),
             _claim("artists", "credit", "Recording artists: " + ", ".join(artists), source_url, 0.9, "MusicBrainz artist credit"),
         ]
-        if featured:
-            claims.append(_claim("featured", "credit", "Featured artists: " + ", ".join(featured), source_url, 0.88, "MusicBrainz featured credit"))
-        if album:
-            claims.append(_claim("album", "metadata", f"Release: {album}", source_url, 0.75, "MusicBrainz release"))
-        if year:
-            claims.append(_claim("year", "metadata", f"First released: {year}", source_url, 0.75, "MusicBrainz first release date"))
+        if effective_featured:
+            claims.append(_claim("featured", "credit", "Featured artists: " + ", ".join(effective_featured), source_url, 0.88, "Resolved featured credit"))
+        # A recording can be attached to many later compilations, tutorials,
+        # bootlegs, and reissues. Until release-group canonicalization is in
+        # place, keep album/year on the candidate identity for diagnostics but
+        # do not promote the first returned release into user-facing evidence.
         return ConnectorResult(source_name=self.source_name, query=canonical, fetch_status="fetched", claims=claims)
 
 

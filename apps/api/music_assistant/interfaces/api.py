@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 import re
 import time
@@ -21,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
 from music_assistant.application.analyze_reference import AnalyzeReference, enrich_profile_with_transcription
-from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.application.answer_music_question import AnswerMusicQuestion, LLMGroundedMusicQuestionExplainer
 from music_assistant.application.chat_music import ChatMusic
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
 from music_assistant.application.language import is_spanish
@@ -78,7 +79,14 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "commit": _build_commit()}
+
+
+def _build_commit() -> str:
+    try:
+        return str(json.loads(Path("/app/build-info.json").read_text())["commit"])
+    except (OSError, KeyError, TypeError, ValueError):
+        return "development-worktree"
 
 
 @app.post("/references/analyze", response_model=ReferenceProfile)
@@ -119,6 +127,14 @@ def research_reference(req: ResearchRequest) -> ReferenceProfile:
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"could not research song: {exc}") from exc
     REFERENCE_STORE.save(profile)
+    return profile
+
+
+@app.get("/references/{reference_id}", response_model=ReferenceProfile)
+def get_reference(reference_id: str) -> ReferenceProfile:
+    profile = REFERENCE_STORE.get(reference_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"reference_id not found: {reference_id}")
     return profile
 
 
@@ -392,11 +408,17 @@ def _render_artifacts_safely(song, job_path: Path) -> None:
 
 
 def _chat_music() -> ChatMusic:
+    chat_model = _chat_model()
+    explainer = (
+        LLMGroundedMusicQuestionExplainer(chat_model, songsterr_tab_store=SONGSTERR_TAB_STORE)
+        if chat_model is not None
+        else None
+    )
     return ChatMusic(
         compose_song=_compose_song(),
-        answer_music_question=AnswerMusicQuestion(songsterr_tab_store=SONGSTERR_TAB_STORE),
+        answer_music_question=AnswerMusicQuestion(explainer, songsterr_tab_store=SONGSTERR_TAB_STORE),
         reference_store=REFERENCE_STORE,
-        chat_model=_chat_model(),
+        chat_model=chat_model,
         song_researcher=_song_researcher(),
         songsterr_tab_store=SONGSTERR_TAB_STORE,
         enable_web_research=bool(getattr(get_settings(), "enable_web_research", False)),

@@ -161,3 +161,40 @@ def test_chat_agent_hides_song_research_when_offline_mode_is_enabled():
     prompt = "\n".join(message["content"] for message in model.invoker.calls[0])
     assert "Do not choose research_song" in prompt
     assert "ENABLE_WEB_RESEARCH=true" in prompt
+
+
+def test_chat_agent_uses_llm_structured_song_identity_instead_of_genre_keywords():
+    tools = FakeTools()
+    model = FakeChatModel([
+        ChatAgentDecision(
+            tool="research_song",
+            research_scope="song",
+            song_title="Get Lucky",
+            song_artist="Daft Punk",
+        )
+    ])
+    agent = ChatAgent(chat_model=model, tools=tools)
+
+    agent.run(ChatRequest(message="Qué acordes usa Get Lucky de Daft Punk"))
+
+    assert tools.calls[0][0] == "research_song"
+    assert tools.calls[0][1].query == "Get Lucky by Daft Punk"
+    prompt = "\n".join(message["content"] for message in model.invoker.calls[0])
+    assert "Daft Punk is an artist, not the punk genre" in prompt
+
+
+def test_chat_agent_preserves_explicit_featured_artist_credit():
+    tools = FakeTools()
+    model = FakeChatModel([
+        ChatAgentDecision(
+            tool="research_song",
+            research_scope="song",
+            song_title="Uptown Funk",
+            song_artist="Mark Ronson",
+        )
+    ])
+    agent = ChatAgent(chat_model=model, tools=tools)
+
+    agent.run(ChatRequest(message="What chords does Uptown Funk by Mark Ronson feat. Bruno Mars use?"))
+
+    assert tools.calls[0][1].query == "Uptown Funk by Mark Ronson featuring Bruno Mars"

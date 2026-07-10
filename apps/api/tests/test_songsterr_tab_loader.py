@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
-from music_assistant.infrastructure.web_research.fetch import CurlPageFetcher
+from music_assistant.infrastructure.web_research.fetch import HttpxPageFetcher
 from music_assistant.infrastructure.web_research.songsterr_tabs import SongsterrTabLoader
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_source_connector import ResolvedSongQuery
@@ -114,10 +114,10 @@ def revision_payload(name: str, *, instrument_id: int = 33) -> str:
     )
 
 
-def test_songsterr_tab_loader_uses_curl_fetcher_by_default():
+def test_songsterr_tab_loader_uses_early_hints_capable_fetcher_by_default():
     loader = SongsterrTabLoader()
 
-    assert isinstance(loader.fetcher, CurlPageFetcher)
+    assert isinstance(loader.fetcher, HttpxPageFetcher)
     assert loader.fetcher.timeout_seconds == 12.0
     assert loader.total_budget_seconds == 45.0
 

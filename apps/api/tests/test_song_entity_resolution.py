@@ -45,6 +45,13 @@ def test_entity_resolution_handles_accents_features_collaborations_and_versions(
     assert normalize_match_text("SICKO MODE") == "sicko mode"
 
 
+def test_entity_resolution_handles_spanish_question_and_artist_separator():
+    resolved = resolve_song_entity("Qué acordes usa Get Lucky de Daft Punk?")
+
+    assert resolved.title == "Get Lucky"
+    assert resolved.artist == "Daft Punk"
+
+
 def test_musicbrainz_accepts_correct_identity_and_preserves_featured_credit():
     fetcher = _JsonFetcher({
         "recordings": [{

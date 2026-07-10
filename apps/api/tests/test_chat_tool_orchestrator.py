@@ -152,7 +152,8 @@ def test_llm_tool_orchestrator_researches_and_persists_profile():
 
     assert response.intent == "answer_reference"
     assert response.reference_id == "ref_researched"
-    assert "Research ready" in response.reply
+    assert "Identified Space Cowboy" in response.reply
+    assert "missing specific evidence" in response.reply
     assert researcher.calls == ["Space Cowboy"]
     assert store.get("ref_researched") is not None
     assert composer.calls == []

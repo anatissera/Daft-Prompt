@@ -19,7 +19,7 @@ _PRIMARY_SPLIT_RE = re.compile(r"\s+(?:&|and|x|with|y)\s+", re.IGNORECASE)
 
 
 def resolve_song_entity(query: str) -> ResolvedSongQuery:
-    cleaned = normalize_display_text(query)
+    cleaned = _strip_song_question(normalize_display_text(query))
     title_text, artist_text = _split_title_artist(cleaned)
 
     version_match = _VERSION_RE.search(title_text)
@@ -100,13 +100,23 @@ def token_similarity(left: str, right: str) -> float:
 
 
 def _split_title_artist(value: str) -> tuple[str, str]:
-    by_parts = re.split(r"\s+by\s+", value, maxsplit=1, flags=re.IGNORECASE)
+    by_parts = re.split(r"\s+(?:by|de)\s+", value, maxsplit=1, flags=re.IGNORECASE)
     if len(by_parts) == 2:
         return _clean_part(by_parts[0]), _clean_part(by_parts[1])
     dash = re.match(r"^(.+?)\s+-\s+(.+)$", value)
     if dash:
         return _clean_part(dash.group(2)), _clean_part(dash.group(1))
     return _clean_part(value), ""
+
+
+def _strip_song_question(value: str) -> str:
+    return re.sub(
+        r"^\s*(?:what\s+(?:chords|key|instruments?)\s+(?:does|is|are)\s+|"
+        r"qu[eé]\s+(?:acordes|tonalidad|instrumentos?)\s+(?:usa|tiene|es|hay\s+en)\s+)",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    ).strip(" ?")
 
 
 def _extract_people(value: str, pattern: re.Pattern[str]) -> list[str]:

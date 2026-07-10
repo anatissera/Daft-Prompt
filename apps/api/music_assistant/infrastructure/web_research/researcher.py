@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
+from urllib.parse import quote_plus
 
 from music_assistant.domain.audio_profile import (
     AnalysisNote,
@@ -155,12 +157,154 @@ class ConnectorSongResearcher(SongResearcher):
         self._cache[cache_key] = profile.model_copy(deep=True)
         return profile
 
+    def research_targeted(self, profile: ReferenceProfile, question: str) -> ReferenceProfile:
+        """Fill one missing answer field without discarding the current identity.
+
+        Specialized song connectors remain the first pass. When they did not
+        yield the requested field, bounded broad research is used only for that
+        aspect and its source-backed claims are merged into the same reference.
+        """
+        if self.broad_researcher is None or profile.knowledge is None:
+            return profile
+        identity = profile.knowledge.identity
+        song = " by ".join(part for part in [identity.title, identity.artist] if part)
+        aspect = _targeted_aspect(question)
+        targeted = self.broad_researcher.research(f"{song} {aspect}")
+        if targeted.knowledge is None:
+            return profile
+        wikipedia_claims = _targeted_wikipedia_claims(identity.title, identity.artist, question)
+        if wikipedia_claims:
+            targeted = targeted.model_copy(
+                update={
+                    "knowledge": targeted.knowledge.model_copy(
+                        # The canonical identity-matched page outranks generic
+                        # search-result shells, which frequently contain
+                        # unrelated snippets from other songs and artists.
+                        update={"evidence_claims": wikipedia_claims},
+                        deep=True,
+                    )
+                },
+                deep=True,
+            )
+        existing = {
+            (claim.claim_type, claim.source_url, claim.value)
+            for claim in profile.knowledge.evidence_claims
+        }
+        added = [
+            claim.model_copy(update={"claim_id": f"targeted_{index}_{claim.claim_id}"})
+            for index, claim in enumerate(targeted.knowledge.evidence_claims)
+            if (claim.claim_type, claim.source_url, claim.value) not in existing
+        ]
+        if not added:
+            return profile
+        knowledge = profile.knowledge.model_copy(
+            update={"evidence_claims": [*profile.knowledge.evidence_claims, *added]},
+            deep=True,
+        )
+        evidence = [
+            *profile.research_evidence,
+            *[item for item in targeted.research_evidence if item.url not in {old.url for old in profile.research_evidence}],
+        ]
+        enriched = profile.model_copy(update={"knowledge": knowledge, "research_evidence": evidence}, deep=True)
+        self._cache[_entity_cache_key(ResolvedSongQuery(title=identity.title, artist=identity.artist))] = enriched.model_copy(deep=True)
+        return enriched
+
 
 ResearchScope = Literal["song", "artist", "album", "style", "genre", "era"]
 
 
+def _targeted_aspect(question: str) -> str:
+    normalized = question.lower()
+    if any(token in normalized for token in ["chord", "acorde", "harmony", "armon"]):
+        return "chords harmony"
+    if any(token in normalized for token in ["key", "tonalidad", "tono"]):
+        return "musical key tonality"
+    if any(token in normalized for token in ["guitar", "guitarra"]):
+        return "guitar role rhythm riff"
+    if any(token in normalized for token in ["arrangement", "arreglo", "section", "estructura"]):
+        return "arrangement sections structure"
+    if any(token in normalized for token in ["groove", "rhythm", "ritmo"]):
+        return "rhythm groove"
+    return "instrumentation production"
+
+
+def _targeted_wikipedia_claims(title: str, artist: str | None, question: str) -> list[EvidenceClaim]:
+    fetcher = UrlLibPageFetcher(timeout_seconds=8.0)
+    search = quote_plus(" ".join(part for part in [title, artist] if part))
+    search_url = (
+        "https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch="
+        f"{search}&gsrlimit=5&prop=info&inprop=url&format=json"
+    )
+    try:
+        pages = json.loads(fetcher.fetch(search_url)).get("query", {}).get("pages", {}).values()
+    except (RuntimeError, json.JSONDecodeError, AttributeError):
+        return []
+    title_key = normalize_match_text(title)
+    artist_key = normalize_match_text(artist or "")
+    candidates = [
+        page for page in pages
+        if title_key in normalize_match_text(str(page.get("title") or ""))
+    ]
+    if not candidates:
+        return []
+    page = max(
+        candidates,
+        key=lambda item: int(bool(artist_key and artist_key in normalize_match_text(str(item.get("title") or "")))),
+    )
+    page_title = str(page.get("title") or "")
+    extract_url = (
+        "https://en.wikipedia.org/w/api.php?action=query&titles="
+        f"{quote_plus(page_title)}&prop=extracts%7Cinfo&explaintext=1&inprop=url&format=json"
+    )
+    try:
+        payload = json.loads(fetcher.fetch(extract_url))
+        detail = next(iter(payload.get("query", {}).get("pages", {}).values()))
+    except (RuntimeError, json.JSONDecodeError, AttributeError, StopIteration):
+        return []
+    source_url = str(detail.get("fullurl") or page.get("fullurl") or extract_url)
+    sentences = re.split(r"(?<=[.!?])\s+", str(detail.get("extract") or ""))
+    normalized_question = question.lower()
+    if any(token in normalized_question for token in ["chord", "acorde", "harmony", "armon"]):
+        wanted = ("chord", "progression", "harmony", "harmonic")
+        claim_type = "chord_progression"
+    elif any(token in normalized_question for token in ["key", "tonalidad", "tono"]):
+        wanted = ("key of", "tonality", "mode of", "major", "minor")
+        claim_type = "key"
+    elif any(token in normalized_question for token in ["guitar", "guitarra"]):
+        wanted = ("guitar", "riff", "rhythm", "strum", "chord")
+        claim_type = "trait"
+    elif any(token in normalized_question for token in ["arrangement", "arreglo", "section", "estructura"]):
+        wanted = ("intro", "verse", "chorus", "bridge", "production", "arrangement", "section")
+        claim_type = "trait"
+    elif any(token in normalized_question for token in ["groove", "rhythm", "ritmo"]):
+        wanted = ("rhythm", "groove", "syncopat", "funk", "disco", "tempo")
+        claim_type = "groove"
+    else:
+        wanted = ("guitar", "bass", "drum", "piano", "keyboard", "synthesizer", "vocal")
+        claim_type = "instrumentation"
+    selected = [sentence.strip() for sentence in sentences if any(token in sentence.lower() for token in wanted)]
+    return [
+        EvidenceClaim(
+            claim_id=f"wikipedia_targeted_{index}",
+            claim_type=claim_type,  # type: ignore[arg-type]
+            value=sentence[:500],
+            normalized_value=sentence[:500],
+            source_name="Wikipedia",
+            source_url=source_url,
+            extraction_method="api",
+            confidence=0.65,
+            snippet=sentence[:280],
+        )
+        for index, sentence in enumerate(selected[:8])
+    ]
+
+
 def classify_research_scope(query: str) -> ResearchScope:
     normalized = query.strip().lower()
+    # Resolve an explicit title/artist pair before scanning genre words. Artist
+    # names such as "Daft Punk" must never turn a song lookup into genre research.
+    if resolve_song_entity(query).artist:
+        return "song"
     for scope, pattern in [
         ("album", r"\b(album|record)\b"),
         ("artist", r"\b(artist|band|music of|style of)\b"),
@@ -497,11 +641,12 @@ def _collect_with_candidates(
     )
     failures = []
     last_result: ConnectorResult | None = None
-    seen_urls: set[str | None] = set()
+    seen_attempts: set[tuple[str, str, str | None]] = set()
     for attempt in attempts:
-        if attempt.source_url in seen_urls:
+        attempt_key = (attempt.title.casefold(), (attempt.artist or "").casefold(), attempt.source_url)
+        if attempt_key in seen_attempts:
             continue
-        seen_urls.add(attempt.source_url)
+        seen_attempts.add(attempt_key)
         result = connector.collect(attempt)
         if result.claims:
             return result.model_copy(update={"failures": failures + result.failures})

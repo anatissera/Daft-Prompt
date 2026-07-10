@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel
@@ -36,12 +37,16 @@ class ChatAgent:
         self.tools = tools
 
     def run(self, request: Any) -> ChatAgentResult:
-        decision = self.chat_model.with_structured_output(ChatAgentDecision).invoke(
-            _decision_messages(
-                request,
-                web_research_enabled=bool(getattr(self.tools, "enable_web_research", True)),
-            )
+        invoker = self.chat_model.with_structured_output(ChatAgentDecision)
+        messages = _decision_messages(
+            request,
+            web_research_enabled=bool(getattr(self.tools, "enable_web_research", True)),
         )
+        decision = invoker.invoke(messages)
+        if decision is None:
+            decision = invoker.invoke(messages)
+        if decision is None:
+            raise RuntimeError("chat classifier returned no structured decision")
         output = self._execute(decision, request)
         if decision.tool == "clarify":
             clarification = decision.clarification or output.answer or "Which song or musical task should I use?"
@@ -75,7 +80,9 @@ class ChatAgent:
                 )
             )
         if decision.tool == "research_song":
-            return self.tools.research_song(ResearchSongToolInput(query=decision.query or request.message))
+            return self.tools.research_song(
+                ResearchSongToolInput(query=_research_query(decision, request.message))
+            )
         if decision.tool == "get_song_profile":
             return self.tools.get_song_profile(SongReferenceToolInput(reference_id=_required_reference(reference_id)))
         if decision.tool == "get_chords":
@@ -131,6 +138,31 @@ def _required_reference(reference_id: str | None) -> str:
     return reference_id
 
 
+def _research_query(decision: ChatAgentDecision, user_message: str) -> str:
+    if decision.research_scope == "song" and decision.song_title:
+        query = " by ".join(
+            part.strip() for part in [decision.song_title, decision.song_artist] if part and part.strip()
+        )
+        featured = decision.song_featured_artists or _explicit_featured_artists(user_message)
+        if featured:
+            query += " featuring " + " & ".join(featured)
+        return query
+    candidate = (decision.query or "").strip()
+    # The original message can preserve a title/artist separator that an LLM
+    # accidentally removed while "cleaning" the query.
+    original_has_credit = bool(re.search(r"\s+(?:by|de)\s+", user_message, re.IGNORECASE))
+    candidate_has_credit = bool(re.search(r"\s+(?:by|de)\s+", candidate, re.IGNORECASE))
+    return user_message if original_has_credit and not candidate_has_credit else (candidate or user_message)
+
+
+def _explicit_featured_artists(message: str) -> list[str]:
+    match = re.search(r"\b(?:feat\.?|ft\.?|featuring)\s+(.+?)(?:\s+(?:use|uses|usa|tiene)\b|[?]|$)", message, re.IGNORECASE)
+    if not match:
+        return []
+    value = match.group(1).strip(" .,")
+    return [value] if value else []
+
+
 def _decision_messages(request: Any, *, web_research_enabled: bool) -> list[dict[str, str]]:
     reference_context = request.reference_id or ", ".join(request.reference_ids) or "none"
     profile_context = getattr(request, "reference_context", "") or "No current profile."
@@ -148,7 +180,11 @@ def _decision_messages(request: Any, *, web_research_enabled: bool) -> list[dict
             "role": "system",
             "content": (
                 "You are LLMinem's chat agent. Choose exactly one explicit music tool. "
-                f"{research_instruction}If they ask to analyze "
+                f"{research_instruction}For research_song, semantically decide whether the named entity is a song, "
+                "artist, album, style, genre, or era. Do not classify an artist from keywords inside its name: "
+                "for example, Daft Punk is an artist, not the punk genre. For a song, always populate "
+                "research_scope='song', song_title, song_artist, and song_featured_artists separately; preserve featured-artist credits. "
+                "Use query only for non-song scopes. If they ask to analyze "
                 "this audio/file but no reference is listed, clarify that they need to attach audio. "
                 "Use get_chords/get_sections/get_instruments/get_instrument_summary/get_tab_excerpt "
                 "for existing profiles. Use request_composition for composition and keep composition "

@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Protocol
 
+from pydantic import BaseModel, Field
+
 from music_assistant.application.profile_queries import answer_from_profile
 from music_assistant.application.language import is_spanish
 from music_assistant.domain.audio_profile import (
@@ -13,6 +15,11 @@ from music_assistant.domain.audio_profile import (
     ReferenceProfile,
     confidence_label,
 )
+from music_assistant.ports.llm import ChatModel
+
+
+class GroundedAnswer(BaseModel):
+    answer: str = Field(min_length=1)
 
 
 class MusicQuestionExplainer(Protocol):
@@ -26,6 +33,46 @@ class AnswerMusicQuestion:
 
     def execute(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer:
         return self.explainer.answer(question, profile)
+
+
+class LLMGroundedMusicQuestionExplainer:
+    """Conversational synthesis over deterministic, source-backed evidence."""
+
+    def __init__(self, chat_model: ChatModel, *, songsterr_tab_store: Any | None = None) -> None:
+        self.chat_model = chat_model
+        self.fallback = DeterministicMusicQuestionExplainer(songsterr_tab_store=songsterr_tab_store)
+
+    def answer(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer:
+        evidence_answer = self.fallback.answer(question, profile)
+        if not evidence_answer.evidence:
+            return evidence_answer
+        identity = profile.knowledge.identity if profile.knowledge is not None else None
+        label = (
+            " — ".join(part for part in [identity.title, identity.artist] if part)
+            if identity is not None
+            else profile.source.label
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are LLMinem's user-facing musical responder. Answer naturally in the same language "
+                    "as the user. Use only the supplied source-backed evidence. Do not mention internal profiles, "
+                    "routing, missing fields, tools, or diagnostics. State uncertainty for estimated musical facts. "
+                    "Be concise and directly answer the question. Never invent chords, keys, instruments, sections, "
+                    "credits, or sources."
+                ),
+            },
+            {"role": "system", "content": f"Current song: {label}"},
+            {"role": "system", "content": "Evidence:\n" + "\n".join(evidence_answer.evidence[:12])},
+            {"role": "system", "content": f"Deterministic evidence summary: {evidence_answer.answer}"},
+            {"role": "user", "content": question},
+        ]
+        try:
+            synthesized = self.chat_model.with_structured_output(GroundedAnswer).invoke(messages)
+        except Exception:
+            return evidence_answer
+        return evidence_answer.model_copy(update={"answer": synthesized.answer})
 
 
 class DeterministicMusicQuestionExplainer:

@@ -474,8 +474,26 @@ def _profile_evidence_summary(profile: ReferenceProfile) -> list[str]:
 
 def _research_song_answer(profile: ReferenceProfile, instrument_summary: list[dict]) -> str:
     bits: list[str] = []
-    if profile.summary:
-        bits.append(profile.summary)
+    knowledge = profile.knowledge
+    if knowledge is not None:
+        identity = knowledge.identity
+        label = f"{identity.title} by {identity.artist}" if identity.artist else identity.title
+        bits.append(f"Identified {label}.")
+        claim_types = {claim.claim_type for claim in knowledge.evidence_claims}
+        covered = []
+        missing = []
+        for label, present in [
+            ("key", "key" in claim_types),
+            ("chords", "chord_progression" in claim_types),
+            ("instrumentation", bool(claim_types & {"instrumentation", "tab"})),
+            ("rhythm/groove", bool(claim_types & {"groove", "trait"})),
+            ("arrangement/sections", "section" in claim_types),
+        ]:
+            (covered if present else missing).append(label)
+        if covered:
+            bits.append("Usable evidence covers " + ", ".join(covered) + ".")
+        if missing:
+            bits.append("Still missing specific evidence for " + ", ".join(missing) + ".")
     audio = profile.audio
     facts = []
     if audio is not None and audio.tempo_bpm is not None:

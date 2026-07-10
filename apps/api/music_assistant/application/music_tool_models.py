@@ -34,6 +34,10 @@ class ChatAgentDecision(BaseModel):
 
     tool: MusicToolName = Field(alias="action")
     query: Optional[str] = None
+    research_scope: Optional[Literal["song", "artist", "album", "style", "genre", "era"]] = None
+    song_title: Optional[str] = None
+    song_artist: Optional[str] = None
+    song_featured_artists: list[str] = Field(default_factory=list)
     reference_id: Optional[str] = None
     section_name: Optional[str] = None
     instrument: Optional[str] = None

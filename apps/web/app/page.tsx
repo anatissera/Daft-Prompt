@@ -65,6 +65,7 @@ interface ChatResponse {
   clarification?: string | null;
   usage?: UsageInfo | null;
   error?: { message?: string; code?: string; provider?: string | null; model?: string | null } | null;
+  diagnostics?: Record<string, unknown>;
 }
 
 const localAudioAnalysisEnabled = process.env.NEXT_PUBLIC_ENABLE_LOCAL_AUDIO_ANALYSIS === "true";
@@ -93,6 +94,7 @@ export default function Home() {
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisStageState[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
+  const [buildIds, setBuildIds] = useState<{ frontend: string; backend: string } | null>(null);
   const sessionTitledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -113,6 +115,16 @@ export default function Home() {
     const id = setInterval(() => setBusyElapsedMs(performance.now() - busyStartedAt), 100);
     return () => clearInterval(id);
   }, [busyStartedAt]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    fetch("/api/build", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((value: { frontend?: string; backend?: string }) => {
+        if (value.frontend && value.backend) setBuildIds({ frontend: value.frontend, backend: value.backend });
+      })
+      .catch(() => undefined);
+  }, []);
 
   function startWork(label: string, workflow: ChatWorkflow | null = null) {
     setActiveWork(label);
@@ -175,6 +187,9 @@ export default function Home() {
       });
       if (!res.ok) throw new Error(await readApiError(res));
       const data = (await res.json()) as ChatResponse;
+      if (process.env.NODE_ENV !== "production" && data.diagnostics) {
+        console.info("[chat-audit]", JSON.stringify(data.diagnostics));
+      }
       const meta = formatMeta(data, performance.now() - startedAt);
       const idx = nextMessageIndex();
       // Title the session from the first user message (client-side, no LLM).
@@ -327,7 +342,10 @@ export default function Home() {
 
         <div className="sidebar-footer">
           <span className="sidebar-model-dot" aria-hidden="true" />
-          <span>STUDIO LIVE · 8 AGENTS IDLE</span>
+          <span>
+            STUDIO LIVE · 8 AGENTS IDLE
+            {buildIds ? ` · WEB ${buildIds.frontend.slice(0, 7)} · API ${buildIds.backend.slice(0, 7)}` : ""}
+          </span>
         </div>
       </aside>
 

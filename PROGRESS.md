@@ -2,6 +2,95 @@
 
 Last reviewed: 2026-07-10
 
+## Priority 1 discrepancy audit — 2026-07-10
+
+Priority 1 was reopened after manual browser behavior contradicted this file.
+The earlier completion language and the unqualified phrase “browser validation”
+were incorrect.
+
+### Runtime audit
+
+- Branch, HEAD, and upstream before this repair were all
+  `product-direction` / `b90d036c4279d20bca49a4dc992ddbe972b4b706`.
+- The previously named Priority 1 commits (`efa82de`, `2b075ff`, `f7e9310`,
+  `cc441db`, and `e02208d`) were ancestors of HEAD.
+- The reproduced stack was created from exactly `docker-compose.yml` and
+  `docker-compose.vertex.yml`, with `LLM_PROVIDER=vertexai`,
+  `ENABLE_WEB_RESEARCH=true`, `ENABLE_AUDIO_ANALYSIS=false`, and
+  `REFERENCE_STEM_CACHE_ENABLED=false`.
+- The pre-audit images had been created after `b90d036`, but carried no VCS
+  label or in-app identifier. Timestamps therefore suggested, but could not
+  prove, the running source revision. This traceability gap is fixed by
+  build-time Git metadata, `/health` commit reporting, and visible development
+  `WEB`/`API` SHAs.
+- Reference profiles and Songsterr bundles are process-local. The browser keeps
+  only React state; a new tab plus a recreated API reproduced the failure, so
+  stale browser state and persisted profiles were ruled out.
+
+### Reproduced response pipeline and root causes
+
+The exact real-provider browser flow reproduced:
+
+1. `Qué acordes usa Get Lucky de Daft Punk`
+2. visible response: `Research found 1 musical claims from 1 sources.`
+3. `Qué acordes usa?`
+4. visible response: `There is not enough evidence ... The profile cannot
+   support this question without guessing`.
+
+Root causes:
+
+- Vertex reduced the query to `Get Lucky Daft Punk`; deterministic scope code
+  then interpreted `punk` as a genre and bypassed all song connectors.
+- A generic Wikipedia search shell produced one unrelated Amy Winehouse/Johnny
+  Thunders snippet, which the claim-count metric incorrectly called success.
+- Spanish `acordes` was absent from deterministic profile-query vocabulary.
+- Follow-ups used a deterministic template as the final conversational voice;
+  no targeted retrieval occurred when the requested field was missing.
+- The 40-track “benchmark” tested fixture/entity parsing. The repository's two
+  Playwright specs covered scrolling and tab rendering, not famous-song
+  research against real providers. Those results are relabeled fixture-tested
+  and browser-tested with mocks, not real-provider browser validation.
+- Songsterr's HTTP 103 Early Hints response exposed a nonfunctional fallback:
+  the standard image did not contain the `curl` executable required by the
+  declared fallback. The full-tab loader also defaulted to absent `curl`.
+- Accent-normalized connector variants were deduplicated solely by a null URL,
+  so `Adiós` failed once and the working `Adios` CifraClub route was skipped.
+- Featured artists had no structured LLM decision field, so Bruno Mars was
+  dropped before provider lookup for `Uptown Funk`.
+
+### Repaired architecture
+
+- The LLM now decides semantic research scope and emits structured song title,
+  primary artist, and featured artists. Deterministic parsing validates and
+  preserves that result and remains a provider-failure fallback.
+- Evidence selection remains deterministic. Missing question-specific evidence
+  triggers bounded targeted retrieval. An LLM then synthesizes the final answer
+  from source-backed evidence; deterministic prose is only the failure fallback.
+- Development chat responses expose route, responder, provider, fallback, and
+  field-level coverage diagnostics. Coverage tracks identity, key, chords,
+  instrumentation, guitar role, groove, arrangement/sections, and sources.
+- Songsterr now uses `httpx`, which consumes 103 Early Hints and returns the
+  final 200 response, for both search pages and full-tab payloads.
+
+### Validation labels and current evidence
+
+- Focused backend regression suites: **unit-tested / fixture-tested**.
+- TypeScript: **integration-tested**.
+- Get Lucky exact failure and follow-ups: **browser-tested against real
+  providers** using the standard + Vertex Docker stack. Final visible chord
+  answer: `Bm | D | F#m | E`. Providers: MusicBrainz, CifraClub, Songsterr;
+  targeted Wikipedia is used only when a descriptive field is still missing.
+- Adiós: **browser-tested against real providers**. Visible chords and Em key
+  succeeded; a native four-measure guitar-tab attachment rendered from the
+  89-measure Songsterr bundle.
+- I Kissed a Girl: **browser-tested against real providers**. Targeted chord
+  retrieval returned verse, chorus, and bridge progressions; arrangement
+  follow-up returned Songsterr section/part evidence.
+- Uptown Funk: **browser-tested against real providers**. A follow-up without
+  restating the title resolved Mark Ronson as primary and Bruno Mars as featured.
+- None of these runs is labeled “manually validated end to end”; they were
+  driven and captured through the in-app browser against real providers.
+
 ## Phase 2 — Product polish (active; Priority 1 reopened)
 
 Evidence states used below: `pending`, `reproduced`, `root cause identified`,

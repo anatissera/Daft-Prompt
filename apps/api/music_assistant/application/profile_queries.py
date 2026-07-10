@@ -208,15 +208,20 @@ class ProfileQueryTools:
             for claim in _claims(profile, "instrumentation")
             if any(marker in claim.value for marker in ("enters", "drops out", "pushes high"))
         ]
-        if not events and not changes:
+        traits = [
+            claim
+            for claim in _claims(profile, "trait")
+            if any(marker in claim.value.lower() for marker in ("arrangement", "production", "intro", "verse", "chorus", "bridge", "section"))
+        ]
+        if not events and not changes and not traits:
             return ProfileQueryAnswer(
                 answer="I do not have dynamics or arrangement evidence for this song yet.",
                 evidence=[],
             )
-        fragments = [claim.value for claim in changes[:3] + events[:3]]
+        fragments = [claim.value for claim in changes[:3] + events[:3] + traits[:3]]
         return ProfileQueryAnswer(
             answer="Arrangement and dynamics evidence: " + "; ".join(fragments) + " — bar-aligned estimates.",
-            evidence=[_evidence_line(claim) for claim in changes + events],
+            evidence=[_evidence_line(claim) for claim in changes + events + traits],
         )
 
     def conflicts(self, profile: SongKnowledgeProfile) -> ProfileQueryAnswer:
@@ -252,11 +257,9 @@ class ProfileQueryTools:
         )
 
     def unsupported(self, profile: SongKnowledgeProfile, question: str) -> ProfileQueryAnswer:
+        subject = "the solo" if "solo" in question.lower() else "that detail"
         return ProfileQueryAnswer(
-            answer=(
-                "There is not enough evidence to answer that yet. "
-                f"The profile cannot support this question without guessing: {question}"
-            ),
+            answer=f"There is not enough evidence from reliable sources about {subject} yet.",
             evidence=[],
         )
 
@@ -267,8 +270,8 @@ def answer_from_profile(question: str, profile: SongKnowledgeProfile) -> Profile
     section = _mentioned_section(normalized)
     if any(token in normalized for token in ["evidence", "what did you find", "findings", "research result"]):
         return tools.evidence_summary(profile)
-    wants_chords = any(token in normalized for token in ["chord", "progression", "harmony"])
-    wants_key_bpm = any(token in normalized for token in ["tempo", "bpm", "key", "scale"])
+    wants_chords = any(token in normalized for token in ["chord", "progression", "harmony", "acorde", "progresión", "progresion", "armonía", "armonia"])
+    wants_key_bpm = any(token in normalized for token in ["tempo", "bpm", "key", "scale", "tonalidad", "tono", "escala"])
     if wants_chords and wants_key_bpm:
         key_bpm = tools.key_bpm(profile)
         chords = tools.chords(profile, section_name=section)
@@ -282,19 +285,19 @@ def answer_from_profile(question: str, profile: SongKnowledgeProfile) -> Profile
         return tools.lyrics_by_section(profile, section or "chorus")
     if any(token in normalized for token in ["credit", "writer", "producer", "album", "artist", "who sings"]):
         return tools.metadata_credits(profile)
-    if any(token in normalized for token in ["timbre", "bright", "dark", "warm", "tone", "sound", "noisy"]):
+    if any(token in normalized for token in ["timbre", "bright", "dark", "warm", "tone", "sound", "noisy", "sonido", "brillante", "oscuro", "cálido", "calido"]):
         return tools.timbre(profile, stem=_mentioned_instrument(normalized))
-    if any(token in normalized for token in ["swing", "swung", "groove", "syncopat", "shuffle", "feel"]):
+    if any(token in normalized for token in ["swing", "swung", "groove", "syncopat", "shuffle", "feel", "ritmo", "rítmico", "ritmico"]):
         return tools.groove(profile)
-    if any(token in normalized for token in ["build", "drop", "louder", "quieter", "dynamic", "arrangement", "loudness"]):
+    if any(token in normalized for token in ["build", "drop", "louder", "quieter", "dynamic", "arrangement", "loudness", "arreglo", "estructura", "dinámica", "dinamica"]):
         return tools.dynamics_and_arrangement(profile)
-    if any(token in normalized for token in ["instrument", "drum", "bass", "guitar", "synth", "piano"]):
+    if any(token in normalized for token in ["instrument", "drum", "bass", "guitar", "synth", "piano", "instrumento", "batería", "bateria", "bajo", "guitarra", "teclado"]):
         return tools.instrumentation(profile, instrument=_mentioned_instrument(normalized))
     if any(token in normalized for token in ["conflict", "disagree", "source"]):
         return tools.conflicts(profile)
     if any(token in normalized for token in ["missing", "unknown", "not have"]):
         return tools.missing_data(profile)
-    if any(token in normalized for token in ["section", "form", "verse", "chorus", "bridge"]):
+    if any(token in normalized for token in ["section", "form", "verse", "chorus", "bridge", "sección", "seccion", "forma", "estrofa", "coro", "puente"]):
         return tools.sections(profile)
     if wants_key_bpm:
         return tools.key_bpm(profile)

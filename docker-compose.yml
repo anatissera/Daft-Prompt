@@ -1,7 +1,8 @@
 services:
   api:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     environment:
       # Leave provider settings unset for a self-contained canned-composition
       # runtime. Supply these through a local .env file when using an LLM.
@@ -34,7 +35,8 @@ services:
 
   web:
     build:
-      context: ./apps/web
+      context: .
+      dockerfile: apps/web/Dockerfile
     environment:
       API_BASE_URL: http://api:8000
       NEXT_TELEMETRY_DISABLED: "1"

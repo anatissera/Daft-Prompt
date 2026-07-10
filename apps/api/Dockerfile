@@ -22,13 +22,21 @@ RUN python -m pip install --upgrade pip
 # Install dependencies before copying source so application edits can reuse the
 # expensive Torch/MIR/provider layer. pyproject.toml remains the only dependency
 # manifest; the helper simply selects the Docker runtime's Vertex extra.
-COPY pyproject.toml ./
-COPY scripts/install_runtime_deps.py ./install_runtime_deps.py
+COPY apps/api/pyproject.toml ./
+COPY apps/api/scripts/install_runtime_deps.py ./install_runtime_deps.py
 ARG RUNTIME_EXTRAS="vertexai"
 RUN --mount=type=cache,target=/root/.cache/pip \
     PIP_NO_CACHE_DIR=0 python install_runtime_deps.py $RUNTIME_EXTRAS
 
-COPY music_assistant ./music_assistant
+COPY apps/api/music_assistant ./music_assistant
+COPY .git/HEAD /tmp/llminem-git/HEAD
+COPY .git/refs /tmp/llminem-git/refs
+RUN head_ref="$(cat /tmp/llminem-git/HEAD)"; \
+    if printf '%s' "$head_ref" | grep -q '^ref: '; then \
+      revision="$(cat "/tmp/llminem-git/${head_ref#ref: }")"; \
+    else revision="$head_ref"; fi; \
+    printf '{"commit":"%s","service":"api"}\n' "$revision" > /app/build-info.json; \
+    rm -rf /tmp/llminem-git
 RUN pip install --no-deps -e .
 
 RUN mkdir -p /app/outputs /app/uploads /app/.cache/torch

@@ -7,7 +7,7 @@ import re
 from urllib.parse import quote_plus
 
 from music_assistant.domain.audio_profile import EvidenceClaim
-from music_assistant.infrastructure.web_research.fetch import CurlPageFetcher, FallbackPageFetcher, UrlLibPageFetcher
+from music_assistant.infrastructure.web_research.fetch import FallbackPageFetcher, HttpxPageFetcher, UrlLibPageFetcher
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_source_connector import (
     ConnectorFailure,
@@ -142,7 +142,7 @@ class SongsterrConnector:
     def __init__(self, *, fetcher: PageFetcher | None = None) -> None:
         self.fetcher = fetcher or FallbackPageFetcher(
             primary=UrlLibPageFetcher(),
-            fallback=CurlPageFetcher(),
+            fallback=HttpxPageFetcher(),
             retry_when="HTTP Error 103",
         )
 

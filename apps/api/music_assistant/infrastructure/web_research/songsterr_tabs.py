@@ -16,7 +16,7 @@ from urllib.parse import quote_plus
 
 from pydantic import BaseModel, Field
 
-from music_assistant.infrastructure.web_research.fetch import CurlPageFetcher
+from music_assistant.infrastructure.web_research.fetch import HttpxPageFetcher
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_source_connector import ResolvedSongQuery
 
@@ -103,7 +103,7 @@ class SongsterrTabLoader:
             "https://d3d3l6a6rcgkaf.cloudfront.net",
         ),
     ) -> None:
-        self.fetcher = fetcher or CurlPageFetcher(timeout_seconds=timeout_seconds)
+        self.fetcher = fetcher or HttpxPageFetcher(timeout_seconds=timeout_seconds)
         self.total_budget_seconds = total_budget_seconds
         self.clock = clock
         self.cdn_bases = cdn_bases

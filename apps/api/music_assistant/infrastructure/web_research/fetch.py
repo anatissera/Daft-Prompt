@@ -9,6 +9,31 @@ from urllib.request import Request, urlopen
 from music_assistant.ports.page_fetcher import PageFetcher
 
 
+class HttpxPageFetcher(PageFetcher):
+    """HTTP client fallback that correctly consumes 103 Early Hints."""
+
+    def __init__(self, *, timeout_seconds: float = 8.0) -> None:
+        self.timeout_seconds = timeout_seconds
+
+    def fetch(self, url: str) -> str:
+        try:
+            import httpx
+
+            response = httpx.get(
+                url,
+                timeout=self.timeout_seconds,
+                follow_redirects=True,
+                headers={
+                    "User-Agent": "MusicAssistantResearch/0.1 (+local educational prototype)",
+                    "Accept": "text/html,application/xhtml+xml,application/json",
+                },
+            )
+            response.raise_for_status()
+            return response.text[:1_000_000]
+        except Exception as exc:
+            raise RuntimeError(f"could not fetch {url}: {exc}") from exc
+
+
 class UrlLibPageFetcher(PageFetcher):
     def __init__(self, *, timeout_seconds: float = 8.0) -> None:
         self.timeout_seconds = timeout_seconds

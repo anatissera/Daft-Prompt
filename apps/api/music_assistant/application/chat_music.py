@@ -101,6 +101,7 @@ class ChatResponse(BaseModel):
     clarification: Optional[str] = None
     usage: Optional[UsageInfo] = None
     error: Optional[dict[str, Any]] = None
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
 _COMPOSE_RE = re.compile(
@@ -218,6 +219,8 @@ class ChatMusic:
             except Exception:
                 if profile is not None:
                     return self._execute_deterministic_intent(intent, message, profile)
+                if _looks_like_named_song_analysis(message):
+                    return self._execute_deterministic_intent("research_song", message, None)
                 raise
 
         return self._execute_deterministic_intent(intent, message, profile)
@@ -300,6 +303,11 @@ class ChatMusic:
             tab_excerpt=tab_excerpt,
             compose=compose,
             clarification=agent_result.clarification,
+            diagnostics=_response_diagnostics(
+                profile if reference_id and profile is not None else None,
+                route="llm_tool_router",
+                responder="research_summary" if agent_result.intent == "answer_reference" else "tool_output",
+            ),
         )
 
     def _execute_deterministic_intent(
@@ -348,11 +356,22 @@ class ChatMusic:
                 reply=_research_ready_reply(researched),
                 reference_id=researched.reference_id,
                 reference_label=_reference_label(researched),
+                diagnostics=_response_diagnostics(researched, route="deterministic_research", responder="research_summary"),
             )
 
         if intent == "answer_reference":
             assert profile is not None
             answer = self.answer_music_question.execute(message, profile)
+            targeted = False
+            if (not answer.evidence or not _evidence_sufficient_for_question(profile, message)) and self.song_researcher is not None:
+                retrieve = getattr(self.song_researcher, "research_targeted", None)
+                if callable(retrieve):
+                    enriched = retrieve(profile, message)
+                    targeted = enriched != profile
+                    if targeted:
+                        profile = enriched
+                        self.reference_store.save(profile)
+                        answer = self.answer_music_question.execute(message, profile)
             return ChatResponse(
                 intent="answer_reference",
                 reply=answer.answer,
@@ -361,6 +380,12 @@ class ChatMusic:
                 answer=answer,
                 chord_chart=_chord_chart(profile) if _is_chord_question(message) else [],
                 melody_preview=_melody_preview(profile) if _is_melody_question(message) else None,
+                diagnostics=_response_diagnostics(
+                    profile,
+                    route="deterministic_reference_followup",
+                    responder="llm_grounded" if answer.evidence and self.chat_model is not None else "deterministic_fallback",
+                    targeted_fallback=targeted,
+                ),
             )
 
         if intent == "compose_from_reference":
@@ -1008,3 +1033,60 @@ def _compact_profile_context(profile: ReferenceProfile) -> str:
     if audio.sections:
         bits.append("sections=" + ", ".join(section.name for section in audio.sections[:6]))
     return "; ".join(bits)
+
+
+def _response_diagnostics(
+    profile: ReferenceProfile | None,
+    *,
+    route: str,
+    responder: str,
+    targeted_fallback: bool = False,
+) -> dict[str, Any]:
+    claims = profile.knowledge.evidence_claims if profile and profile.knowledge else []
+    claim_types = {claim.claim_type for claim in claims}
+    sources = sorted({claim.source_name for claim in claims})
+    identity = profile.knowledge.identity if profile and profile.knowledge else None
+    coverage = {
+        "identity": bool(identity and identity.title and identity.artist),
+        "key": "key" in claim_types,
+        "chords": "chord_progression" in claim_types,
+        "instrumentation": bool(claim_types & {"instrumentation", "tab"}),
+        "guitar_role": any(
+            "guitar" in f"{claim.value} {claim.snippet}".lower()
+            and any(role in f"{claim.value} {claim.snippet}".lower() for role in _GUITAR_ROLE_MARKERS)
+            for claim in claims
+            if claim.claim_type in {"instrumentation", "trait", "tab"}
+        ),
+        "rhythm_groove": bool(claim_types & {"groove", "trait"}),
+        "arrangement_sections": bool(claim_types & {"section", "arrangement"}),
+        "sources": bool(sources),
+    }
+    return {
+        "route": route,
+        "responder": responder,
+        "targeted_fallback": targeted_fallback,
+        "providers": sources,
+        "evidence_count": len(claims),
+        "coverage": coverage,
+    }
+
+
+_GUITAR_ROLE_MARKERS = (
+    "rhythm", "riff", "strum", "chord", "syncopat", "muted", "funk", "groove",
+    "comping", "arpeggio", "solo", "lead", "pattern", "pulse", "accent",
+)
+
+
+def _evidence_sufficient_for_question(profile: ReferenceProfile, question: str) -> bool:
+    if profile.knowledge is None:
+        return False
+    normalized = question.lower()
+    claims = profile.knowledge.evidence_claims
+    if any(token in normalized for token in ["what does the guitar", "guitar do", "guitar role", "qué hace la guitarra", "que hace la guitarra"]):
+        return any(
+            "guitar" in (text := f"{claim.value} {claim.snippet}".lower())
+            and any(marker in text for marker in _GUITAR_ROLE_MARKERS)
+            for claim in claims
+            if claim.claim_type in {"instrumentation", "trait", "tab"}
+        )
+    return True
