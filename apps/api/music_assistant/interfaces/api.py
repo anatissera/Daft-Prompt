@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 import re
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -414,6 +415,7 @@ def _compose_song() -> ComposeSong:
 
 
 def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base: str) -> Iterator[dict]:
+    started_at = time.monotonic()
     artifacts = Artifacts(
         midi=ARTIFACTS.url_for(base, job_id, "song.mid"),
         musicxml=ARTIFACTS.url_for(base, job_id, "song.musicxml"),
@@ -435,7 +437,13 @@ def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base
                 continue
 
             render_artifacts(song_snapshot, job_dir)
-            yield DoneEvent(job_id=job_id, source=source, song=song_snapshot, artifacts=artifacts).model_dump(
+            yield DoneEvent(
+                job_id=job_id,
+                source=source,
+                song=song_snapshot,
+                artifacts=artifacts,
+                elapsed_seconds=round(time.monotonic() - started_at, 3),
+            ).model_dump(
                 by_alias=True, mode="json"
             )
             return
@@ -449,7 +457,13 @@ def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base
         last_song.converged = False
         last_song.errors.append(exc.user_message)
         render_artifacts(last_song, job_dir)
-        yield DoneEvent(job_id=job_id, source=last_source, song=last_song, artifacts=artifacts).model_dump(
+        yield DoneEvent(
+            job_id=job_id,
+            source=last_source,
+            song=last_song,
+            artifacts=artifacts,
+            elapsed_seconds=round(time.monotonic() - started_at, 3),
+        ).model_dump(
             by_alias=True, mode="json"
         )
     except Exception:
@@ -472,7 +486,13 @@ def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base
             "converged": False,
             "resolved_requests": [],
         }
-        yield DoneEvent(job_id=job_id, source=last_source, song=last_song, artifacts=artifacts).model_dump(
+        yield DoneEvent(
+            job_id=job_id,
+            source=last_source,
+            song=last_song,
+            artifacts=artifacts,
+            elapsed_seconds=round(time.monotonic() - started_at, 3),
+        ).model_dump(
             by_alias=True, mode="json"
         )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import json
+import time
 from copy import deepcopy
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -56,9 +57,19 @@ class ComposeSong:
         source = "director"
         song = None
         prompt = _style_prompt(style)
+        started_at = time.monotonic()
+        previous_event_at = started_at
         for event, song_snapshot in self.event_streamer(prompt):
             if song_snapshot is not None:
                 song = song_snapshot
+            if event:
+                now = time.monotonic()
+                event = {
+                    **event,
+                    "elapsed_seconds": round(now - started_at, 3),
+                    "stage_elapsed_seconds": round(now - previous_event_at, 3),
+                }
+                previous_event_at = now
             yield event, song, source
         yield {}, song, source
 

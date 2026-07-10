@@ -19,6 +19,7 @@ later batches via `peer_summaries` in the shared state.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Iterator, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -473,6 +474,19 @@ def iter_negotiation_events(
     app = _build_negotiation_graph(llm=llm, max_rounds=max_rounds)
     state: dict = _initial_band_state(style)
     song: Optional[SongState] = None
+    started_at = time.monotonic()
+    previous_event_at = started_at
+
+    def with_timing(event: dict) -> dict:
+        nonlocal previous_event_at
+        now = time.monotonic()
+        timed = {
+            **event,
+            "elapsed_seconds": round(now - started_at, 3),
+            "stage_elapsed_seconds": round(now - previous_event_at, 3),
+        }
+        previous_event_at = now
+        return timed
 
     stream = app.stream(
         state,
@@ -516,12 +530,12 @@ def iter_negotiation_events(
                     parts=state["parts"],
                     errors=state["errors"],
                 )
-                yield {
+                yield with_timing({
                     "type": "director",
                     "source": "director",
                     "header": update["header"].model_dump(mode="json"),
                     "roster": [r.model_dump(mode="json") for r in update["roster"]],
-                }, song
+                }), song
 
             elif node == "instrument_turn" and ns and song is not None:
                 song.parts = state["parts"]
@@ -529,7 +543,7 @@ def iter_negotiation_events(
                 song.round = state["round"]
                 instrument_id = next(iter(update["parts"]))
                 reqs = update.get("negotiation_requests", [])
-                yield {
+                yield with_timing({
                     "type": "agent_pass",
                     "round": update["round"],
                     "instrument_id": instrument_id,
@@ -540,12 +554,12 @@ def iter_negotiation_events(
                     "resolved_requests": [
                         r.model_dump(by_alias=True) for r in reqs if r.status != "pending"
                     ],
-                }, None
+                }), None
 
             elif node == "arbiter" and not ns and song is not None:
                 song.converged = True
                 song.negotiation_requests = state["negotiation_requests"]
-                yield {
+                yield with_timing({
                     "type": "convergence",
                     "round": state["round"],
                     "converged": True,
@@ -553,7 +567,7 @@ def iter_negotiation_events(
                         r.model_dump(by_alias=True)
                         for r in update.get("negotiation_requests", [])
                     ],
-                }, None
+                }), None
 
     if song is not None:
         song.parts = state["parts"]
