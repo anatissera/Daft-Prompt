@@ -6,7 +6,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Provider = Literal["gemini", "groq", "openrouter", "vertexai"]
@@ -64,6 +64,12 @@ class Settings(BaseSettings):
         extra="ignore",
         protected_namespaces=("settings_",),
     )
+
+    @field_validator("llm_provider", mode="before")
+    @classmethod
+    def _blank_provider_means_unconfigured(cls, value: object) -> object:
+        """Accept Compose's empty interpolation as the documented no-provider mode."""
+        return None if isinstance(value, str) and not value.strip() else value
 
     def api_key_for(self, provider: str) -> Optional[str]:
         if provider == "vertexai":
