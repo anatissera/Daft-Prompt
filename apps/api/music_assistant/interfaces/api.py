@@ -15,7 +15,7 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import Iterator
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -342,7 +342,7 @@ def _reference_transcriber() -> BasicPitchTranscriber | None:
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest, request: Request) -> ChatResponse:
+def chat(req: ChatRequest, request: Request, background_tasks: BackgroundTasks) -> ChatResponse:
     if req.reference_id and REFERENCE_STORE.get(req.reference_id) is None:
         raise HTTPException(status_code=404, detail=f"reference_id not found: {req.reference_id}")
     try:
@@ -361,21 +361,28 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
     if response.compose is not None:
         from music_assistant.application.chat_music import ChatArtifacts
         job = ARTIFACTS.create_job()
-        try:
-            render_artifacts(response.compose.song, job.path)
-            base = str(request.base_url).rstrip("/")
-            response = response.model_copy(update={
-                "compose": response.compose.model_copy(update={
-                    "artifacts": ChatArtifacts(
-                        midi=ARTIFACTS.url_for(base, job.job_id, "song.mid"),
-                        musicxml=ARTIFACTS.url_for(base, job.job_id, "song.musicxml"),
-                    ),
-                }),
-            })
-        except Exception:
-            # Artifact rendering is best-effort; the song state is still usable.
-            pass
+        base = str(request.base_url).rstrip("/")
+        response = response.model_copy(update={
+            "compose": response.compose.model_copy(update={
+                "artifacts": ChatArtifacts(
+                    midi=ARTIFACTS.url_for(base, job.job_id, "song.mid"),
+                    musicxml=ARTIFACTS.url_for(base, job.job_id, "song.musicxml"),
+                ),
+            }),
+        })
+        # FastAPI runs this after the response has been sent. SongState powers
+        # immediate local playback; notation/export generation is an attachment.
+        background_tasks.add_task(_render_artifacts_safely, response.compose.song, job.path)
     return response
+
+
+def _render_artifacts_safely(song, job_path: Path) -> None:
+    try:
+        render_artifacts(song, job_path)
+    except Exception:
+        # MIDI is best-effort here too: the response still carries canonical
+        # SongState, which the browser can play and export independently.
+        return
 
 
 def _chat_music() -> ChatMusic:

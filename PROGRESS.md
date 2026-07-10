@@ -23,14 +23,18 @@ attempted.
     (previously 5 requests per melodic track and up to 47 for a drum track).
     Mixer behavior tests, the no-remote-playback architecture regression test,
     TypeScript, and a production Next.js build pass. Commit/push pending.
-- [ ] Score rendering: reproduce complete score-generation failures and verify
+- [x] Score rendering: reproduce complete score-generation failures and verify
   that missing notation can currently interrupt the product flow.
-  - Status: reproduced; root cause identified.
+  - Status: fixed and verified.
   - Root cause/evidence: backend `render_artifacts` renders MIDI and MusicXML
     as one all-or-nothing operation. The client always mounts `ScoreViewer`
     when parts exist; its dynamic import/fetch/parse/render promise has no HTTP
     status validation, catch path, or user-facing unavailable state.
-  - Fix/tests/benchmark/commit/push: pending.
+  - Fix/tests/benchmark/commit/push: MIDI and MusicXML now render independently;
+    a notation failure preserves MIDI. The score UI validates HTTP responses,
+    catches import/fetch/parse/render errors, explains that playback/MIDI remain
+    available, and offers retry. Converter/resilience tests, TypeScript, and the
+    production frontend build pass. Commit/push pending.
 - [x] Chat keyboard behavior: reproduce Enter not sending and establish the
   current Shift+Enter behavior.
   - Status: fixed and verified.
@@ -40,14 +44,19 @@ attempted.
   - Fix/tests/commit/push: Enter now requests form submission, Shift+Enter keeps
     its native newline, and IME composition is protected. TypeScript and 12
     focused frontend tests pass. Commit/push pending.
-- [ ] Chat-first asset workflow: reproduce notation/tab/MIDI/preview rendering
+- [x] Chat-first asset workflow: reproduce notation/tab/MIDI/preview rendering
   interrupting or blocking continued conversation.
-  - Status: reproduced; root cause identified.
+  - Status: fixed and verified.
   - Root cause/evidence: the synchronous `/chat` route calls
     `render_artifacts` after composition and before returning `ChatResponse`.
     MIDI conversion and MusicXML engraving therefore extend the chat request's
     critical path; the UI remains globally busy until both finish.
-  - Fix/tests/benchmark/commit/push: pending.
+  - Fix/tests/benchmark/commit/push: `/chat` now returns canonical `SongState`
+    and artifact attachment URLs before a FastAPI background task renders files.
+    Local playback and client-side MIDI export are immediately usable. On a
+    canned sketch, synchronous artifact rendering took 32.446 ms while task
+    scheduling took 0.016 ms. Focused API/architecture/stream tests pass.
+    Commit/push pending.
 - [ ] Research conversation continuity: reproduce follow-up questions losing
   freshly gathered song/artist/album evidence.
   - Status: reproduced; root cause identified.

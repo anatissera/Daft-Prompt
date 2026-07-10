@@ -11,11 +11,20 @@ from music_assistant.music.render_sheet import render_musicxml
 from music_assistant.music.validators import errors_only, validate_song
 
 
-def render_artifacts(song: SongState, job_dir: Path) -> None:
+def render_artifacts(song: SongState, job_dir: Path) -> dict[str, str]:
+    """Render independent exports without allowing optional notation to erase MIDI.
+
+    The returned mapping contains only artifacts that were written successfully.
+    """
     # composition-finalization pass (idempotent): snap bass downbeat non-chord notes
     # to the nearest chord tone before validating/rendering, so the response, the
     # MIDI, and the score all reflect the same finalized song.
     enforce_bass_downbeats(song)
     song.errors = [issue.message for issue in errors_only(validate_song(song))]
-    render_midi(song, str(job_dir / "song.mid"))
-    render_musicxml(song, str(job_dir / "song.musicxml"))
+    rendered = {"midi": render_midi(song, str(job_dir / "song.mid"))}
+    try:
+        rendered["musicxml"] = render_musicxml(song, str(job_dir / "song.musicxml"))
+    except Exception:
+        # Notation is optional. Playback and the canonical SongState remain valid.
+        pass
+    return rendered
