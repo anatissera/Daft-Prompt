@@ -708,6 +708,7 @@ export type ComposeEvent =
       type: "agent_pass";
       round: number;
       instrument_id: string;
+      composition_group?: string | null;
       notes_summary: string;
       new_requests: NegotiationRequest[];
       resolved_requests: NegotiationRequest[];

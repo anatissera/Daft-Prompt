@@ -163,6 +163,20 @@ def _resolutions_to_updates(
     return updates
 
 
+def _composition_group_name(song: SongState | None, instrument_id: str) -> str | None:
+    """Return the director-defined dependency wave for a streamed part event."""
+    if song is None:
+        return None
+    return next(
+        (
+            group.name
+            for group in song.composition_groups
+            if instrument_id in group.instrument_ids
+        ),
+        None,
+    )
+
+
 def _build_instruments_subgraph(llm=None):
     """Subgraph: one round of instrument turns for the current batch.
 
@@ -528,6 +542,7 @@ def iter_negotiation_events(
                     header=update["header"],
                     roster=update["roster"],
                     parts=state["parts"],
+                    composition_groups=state["composition_groups"],
                     errors=state["errors"],
                 )
                 yield with_timing({
@@ -547,6 +562,7 @@ def iter_negotiation_events(
                     "type": "agent_pass",
                     "round": update["round"],
                     "instrument_id": instrument_id,
+                    "composition_group": _composition_group_name(song, instrument_id),
                     "notes_summary": state["parts"][instrument_id].notes_summary,
                     "new_requests": [
                         r.model_dump(by_alias=True) for r in reqs if r.status == "pending"

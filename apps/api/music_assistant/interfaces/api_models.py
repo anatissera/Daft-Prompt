@@ -70,6 +70,7 @@ class AgentPassEvent(BaseModel):
     type: Literal["agent_pass"] = "agent_pass"
     round: int
     instrument_id: str
+    composition_group: str | None = None
     notes_summary: str
     new_requests: list[dict[str, Any]] = Field(default_factory=list)
     resolved_requests: list[dict[str, Any]] = Field(default_factory=list)
