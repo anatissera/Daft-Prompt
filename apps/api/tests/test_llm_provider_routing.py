@@ -25,6 +25,11 @@ def test_blank_provider_is_treated_as_unconfigured_for_compose_defaults():
     assert settings.llm_configured is False
 
 
+def test_web_research_is_enabled_by_default_and_can_be_disabled_for_offline_mode():
+    assert Settings().enable_web_research is True
+    assert Settings(enable_web_research=False).enable_web_research is False
+
+
 def test_classify_gemini_quota_error_from_message():
     exc = RuntimeError("ResourceExhausted: 429 You exceeded your current quota")
 

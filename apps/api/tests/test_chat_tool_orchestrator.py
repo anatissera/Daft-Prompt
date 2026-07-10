@@ -185,12 +185,14 @@ def test_llm_research_decision_respects_disabled_web_research():
     response = chat.handle(ChatRequest(message="Analyze Around the World by Daft Punk"))
 
     assert response.intent == "clarify"
-    assert "Web research is disabled" in response.reply
+    assert "ENABLE_WEB_RESEARCH=true" in response.reply
     assert response.error == {"code": "web_research_disabled", "message": response.reply}
     assert researcher.calls == []
     assert store.get("ref_researched") is None
     assert composer.calls == []
     assert model.invoker.calls
+    prompt_text = str(model.invoker.calls[0])
+    assert "Do not choose research_song" in prompt_text
 
 
 def test_llm_tool_orchestrator_answers_current_profile_with_deterministic_tool():

@@ -27,11 +27,16 @@ Last reviewed: 2026-07-10
   chat guidance; the disabled audio endpoint returns the documented 503 opt-in
   guidance. The validated default image is about 1.63 GB locally, down from the
   previous 2.57 GB audio-included image while retaining Vertex support.
+- Songsterr/web research is now enabled in the standard runtime, matching the
+  named-song chat flow. `ENABLE_WEB_RESEARCH=false` is the explicit offline
+  mode; its capability-aware prompt and tool guard return setup guidance
+  without making a request.
 
 ## Completed milestones
 
 - Chat-first local audio analysis, evidence-grounded questions, reference-guided composition, bounded session context, and generated-song playback/mixing are in place.
-- Songsterr research and tab rendering are modular and remain secondary to the local-audio MVP.
+- Songsterr research and tab rendering are modular, bounded, and enabled by
+  default; local audio analysis remains an independent opt-in capability.
 - Deep listening covers tempo, key, harmony, sections, stems, timbre, rhythm, dynamics, ensemble, and optional bounded melody transcription.
 - Chord charts, Songsterr tabs, and provisional melody previews render natively in chat.
 - Generated MIDI remains canonical and independently editable per part; targeted generated-part revisions are supported.

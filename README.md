@@ -1,13 +1,13 @@
 # Daft Prompt
 
 Daft Prompt is a chat-first music workspace. Ask it to compose an original
-sketch, explore a musical idea, or—when explicitly enabled—analyze a local
-audio reference. Generated songs are playable and exportable as MIDI and
-MusicXML.
+sketch, explore a musical idea, look up a named song through Songsterr/web
+research, or—when explicitly enabled—analyze a local audio reference. Generated
+songs are playable and exportable as MIDI and MusicXML.
 
 The normal runtime favors responsive composition: it includes the Vertex AI
-Gemini provider, but leaves the large local audio-analysis stack out of the
-image. Audio analysis is available as a deliberate opt-in.
+Gemini provider and bounded Songsterr/web research, but leaves the large local
+audio-analysis stack out of the image. Audio analysis is a deliberate opt-in.
 
 ## Quick Start
 
@@ -86,6 +86,10 @@ The supported provider choices are `vertexai`, `gemini`, `groq`, and
 the non-Vertex alternatives, select `LLM_PROVIDER` and set its matching key in
 the root `.env`, then run `docker compose up --build`.
 
+Songsterr/web research is enabled by default. Set
+`ENABLE_WEB_RESEARCH=false` in `.env` if you need an offline runtime; named-song
+requests will then explain how to restore it instead of making a network call.
+
 For a non-Docker backend workflow, copy the same template to `apps/api/.env`,
 install the desired extras, and run the API from `apps/api`:
 
@@ -109,8 +113,8 @@ pip install -e ".[audio-analysis]"
 - Browser playback, per-track mute/solo, MIDI export, and MusicXML export.
 - Optional local audio analysis with clearly probabilistic chord, key, tempo,
   and section estimates.
-- Optional web research that remains separate from the interactive composition
-  pipeline.
+- Built-in, bounded Songsterr/web research for named-song questions, kept
+  separate from the interactive composition pipeline.
 
 ## Architecture
 

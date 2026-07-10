@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     reference_stem_cache_dir: Optional[str] = None
     enable_audio_analysis: bool = False
     enable_melody_transcription: bool = False
-    enable_web_research: bool = False
+    enable_web_research: bool = True
 
     # Model role settings intentionally retain their explicit MODEL_* environment
     # names; only reserve the settings-specific namespace to avoid Pydantic's

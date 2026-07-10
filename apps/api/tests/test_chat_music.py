@@ -91,7 +91,7 @@ def _make_chat(
     explainer: Optional[_CountingExplainer] = None,
     chat_model=None,
     song_researcher=None,
-    enable_web_research: bool = False,
+    enable_web_research: bool = True,
 ) -> tuple[ChatMusic, _RecordingComposer, _CountingExplainer, InMemoryReferenceStore]:
     store = store or InMemoryReferenceStore()
     composer = composer or _RecordingComposer()
@@ -369,16 +369,27 @@ def test_research_without_configured_researcher_explains_instead_of_generic_clar
     assert "not configured" in response.reply
 
 
-def test_research_is_disabled_by_default_and_does_not_call_researcher():
+def test_research_is_disabled_in_explicit_offline_mode_and_does_not_call_researcher():
+    researcher = _FakeResearcher()
+    chat, _, _, store = _make_chat(song_researcher=researcher, enable_web_research=False)
+
+    response = chat.handle(ChatRequest(message="Research Get Lucky by Daft Punk"))
+
+    assert response.intent == "clarify"
+    assert "ENABLE_WEB_RESEARCH=true" in response.reply
+    assert researcher.queries == []
+    assert store.get("ref_researched") is None
+
+
+def test_research_is_enabled_by_default_for_named_song_requests():
     researcher = _FakeResearcher()
     chat, _, _, store = _make_chat(song_researcher=researcher)
 
     response = chat.handle(ChatRequest(message="Research Get Lucky by Daft Punk"))
 
-    assert response.intent == "clarify"
-    assert "Web research is disabled" in response.reply
-    assert researcher.queries == []
-    assert store.get("ref_researched") is None
+    assert response.intent == "answer_reference"
+    assert researcher.queries == ["Get Lucky by Daft Punk"]
+    assert store.get("ref_researched") is not None
 
 
 def test_explicit_web_search_uses_research_without_llm_when_enabled():
@@ -429,12 +440,13 @@ def test_spanish_compose_error_stays_in_spanish():
 
 
 def test_spanish_disabled_research_stays_in_spanish():
-    chat, _, _, _ = _make_chat(song_researcher=_FakeResearcher())
+    chat, _, _, _ = _make_chat(song_researcher=_FakeResearcher(), enable_web_research=False)
 
     response = chat.handle(ChatRequest(message="Buscá Get Lucky de Daft Punk"))
 
     assert response.intent == "clarify"
     assert "búsqueda web está desactivada" in response.reply
+    assert "ENABLE_WEB_RESEARCH=true" in response.reply
 
 
 def _generated_song() -> SongState:

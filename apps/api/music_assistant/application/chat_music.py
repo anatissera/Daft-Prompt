@@ -140,7 +140,7 @@ class ChatMusic:
         chat_model: ChatModel | None = None,
         song_researcher: SongResearcher | None = None,
         songsterr_tab_store: SongsterrTabStore | None = None,
-        enable_web_research: bool = False,
+        enable_web_research: bool = True,
     ) -> None:
         self.compose_song = compose_song
         self.answer_music_question = answer_music_question
@@ -516,9 +516,11 @@ def _compose_unavailable_response(
 
 def _web_research_disabled_response(user_message: str = "") -> ChatResponse:
     message = (
-        "La búsqueda web está desactivada en esta instancia."
+        "Pediste una búsqueda de canción, pero la búsqueda web está desactivada. "
+        "Configurá ENABLE_WEB_RESEARCH=true y reiniciá la aplicación."
         if is_spanish(user_message)
-        else "Web research is disabled in this instance."
+        else "You asked me to research a song, but web research is disabled. "
+        "Set ENABLE_WEB_RESEARCH=true and restart the application."
     )
     return ChatResponse(
         intent="clarify",
