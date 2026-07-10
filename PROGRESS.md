@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-07-10
 
-## Phase 2 — Product polish (complete)
+## Phase 2 — Product polish (active; Priority 1 reopened)
 
 Evidence states used below: `pending`, `reproduced`, `root cause identified`,
 `fixed`, `verified`, and `committed`. A regression is not complete until its
@@ -10,6 +10,28 @@ fix has been tested thoroughly, committed atomically, and a push has been
 attempted.
 
 ### Priority 1 — Existing regressions
+
+#### Additional chat regressions reported 2026-07-10
+
+- [ ] Intent-specific progress states: research currently displays composition
+  stages. Reproduce research, composition, and iterative-edit workflows; replace
+  misleading shared states; cover with regression and browser validation.
+- [ ] Visible tablature: reproduce research/generation → guitar-tab request,
+  verify meaningful visible tab content, and surface rendering failures clearly.
+- [ ] Respectful conversation auto-follow: reproduce missing scroll-to-latest,
+  follow progress/completion near the bottom, preserve manual upward scrolling,
+  resume near-bottom/send behavior, and validate fixed-composer offset in browser.
+- [ ] Reliable famous-song lookup and entity resolution: reproduce `Adiós` by
+  Gustavo Cerati and `I Kissed a Girl` by Katy Perry; support featured artists,
+  collaborations, multiple primaries, remixes/live versions, aliases, accents,
+  punctuation, translated/alternate titles, and provider fallbacks. Build and
+  report a 30-50-track multi-decade benchmark.
+
+Prior completion audit gap: Priority 1 was marked complete from focused source
+and unit evidence without browser-validating these full chat workflows. That
+claim is withdrawn until all four items above have reproduction evidence, root
+causes, fixes, regression tests, end-to-end browser validation, atomic commits,
+and push attempts.
 
 Priority 1 completion audit: verified 2026-07-10. Full backend suite: 567
 passed, 1 skipped. Full frontend suite: TypeScript clean, 60 tests passed, and
