@@ -20,6 +20,7 @@ Last reviewed: 2026-07-10
 - Vertex AI Gemini is verified against a real project through Application Default Credentials; no API key is required or stored by the repository.
 - The director now explicitly batches independent rhythm instruments together, retaining dependency-ordered composition while avoiding needless one-instrument waves.
 - Streamed agent passes carry their director-defined composition-group name, and the compact negotiation feed displays it beside round duration for dependency-aware latency diagnosis.
+- An opt-in `docker-compose.vertex.yml` mounts existing host ADC read-only and requires an explicit project id, so the local Docker stack can use Vertex AI without committing credentials; its resolved configuration and `/health` startup were verified locally.
 
 ## Current architecture
 
@@ -54,9 +55,9 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Run comparable Vertex benchmarks across small and fuller arrangements now that
-the streamed feed identifies each dependency wave; change LangGraph concurrency
-only if those measurements reveal an avoidable graph-level bottleneck.
+Run comparable Vertex benchmarks across small and fuller arrangements. Change
+LangGraph concurrency only if those measurements reveal an avoidable graph-level
+bottleneck.
 
 ## Remaining milestones
 

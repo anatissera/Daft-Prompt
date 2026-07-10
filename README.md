@@ -202,6 +202,18 @@ LangChain adapter. Single-region endpoints such as `us-central1` can return
 `404 Publisher model ... was not found` for `gemini-3.5-flash` even when the
 project, billing, and ADC are configured correctly.
 
+For the local Docker stack, mount your existing ADC directory through the
+credential-free override rather than copying a key into the image or repo:
+
+```bash
+export GOOGLE_CLOUD_PROJECT=your-project-id
+export GCP_ADC_HOST_PATH="$HOME/.config/gcloud"
+docker compose -f docker-compose.yml -f docker-compose.vertex.yml up --build
+```
+
+The mount is read-only and is required only by this opt-in override. Keep both
+variables in your shell or an uncommitted local environment file.
+
 Other developers can keep using `LLM_PROVIDER=gemini`, `openrouter`, or `groq`
 with their own local credentials.
 
