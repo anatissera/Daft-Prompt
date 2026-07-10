@@ -128,11 +128,14 @@ def test_compose_stream_director_path_emits_agent_pass_and_done(monkeypatch):
     assert types == ["director", "agent_pass", "convergence", "done"]
 
     assert events[0]["roster"][0]["id"] == "bass"
+    assert isinstance(events[0]["elapsed_seconds"], float)
     assert events[1]["instrument_id"] == "bass"
+    assert isinstance(events[1]["stage_elapsed_seconds"], float)
     done = events[-1]
     assert done["source"] == "director"
     assert done["song"]["parts"]["bass"]["notes_summary"] == "patched"
     assert done["artifacts"]["midi"].endswith("song.mid")
+    assert isinstance(done["elapsed_seconds"], float)
 
 
 def test_compose_stream_survives_negotiation_exception_after_fallback_event(monkeypatch):

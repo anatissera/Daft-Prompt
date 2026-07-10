@@ -697,22 +697,27 @@ export type AnalysisEvent =
 // SSE events from POST /compose/stream (proxied by app/api/compose), in emission
 // order: one "director" event, zero or more "agent_pass" events as instruments
 // compose/negotiate, optional "error", one "convergence" or "done" event.
+export type ComposeTiming = {
+  elapsed_seconds?: number | null;
+  stage_elapsed_seconds?: number | null;
+};
+
 export type ComposeEvent =
-  | { type: "director"; source: "director" | "canned"; header: Header; roster: RosterItem[] }
-  | {
+  | ({ type: "director"; source: "director" | "canned"; header: Header; roster: RosterItem[] } & ComposeTiming)
+  | ({
       type: "agent_pass";
       round: number;
       instrument_id: string;
       notes_summary: string;
       new_requests: NegotiationRequest[];
       resolved_requests: NegotiationRequest[];
-    }
-  | {
+    } & ComposeTiming)
+  | ({
       type: "convergence";
       round: number;
       converged: boolean;
       resolved_requests: NegotiationRequest[];
-    }
+    } & ComposeTiming)
   | {
       type: "error";
       code: string;
@@ -721,4 +726,4 @@ export type ComposeEvent =
       model: string | null;
       partial: boolean;
     }
-  | (ComposeResponse & { type: "done" });
+  | (ComposeResponse & { type: "done" } & ComposeTiming);

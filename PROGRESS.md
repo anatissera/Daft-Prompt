@@ -12,6 +12,7 @@ Last reviewed: 2026-07-09
 - Spanish reference questions and reference-guided composition route through the same deterministic workflow as English.
 - The local Docker API runtime builds and passes its `/health` smoke test without requiring machine-specific cloud credentials.
 - LLM sampling is provider-agnostic and role-specific: director/reviewer defaults favor stable planning, while instrument agents retain expressive variance. All three values are environment-configurable.
+- Composition SSE events now include cumulative and per-stage elapsed time; artifact completion reports total elapsed time. This is the profiling baseline before any concurrency redesign.
 
 ## Current architecture
 
@@ -46,13 +47,13 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Add measured composition-stage timings before changing concurrency. This is the
-evidence gate for any future parallel-fill optimization.
+Evaluate a local-only, compact style-card/groove-provider seam. It must remain
+optional and must not add web or large-corpus work to the interactive path.
 
 ## Remaining milestones
 
-1. Add measured composition-stage timings before changing concurrency.
-2. Evaluate optional, local-only style-card/groove providers behind ports; do not make corpora or web search required.
+1. Evaluate optional, local-only style-card/groove providers behind ports; do not make corpora or web search required.
+2. Use captured timing data to decide whether bounded parallelism is justified.
 3. Run a full completion audit against PRODUCT.md and the user goal, including an interactive local smoke path.
 
 ## Known technical debt and risks

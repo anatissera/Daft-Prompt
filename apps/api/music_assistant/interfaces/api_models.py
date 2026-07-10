@@ -62,6 +62,8 @@ class DirectorEvent(BaseModel):
     source: Literal["director", "canned"]
     header: Header
     roster: list[RosterItem] = Field(default_factory=list)
+    elapsed_seconds: float | None = None
+    stage_elapsed_seconds: float | None = None
 
 
 class AgentPassEvent(BaseModel):
@@ -71,6 +73,8 @@ class AgentPassEvent(BaseModel):
     notes_summary: str
     new_requests: list[dict[str, Any]] = Field(default_factory=list)
     resolved_requests: list[dict[str, Any]] = Field(default_factory=list)
+    elapsed_seconds: float | None = None
+    stage_elapsed_seconds: float | None = None
 
 
 class ConvergenceEvent(BaseModel):
@@ -78,6 +82,8 @@ class ConvergenceEvent(BaseModel):
     round: int
     converged: bool
     resolved_requests: list[dict[str, Any]] = Field(default_factory=list)
+    elapsed_seconds: float | None = None
+    stage_elapsed_seconds: float | None = None
 
 
 class ErrorEvent(BaseModel):
@@ -95,6 +101,8 @@ class DoneEvent(BaseModel):
     source: Literal["director", "canned"]
     song: SongState
     artifacts: Artifacts
+    elapsed_seconds: float | None = None
+    stage_elapsed_seconds: float | None = None
 
     @computed_field
     @property
