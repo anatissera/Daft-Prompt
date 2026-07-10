@@ -17,7 +17,10 @@ interface NodeSpec {
   h: number;
   title: string;
   lines?: string[];
-  accent?: string; // stroke/glow color
+  accent?: string; // chip fill color
+  /** What this thing IS: "llm call", "tool · http", "langgraph node", … —
+   *  rendered as a floating type tag over the chip's top-left corner. */
+  kind?: string;
 }
 
 interface EdgeSpec {
@@ -127,6 +130,28 @@ function Graph({ title, subtitle, nodes, edges, viewW, viewH }: {
                   {line}
                 </text>
               ))}
+              {n.kind ? (
+                <g>
+                  <rect
+                    x={n.x + 6}
+                    y={n.y - 9}
+                    width={n.kind.length * 5.6 + 12}
+                    height={15}
+                    rx={7.5}
+                    fill="#0b0c10"
+                    stroke={n.accent ?? GOLD}
+                    strokeWidth={0.8}
+                  />
+                  <text
+                    x={n.x + 12}
+                    y={n.y + 2}
+                    className="graph-node-kind"
+                    fill={n.accent ?? GOLD}
+                  >
+                    {n.kind}
+                  </text>
+                </g>
+              ) : null}
             </g>
           ))}
         </svg>
@@ -140,29 +165,29 @@ function Graph({ title, subtitle, nodes, edges, viewW, viewH }: {
 // ---------------------------------------------------------------------------
 
 const AGENT_NODES: NodeSpec[] = [
-  { id: "prompt", x: 20, y: 320, w: 120, h: 52, title: "PROMPT", lines: ["user request"], accent: SILVER },
-  { id: "intent", x: 190, y: 320, w: 150, h: 66, title: "INTENT", lines: ["compose vs replicate", "LLM classifier"] },
+  { id: "prompt", x: 20, y: 320, w: 120, h: 52, title: "PROMPT", lines: ["user request"], accent: SILVER, kind: "input" },
+  { id: "intent", x: 190, y: 320, w: 150, h: 66, title: "INTENT", lines: ["compose vs replicate", "LLM classifier"], kind: "llm call" },
 
   // replicate branch (top)
-  { id: "bitmidi", x: 400, y: 60, w: 160, h: 66, title: "BITMIDI SEARCH", lines: ["find the exact song", "download .mid"], accent: OXBLOOD },
-  { id: "import", x: 620, y: 60, w: 150, h: 66, title: "MIDI IMPORT", lines: ["verbatim tracks", "no re-generation"], accent: OXBLOOD },
+  { id: "bitmidi", x: 400, y: 60, w: 160, h: 66, title: "BITMIDI SEARCH", lines: ["find the exact song", "download .mid"], accent: OXBLOOD, kind: "tool · http api" },
+  { id: "import", x: 620, y: 60, w: 150, h: 66, title: "MIDI IMPORT", lines: ["verbatim tracks", "no re-generation"], accent: OXBLOOD, kind: "tool · parser" },
 
   // research tools
-  { id: "websearch", x: 400, y: 190, w: 160, h: 58, title: "WEB SEARCH", lines: ["DuckDuckGo hits"], accent: TEAL },
-  { id: "excerpts", x: 400, y: 280, w: 160, h: 58, title: "PAGE EXCERPTS", lines: ["real production prose"], accent: TEAL },
-  { id: "corpus", x: 400, y: 370, w: 160, h: 66, title: "CORPUS", lines: ["Lakh exemplars", "Groove drum patterns"], accent: TEAL },
+  { id: "websearch", x: 400, y: 190, w: 160, h: 58, title: "WEB SEARCH", lines: ["DuckDuckGo hits"], accent: TEAL, kind: "tool · http (no MCP)" },
+  { id: "excerpts", x: 400, y: 280, w: 160, h: 58, title: "PAGE EXCERPTS", lines: ["real production prose"], accent: TEAL, kind: "tool · http fetch" },
+  { id: "corpus", x: 400, y: 370, w: 160, h: 66, title: "CORPUS", lines: ["Lakh exemplars", "Groove drum patterns"], accent: TEAL, kind: "tool · offline index" },
 
   // director
-  { id: "director", x: 640, y: 240, w: 190, h: 116, title: "DIRECTOR", lines: ["style summary", "canonical instruments", "rhythmic feel", "roster + chords + form"] },
+  { id: "director", x: 640, y: 240, w: 190, h: 116, title: "DIRECTOR", lines: ["style summary", "canonical instruments", "rhythmic feel", "roster + chords + form"], kind: "llm call · minimax-m3" },
 
   // fills
-  { id: "fills", x: 900, y: 240, w: 190, h: 96, title: "INSTRUMENT AGENTS", lines: ["one per instrument", "× section slice", "16 parallel workers"] },
-  { id: "fallbacks", x: 900, y: 400, w: 190, h: 82, title: "FALLBACK CHAIN", lines: ["rich → minimal schema", "LLM-seeded 1-bar loop", "deterministic pattern"], accent: SILVER },
+  { id: "fills", x: 900, y: 240, w: 190, h: 96, title: "INSTRUMENT AGENTS", lines: ["one per instrument", "× section slice", "16 parallel workers"], kind: "llm calls ×N · m2.5" },
+  { id: "fallbacks", x: 900, y: 400, w: 190, h: 82, title: "FALLBACK CHAIN", lines: ["rich → minimal schema", "LLM-seeded 1-bar loop", "deterministic pattern"], accent: SILVER, kind: "llm + deterministic" },
 
   // compose + render
-  { id: "compose", x: 1160, y: 240, w: 180, h: 96, title: "COMPOSER", lines: ["patch resolution", "drum synthesis", "bass on chord roots"] },
-  { id: "render", x: 1160, y: 400, w: 180, h: 66, title: "RENDER", lines: ["song.mid + MusicXML", "artifacts + SSE done"] },
-  { id: "player", x: 900, y: 540, w: 190, h: 82, title: "PLAYER", lines: ["SF3 soundfont (sampled)", "Tone.js synths (native)", "per-agent mixer"], accent: TEAL },
+  { id: "compose", x: 1160, y: 240, w: 180, h: 96, title: "COMPOSER", lines: ["patch resolution", "drum synthesis", "bass on chord roots"], kind: "deterministic" },
+  { id: "render", x: 1160, y: 400, w: 180, h: 66, title: "RENDER", lines: ["song.mid + MusicXML", "artifacts + SSE done"], kind: "deterministic" },
+  { id: "player", x: 900, y: 540, w: 190, h: 82, title: "PLAYER", lines: ["SF3 soundfont (sampled)", "Tone.js synths (native)", "per-agent mixer"], accent: TEAL, kind: "frontend · web audio" },
 ];
 
 const AGENT_EDGES: EdgeSpec[] = [
@@ -203,26 +228,26 @@ export function AgentGraphView() {
 
 const LC_NODES: NodeSpec[] = [
   // StateGraph lane
-  { id: "start", x: 20, y: 90, w: 100, h: 46, title: "START", accent: SILVER },
-  { id: "do_intent", x: 170, y: 80, w: 150, h: 62, title: "do_intent", lines: ["IntentDecision", "conditional edges"] },
-  { id: "do_replicate", x: 380, y: 20, w: 160, h: 56, title: "do_replicate", lines: ["Bitmidi → import"], accent: OXBLOOD },
-  { id: "do_research", x: 380, y: 110, w: 160, h: 56, title: "do_research", lines: ["no LLM — pure tools"], accent: TEAL },
-  { id: "do_skeleton", x: 600, y: 110, w: 160, h: 62, title: "do_skeleton", lines: ["BandSkeleton", "retry on parse-None"] },
-  { id: "do_fills", x: 820, y: 110, w: 160, h: 62, title: "do_fills", lines: ["InstrumentFill × N", "ThreadPool(16)"] },
-  { id: "do_compose", x: 1040, y: 110, w: 160, h: 56, title: "do_compose", lines: ["BandSpec → SongState"] },
-  { id: "end", x: 1260, y: 116, w: 90, h: 46, title: "END", accent: SILVER },
+  { id: "start", x: 20, y: 90, w: 100, h: 46, title: "START", accent: SILVER, kind: "entry point" },
+  { id: "do_intent", x: 170, y: 80, w: 150, h: 62, title: "do_intent", lines: ["IntentDecision", "conditional edges"], kind: "graph node · llm" },
+  { id: "do_replicate", x: 380, y: 20, w: 160, h: 56, title: "do_replicate", lines: ["Bitmidi → import"], accent: OXBLOOD, kind: "graph node · tools" },
+  { id: "do_research", x: 380, y: 110, w: 160, h: 56, title: "do_research", lines: ["no LLM — pure tools"], accent: TEAL, kind: "graph node · tools" },
+  { id: "do_skeleton", x: 600, y: 110, w: 160, h: 62, title: "do_skeleton", lines: ["BandSkeleton", "retry on parse-None"], kind: "graph node · llm" },
+  { id: "do_fills", x: 820, y: 110, w: 160, h: 62, title: "do_fills", lines: ["InstrumentFill × N", "ThreadPool(16)"], kind: "graph node · llm ×N" },
+  { id: "do_compose", x: 1040, y: 110, w: 160, h: 56, title: "do_compose", lines: ["BandSpec → SongState"], kind: "graph node · pure fn" },
+  { id: "end", x: 1260, y: 116, w: 90, h: 46, title: "END", accent: SILVER, kind: "terminal" },
 
   // LLM infrastructure lane
-  { id: "make_llm", x: 170, y: 300, w: 160, h: 62, title: "make_llm(role)", lines: ["director / instrument", "role-scoped models"] },
-  { id: "fallback", x: 400, y: 300, w: 180, h: 62, title: "FallbackChatModel", lines: ["provider chain", "cancel-aware httpx"] },
-  { id: "chatopenai", x: 650, y: 300, w: 190, h: 76, title: "ChatOpenAI", lines: ["opencode.ai gateway", "minimax-m3 (director)", "minimax-m2.5 (fills)"] },
-  { id: "structured", x: 910, y: 300, w: 210, h: 76, title: "with_structured_output", lines: ["pydantic schemas:", "IntentDecision · BandSkeleton", "InstrumentFill · _MinimalFill"] },
+  { id: "make_llm", x: 170, y: 300, w: 160, h: 62, title: "make_llm(role)", lines: ["director / instrument", "role-scoped models"], kind: "factory · python" },
+  { id: "fallback", x: 400, y: 300, w: 180, h: 62, title: "FallbackChatModel", lines: ["provider chain", "cancel-aware httpx"], kind: "langchain wrapper" },
+  { id: "chatopenai", x: 650, y: 300, w: 190, h: 76, title: "ChatOpenAI", lines: ["opencode.ai gateway", "minimax-m3 (director)", "minimax-m2.5 (fills)"], kind: "langchain client · http" },
+  { id: "structured", x: 910, y: 300, w: 210, h: 76, title: "with_structured_output", lines: ["pydantic schemas:", "IntentDecision · BandSkeleton", "InstrumentFill · _MinimalFill"], kind: "langchain api · pydantic" },
 
   // streaming lane
-  { id: "stream", x: 170, y: 470, w: 200, h: 62, title: 'graph.stream("values")', lines: ["progress event per node"], accent: TEAL },
-  { id: "fastapi", x: 440, y: 470, w: 170, h: 62, title: "FastAPI SSE", lines: ["/chat/stream", "CancelToken per request"], accent: TEAL },
-  { id: "nextproxy", x: 680, y: 470, w: 170, h: 62, title: "Next.js proxy", lines: ["same-origin SSE relay", "no undici timeouts"], accent: TEAL },
-  { id: "ui", x: 920, y: 470, w: 150, h: 56, title: "UI", lines: ["pipeline stepper", "song deck"], accent: SILVER },
+  { id: "stream", x: 170, y: 470, w: 200, h: 62, title: 'graph.stream("values")', lines: ["progress event per node"], accent: TEAL, kind: "langgraph api" },
+  { id: "fastapi", x: 440, y: 470, w: 170, h: 62, title: "FastAPI SSE", lines: ["/chat/stream", "CancelToken per request"], accent: TEAL, kind: "backend endpoint" },
+  { id: "nextproxy", x: 680, y: 470, w: 170, h: 62, title: "Next.js proxy", lines: ["same-origin SSE relay", "no undici timeouts"], accent: TEAL, kind: "frontend route" },
+  { id: "ui", x: 920, y: 470, w: 150, h: 56, title: "UI", lines: ["pipeline stepper", "song deck"], accent: SILVER, kind: "react" },
 ];
 
 const LC_EDGES: EdgeSpec[] = [

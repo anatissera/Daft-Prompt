@@ -280,6 +280,12 @@ code, pre, .mono { font-family: var(--font-mono); }
   font-size: 10.5px;
   /* fill comes from the SVG attribute — dark text on solid color chips */
 }
+.graph-node-kind {
+  font-family: var(--font-tech, var(--font-sans));
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 .graph-edge-label {
   font-family: var(--font-tech, var(--font-sans));
   font-size: 10px;
