@@ -22,10 +22,17 @@ FetchStatus = Literal[
 class ResolvedSongQuery(BaseModel):
     title: str
     artist: str | None = None
+    primary_artists: list[str] = Field(default_factory=list)
+    featured_artists: list[str] = Field(default_factory=list)
+    collaborating_artists: list[str] = Field(default_factory=list)
+    producers: list[str] = Field(default_factory=list)
+    remix_artist: str | None = None
+    alternate_titles: list[str] = Field(default_factory=list)
     album: str | None = None
     year: int | None = None
     version: str | None = None
     source_url: str | None = None
+    candidate_matches: list[str] = Field(default_factory=list)
 
 
 class ConnectorFailure(BaseModel):

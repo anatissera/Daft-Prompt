@@ -22,8 +22,14 @@ from music_assistant.infrastructure.web_research.connectors import (
     LaCuerdaConnector,
     SongsterrConnector,
 )
+from music_assistant.infrastructure.web_research.entity_resolution import (
+    normalize_match_text,
+    query_variants,
+    resolve_song_entity,
+)
 from music_assistant.infrastructure.web_research.fetch import UrlLibPageFetcher
 from music_assistant.infrastructure.web_research.fusion import EvidenceFuser
+from music_assistant.infrastructure.web_research.musicbrainz import MusicBrainzConnector
 from music_assistant.infrastructure.web_research.parsers import GenericSongPageParser
 from music_assistant.infrastructure.web_research.search import SeededWebSearch
 from music_assistant.infrastructure.web_research.songsterr_tabs import SongsterrTabBundle, SongsterrTabLoader
@@ -98,6 +104,7 @@ class ConnectorSongResearcher(SongResearcher):
         broad_researcher: SongResearcher | None = None,
     ) -> None:
         self.connectors = connectors or [
+            MusicBrainzConnector(),
             HookTheoryConnector(),
             CifraClubConnector(),
             LaCuerdaConnector(),
@@ -108,25 +115,44 @@ class ConnectorSongResearcher(SongResearcher):
         self.songsterr_tab_loader = songsterr_tab_loader or (SongsterrTabLoader() if songsterr_tab_store is not None else None)
         self.songsterr_tab_store = songsterr_tab_store
         self.broad_researcher = broad_researcher
+        self._cache: dict[str, ReferenceProfile] = {}
 
     def research(self, query: str) -> ReferenceProfile:
         if classify_research_scope(query) != "song" and self.broad_researcher is not None:
             return self.broad_researcher.research(query)
         resolved = _resolve_song_query(query)
-        search_results = self.search.search(_search_query(resolved), limit=12)
-        results = [
-            _collect_with_candidates(connector, resolved, search_results)
-            for connector in self.connectors
-        ]
-        bundle = _load_songsterr_tab_bundle(results, resolved, self.songsterr_tab_loader)
+        cache_key = _entity_cache_key(resolved)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached.model_copy(deep=True)
+        variants = query_variants(resolved)
+        search_results = []
+        seen_search_urls: set[str] = set()
+        for variant in variants:
+            for result in self.search.search(_search_query(variant), limit=12):
+                if result.url not in seen_search_urls:
+                    seen_search_urls.add(result.url)
+                    search_results.append(result)
+        with ThreadPoolExecutor(max_workers=min(5, len(self.connectors))) as pool:
+            results = list(pool.map(
+                lambda connector: _collect_with_candidates(connector, resolved, variants, search_results),
+                self.connectors,
+            ))
+        canonical = next(
+            (result.query for result in results if result.source_name == "MusicBrainz" and result.claims),
+            resolved,
+        )
+        bundle = _load_songsterr_tab_bundle(results, canonical, self.songsterr_tab_loader)
+        results = [_remove_unverified_search_shell_claims(result) for result in results]
         if bundle is not None:
-            results.append(_connector_result_from_songsterr_bundle(resolved, bundle))
-        knowledge = self.fuser.fuse_connector_results(resolved, results)
+            results.append(_connector_result_from_songsterr_bundle(canonical, bundle))
+        knowledge = self.fuser.fuse_connector_results(canonical, results)
         if bundle is not None:
             knowledge.metadata["songsterr_tab_index"] = _songsterr_tab_index(bundle)
         profile = _reference_from_knowledge(query, knowledge, results)
         if bundle is not None and self.songsterr_tab_store is not None:
             self.songsterr_tab_store.save(profile.reference_id, bundle)
+        self._cache[cache_key] = profile.model_copy(deep=True)
         return profile
 
 
@@ -250,7 +276,7 @@ def _load_songsterr_tab_bundle(
 ) -> SongsterrTabBundle | None:
     if loader is None:
         return None
-    songsterr_results = [result for result in results if result.source_name == "Songsterr" and result.claims]
+    songsterr_results = [result for result in results if result.source_name == "Songsterr"]
     if not songsterr_results:
         return None
     load = getattr(loader, "load", None)
@@ -445,14 +471,7 @@ def _summary_from_knowledge(knowledge: SongKnowledgeProfile, results: list[Conne
 
 
 def _resolve_song_query(query: str) -> ResolvedSongQuery:
-    cleaned = re.sub(r"\s+", " ", query).strip()
-    by_match = re.match(r"(?P<title>.+?)\s+by\s+(?P<artist>.+)$", cleaned, flags=re.IGNORECASE)
-    if by_match:
-        return ResolvedSongQuery(
-            title=_clean_song_part(by_match.group("title")),
-            artist=_clean_song_part(by_match.group("artist")),
-        )
-    return ResolvedSongQuery(title=cleaned)
+    return resolve_song_entity(query)
 
 
 def _clean_song_part(value: str) -> str:
@@ -467,9 +486,10 @@ def _search_query(query: ResolvedSongQuery) -> str:
 def _collect_with_candidates(
     connector: SongSourceConnector,
     resolved: ResolvedSongQuery,
+    variants: list[ResolvedSongQuery],
     search_results: list,
 ) -> ConnectorResult:
-    attempts = [resolved]
+    attempts = list(variants)
     attempts.extend(
         resolved.model_copy(update={"source_url": result.url})
         for result in search_results
@@ -490,6 +510,21 @@ def _collect_with_candidates(
     if last_result is None:
         return connector.collect(resolved)
     return last_result.model_copy(update={"failures": failures})
+
+
+def _remove_unverified_search_shell_claims(result: ConnectorResult) -> ConnectorResult:
+    if result.source_name != "Songsterr":
+        return result
+    actual_tab_page = bool(result.query.source_url and "/a/wsa/" in result.query.source_url)
+    verified = [
+        claim for claim in result.claims
+        if (actual_tab_page or "/a/wsa/" in claim.source_url) and "Generic tab available" not in claim.value
+    ]
+    return result.model_copy(update={"claims": verified})
+
+
+def _entity_cache_key(query: ResolvedSongQuery) -> str:
+    return "|".join([normalize_match_text(query.title), normalize_match_text(query.artist or ""), normalize_match_text(query.version or "")])
 
 
 def _matches_source(source_name: str, site: str, url: str) -> bool:

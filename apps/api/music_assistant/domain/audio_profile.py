@@ -108,6 +108,12 @@ class MissingData(BaseModel):
 class SongIdentity(BaseModel):
     title: str
     artist: Optional[str] = None
+    primary_artists: list[str] = Field(default_factory=list)
+    featured_artists: list[str] = Field(default_factory=list)
+    collaborating_artists: list[str] = Field(default_factory=list)
+    producers: list[str] = Field(default_factory=list)
+    remix_artist: Optional[str] = None
+    alternate_titles: list[str] = Field(default_factory=list)
     album: Optional[str] = None
     year: Optional[int] = None
     version: Optional[str] = None

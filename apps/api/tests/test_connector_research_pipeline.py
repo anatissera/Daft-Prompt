@@ -139,7 +139,8 @@ def test_connector_song_researcher_returns_reference_profile_with_rich_knowledge
 
     assert profile.source.kind == "metadata"
     assert profile.knowledge is not None
-    assert profile.knowledge.identity.title == "Jamiroquai - Space Cowboy"
+    assert profile.knowledge.identity.title == "Space Cowboy"
+    assert profile.knowledge.identity.artist == "Jamiroquai"
     assert profile.audio is not None
     assert profile.audio.tempo_bpm == 111
     assert profile.audio.key == "A minor"
@@ -212,6 +213,7 @@ def test_connector_song_researcher_default_sources_include_instrument_sources():
     researcher = ConnectorSongResearcher()
 
     assert [connector.source_name for connector in researcher.connectors] == [
+        "MusicBrainz",
         "HookTheory",
         "CifraClub",
         "LaCuerda",

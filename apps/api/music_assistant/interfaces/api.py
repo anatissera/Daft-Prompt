@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 import re
 import time
+from functools import lru_cache
 from importlib.util import find_spec
 from dotenv import load_dotenv
 
@@ -177,6 +178,7 @@ def _compact_instrument_profile(profile) -> dict:
     }
 
 
+@lru_cache(maxsize=1)
 def _song_researcher() -> ConnectorSongResearcher:
     return ConnectorSongResearcher(
         songsterr_tab_store=SONGSTERR_TAB_STORE,
