@@ -11,14 +11,18 @@ attempted.
 
 ### Priority 1 — Existing regressions
 
-- [ ] Browser playback: reproduce remote soundfont/load failures.
-  - Status: reproduced; root cause identified.
+- [x] Browser playback: reproduce remote soundfont/load failures.
+  - Status: fixed and verified.
   - Root cause/evidence: `TrackMixer` creates one `Tone.Sampler` per row and
     blocks playback on sparse melodic anchors or the complete GM percussion
     range from `https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/`.
     Rejected sample promises escape `togglePlayback`; there is no local voice
     or fallback, so one unavailable external host makes every sketch silent.
-  - Fix/tests/benchmark/commit/push: pending.
+  - Fix/tests/benchmark/commit/push: playback now uses local Web Audio
+    `Tone.PolySynth` voices and makes zero soundfont/sample network requests
+    (previously 5 requests per melodic track and up to 47 for a drum track).
+    Mixer behavior tests, the no-remote-playback architecture regression test,
+    TypeScript, and a production Next.js build pass. Commit/push pending.
 - [ ] Score rendering: reproduce complete score-generation failures and verify
   that missing notation can currently interrupt the product flow.
   - Status: reproduced; root cause identified.

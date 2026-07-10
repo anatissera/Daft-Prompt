@@ -11,14 +11,8 @@ import {
   type TrackEvent,
 } from "@/lib/trackMixerLogic.mjs";
 import {
-  FLUIDR3_BASE,
-  PERCUSSION_MAX,
-  PERCUSSION_MIN,
-  folderForProgram,
-  midiToFileName,
   midiToName,
   resolveIsDrum,
-  resolveProgram,
 } from "@/lib/gmInstruments";
 
 interface TrackRow {
@@ -40,25 +34,7 @@ async function loadTone(): Promise<typeof ToneType> {
   return (await import("tone")) as unknown as typeof ToneType;
 }
 
-// 5 sparse base notes give Tone.Sampler enough anchors to pitch-shift smoothly.
-const MELODIC_ANCHORS = ["C2", "C3", "C4", "C5", "C6"];
-// FluidR3 percussion folder uses letter-note names mapped to drum keys.
-const DRUM_KEYS: number[] = [];
-for (let n = PERCUSSION_MIN; n <= PERCUSSION_MAX; n++) DRUM_KEYS.push(n);
-
-function melodicUrls(): Record<string, string> {
-  const urls: Record<string, string> = {};
-  // Anchors are natural notes only, so file name == Tone key.
-  for (const n of MELODIC_ANCHORS) urls[n] = `${n}.mp3`;
-  return urls;
-}
-
-function drumUrls(): Record<string, string> {
-  const urls: Record<string, string> = {};
-  // Tone needs `C#2`-style keys; FluidR3 ships `Cs2.mp3` files.
-  for (const k of DRUM_KEYS) urls[midiToName(k)] = `${midiToFileName(k)}.mp3`;
-  return urls;
-}
+type LocalVoice = ToneType.PolySynth<ToneType.Synth>;
 
 export default function TrackMixer({
   song,
@@ -77,13 +53,13 @@ export default function TrackMixer({
   const mutedTrackIds = mutedProp ?? internalMuted;
   const soloTrackIds = soloProp ?? internalSolo;
 
-  const [loadingSamples, setLoadingSamples] = useState(false);
+  const [preparingPlayback, setPreparingPlayback] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const toneRef = useRef<typeof ToneType | null>(null);
   // One sampler + gain per ROW (not per samplerKey) so two channels with the
   // same MIDI program still get independent mute/solo control.
-  const samplersRef = useRef<Map<string, ToneType.Sampler>>(new Map());
+  const voicesRef = useRef<Map<string, LocalVoice>>(new Map());
   const gainsRef = useRef<Map<string, ToneType.Gain>>(new Map());
   const timerRef = useRef<number | null>(null);
 
@@ -127,8 +103,8 @@ export default function TrackMixer({
     if (Tone) {
       Tone.Transport.pause();
       Tone.Transport.cancel(0);
-      for (const s of samplersRef.current.values()) {
-        try { s.releaseAll(); } catch { /* noop */ }
+      for (const voice of voicesRef.current.values()) {
+        try { voice.releaseAll(); } catch { /* noop */ }
       }
     }
     if (resetPosition && Tone) Tone.Transport.seconds = 0;
@@ -136,32 +112,28 @@ export default function TrackMixer({
     setPlaying(false);
   }
 
-  async function ensureSamplers(Tone: typeof ToneType) {
-    setLoadingSamples(true);
+  function ensureVoices(Tone: typeof ToneType) {
+    setPreparingPlayback(true);
     try {
-      // Per-row samplers; drop any whose row id no longer exists.
+      // Per-row local voices; drop any whose row id no longer exists.
       const wanted = new Set(rows.map((r) => r.id));
-      for (const [id, s] of samplersRef.current) {
+      for (const [id, voice] of voicesRef.current) {
         if (!wanted.has(id)) {
-          s.disconnect();
-          samplersRef.current.delete(id);
+          voice.dispose();
+          voicesRef.current.delete(id);
           gainsRef.current.get(id)?.disconnect();
           gainsRef.current.delete(id);
         }
       }
-      const created: Array<Promise<unknown>> = [];
       for (const row of rows) {
-        if (samplersRef.current.has(row.id)) continue;
+        if (voicesRef.current.has(row.id)) continue;
         const gain = new Tone.Gain(audibleTrackIds.has(row.id) ? 0.9 : 0).toDestination();
-        const sampler = makeSampler(Tone, row.roster).connect(gain);
-        samplersRef.current.set(row.id, sampler);
+        const voice = makeLocalVoice(Tone, row.roster).connect(gain);
+        voicesRef.current.set(row.id, voice);
         gainsRef.current.set(row.id, gain);
-        created.push((sampler.loaded as unknown as Promise<unknown>) ?? Tone.loaded());
       }
-      await Promise.all(created);
-      await Tone.loaded();
     } finally {
-      setLoadingSamples(false);
+      setPreparingPlayback(false);
     }
   }
 
@@ -173,7 +145,7 @@ export default function TrackMixer({
     const Tone = await loadTone();
     toneRef.current = Tone;
     await Tone.start();
-    await ensureSamplers(Tone);
+    ensureVoices(Tone);
 
     // Clear any leftover scheduled events from a previous run.
     Tone.Transport.cancel(0);
@@ -181,8 +153,8 @@ export default function TrackMixer({
     Tone.Transport.seconds = start;
 
     for (const row of rows) {
-      const sampler = samplersRef.current.get(row.id);
-      if (!sampler) continue;
+      const voice = voicesRef.current.get(row.id);
+      if (!voice) continue;
       const gain = gainsRef.current.get(row.id);
       if (gain) gain.gain.value = audibleTrackIds.has(row.id) ? 0.9 : 0;
 
@@ -193,7 +165,7 @@ export default function TrackMixer({
         const vel = Math.max(0.1, Math.min(1, event.velocity));
         // Schedule against the transport so cancel(0) actually clears it.
         Tone.Transport.schedule((time: number) => {
-          try { sampler.triggerAttackRelease(note, dur, time, vel); } catch { /* skip */ }
+          try { voice.triggerAttackRelease(note, dur, time, vel); } catch { /* skip */ }
         }, event.startSeconds);
       }
     }
@@ -226,9 +198,9 @@ export default function TrackMixer({
           type="button"
           className="transport-button"
           onClick={togglePlayback}
-          disabled={duration === 0 || loadingSamples}
+          disabled={duration === 0 || preparingPlayback}
         >
-          {loadingSamples ? "Loading…" : playing ? "Stop" : "Play"}
+          {preparingPlayback ? "Preparing…" : playing ? "Stop" : "Play"}
         </button>
         <span className="transport-time">{formatTime(position)}</span>
         <input
@@ -272,22 +244,14 @@ export default function TrackMixer({
   );
 }
 
-function samplerKey(r: RosterItem): string {
-  if (resolveIsDrum(r)) return "drums";
-  return `prog_${resolveProgram(r)}`;
-}
-
-function makeSampler(Tone: typeof ToneType, r: RosterItem): ToneType.Sampler {
-  if (resolveIsDrum(r)) {
-    return new Tone.Sampler({
-      urls: drumUrls(),
-      baseUrl: `${FLUIDR3_BASE}percussion-mp3/`,
-    });
-  }
-  const folder = folderForProgram(resolveProgram(r));
-  return new Tone.Sampler({
-    urls: melodicUrls(),
-    baseUrl: `${FLUIDR3_BASE}${folder}-mp3/`,
+function makeLocalVoice(Tone: typeof ToneType, roster: RosterItem): LocalVoice {
+  const isDrum = resolveIsDrum(roster);
+  return new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: isDrum ? "sine" : "triangle" },
+    envelope: isDrum
+      ? { attack: 0.001, decay: 0.08, sustain: 0, release: 0.05 }
+      : { attack: 0.01, decay: 0.12, sustain: 0.35, release: 0.25 },
+    volume: isDrum ? -5 : -9,
   });
 }
 
