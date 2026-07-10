@@ -6,6 +6,9 @@ services:
       # Leave provider settings unset for a self-contained canned-composition
       # runtime. Supply these through a local .env file when using an LLM.
       LLM_PROVIDER: ${LLM_PROVIDER:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}

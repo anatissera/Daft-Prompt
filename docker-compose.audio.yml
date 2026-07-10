@@ -4,7 +4,9 @@ services:
   api:
     build:
       args:
-        RUNTIME_EXTRAS: audio-analysis
+        # Keep the standard Vertex adapter when this override replaces the
+        # Dockerfile's default build argument, so audio and Vertex compose.
+        RUNTIME_EXTRAS: "audio-analysis vertexai"
         INSTALL_AUDIO_SYSTEM_DEPS: "true"
     environment:
       ENABLE_AUDIO_ANALYSIS: "true"
