@@ -19,6 +19,7 @@ Last reviewed: 2026-07-10
 - The default Gemini-to-OpenRouter provider fallback is now installable in the standard backend runtime, matching its default configuration instead of failing only after a Gemini outage or quota event.
 - Vertex AI Gemini is verified against a real project through Application Default Credentials; no API key is required or stored by the repository.
 - The director now explicitly batches independent rhythm instruments together, retaining dependency-ordered composition while avoiding needless one-instrument waves.
+- Streamed agent passes carry their director-defined composition-group name, and the compact negotiation feed displays it beside round duration for dependency-aware latency diagnosis.
 
 ## Current architecture
 
@@ -53,14 +54,14 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Use the measured Vertex timings to evaluate the next responsiveness improvement:
-make composition-group boundaries visible in the streamed agent detail, then
-compare representative arrangements before changing LangGraph concurrency.
+Run comparable Vertex benchmarks across small and fuller arrangements now that
+the streamed feed identifies each dependency wave; change LangGraph concurrency
+only if those measurements reveal an avoidable graph-level bottleneck.
 
 ## Remaining milestones
 
-1. Surface composition-group boundaries in the streamed agent detail, then run
-   comparable Vertex benchmarks before changing LangGraph concurrency.
+1. Run comparable Vertex benchmarks across arrangement sizes and dependency
+   waves before changing LangGraph concurrency.
 2. Evaluate optional, local-only style-card/groove providers only if they can improve an observed quality gap without becoming a required runtime dependency.
 3. Exercise optional Basic Pitch and live Songsterr behavior when their respective runtimes/permissions are available.
 

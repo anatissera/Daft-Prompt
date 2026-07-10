@@ -99,7 +99,10 @@ export default function NegotiationFeed({ events, embedded = false }: { events: 
               <span className="feed-body">
                 <span className="feed-header">
                   <span className="feed-instrument">{e.instrument_id}</span>
-                  <span className="feed-round">round {e.round}{stageDuration(e)}</span>
+                  <span className="feed-round">
+                    {e.composition_group ? `${e.composition_group} · ` : ""}
+                    round {e.round}{stageDuration(e)}
+                  </span>
                 </span>
                 <p className="feed-summary">{e.notes_summary}</p>
 

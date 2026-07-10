@@ -11,7 +11,7 @@ from music_assistant.agents.instrument import InstrumentTurnOutput, NewRequest, 
 
 from music_assistant.agents.instrument import InstrumentRevisionOutput
 from music_assistant.agents.director import DirectorOutput, ArrangementInstrument, ArrangementSection, CompositionGroup as DCompositionGroup
-from music_assistant.graph import run_negotiation
+from music_assistant.graph import _composition_group_name, run_negotiation
 from music_assistant.domain.song_state import (
     ChordSpan, CompositionGroup, Header, Note, RosterItem, SongState,
 )
@@ -25,6 +25,14 @@ GROUPS = [
     CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"], max_negotiation_rounds=2),
     CompositionGroup(name="harmony", instrument_ids=["epiano"], max_negotiation_rounds=0),
 ]
+
+
+def test_streaming_group_lookup_uses_director_defined_wave():
+    song = SongState(request="funk", header=HEADER, roster=[DRUMS, BASS, EPIANO], composition_groups=GROUPS)
+
+    assert _composition_group_name(song, "bass") == "rhythm"
+    assert _composition_group_name(song, "epiano") == "harmony"
+    assert _composition_group_name(song, "missing") is None
 
 
 def _make_director_output(roster, groups):
