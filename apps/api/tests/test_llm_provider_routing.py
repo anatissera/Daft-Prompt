@@ -13,6 +13,7 @@ from music_assistant.infrastructure.llm import (
     _build_chat_model,
     classify_llm_error,
     model_plan,
+    temperature_for_role,
     with_fallbacks,
 )
 
@@ -214,6 +215,31 @@ def test_gemini_chat_model_uses_configured_retry_count(monkeypatch):
     assert captured["retries"] == 0
 
 
+def test_role_temperatures_are_provider_agnostic_and_configurable(monkeypatch):
+    captured: dict[str, float] = {}
+
+    class FakeGemini:
+        def __init__(self, **kwargs):
+            captured["temperature"] = kwargs["temperature"]
+
+    import music_assistant.infrastructure.llm as llm_module
+
+    settings = Settings(
+        llm_provider="gemini",
+        gemini_api_key="gem",
+        llm_director_temperature=0.15,
+        llm_instrument_temperature=0.8,
+        llm_arbiter_temperature=0.05,
+    )
+    monkeypatch.setattr(llm_module, "_import_gemini_chat", lambda: FakeGemini)
+
+    assert temperature_for_role("director", settings) == 0.15
+    assert temperature_for_role("instrument", settings) == 0.8
+    assert temperature_for_role("arbiter", settings) == 0.05
+    _build_chat_model("gemini", "gemini-2.5-flash", settings, role="arbiter")
+    assert captured["temperature"] == 0.05
+
+
 def test_openrouter_missing_dependency_mentions_attempted_model(monkeypatch):
     import music_assistant.infrastructure.llm as llm_module
 
@@ -256,7 +282,7 @@ def test_structured_invoker_recovers_markdown_fenced_json(monkeypatch):
 
     import music_assistant.infrastructure.llm as llm_module
 
-    monkeypatch.setattr(llm_module, "_build_chat_model", lambda *_args: FakeChat())
+    monkeypatch.setattr(llm_module, "_build_chat_model", lambda *_args, **_kwargs: FakeChat())
 
     invoker = _FallbackStructuredInvoker(
         "director",

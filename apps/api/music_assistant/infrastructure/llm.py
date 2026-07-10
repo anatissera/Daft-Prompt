@@ -187,22 +187,36 @@ def _validate_vertexai_adc() -> None:
     google.auth.default()
 
 
-def _build_chat_model(provider: str, model: str, settings: Settings):
+def temperature_for_role(role: str, settings: Settings) -> float:
+    """Keep arrangement decisions stable without flattening instrumental ideas.
+
+    The values are provider-neutral and configurable, so every adapter follows
+    the same quality/responsiveness trade-off.
+    """
+    return {
+        "director": settings.llm_director_temperature,
+        "instrument": settings.llm_instrument_temperature,
+        "arbiter": settings.llm_arbiter_temperature,
+    }.get(role, settings.llm_instrument_temperature)
+
+
+def _build_chat_model(provider: str, model: str, settings: Settings, *, role: str = "director"):
     key = settings.api_key_for(provider)
+    temperature = temperature_for_role(role, settings)
     if provider == "gemini":
         ChatGoogleGenerativeAI = _import_gemini_chat()
 
         return ChatGoogleGenerativeAI(
             model=model,
             google_api_key=key,
-            temperature=0.7,
+            temperature=temperature,
             retries=max(0, settings.llm_max_retries),
         )
 
     if provider == "groq":
         from langchain_groq import ChatGroq
 
-        return ChatGroq(model=model, api_key=key, temperature=0.7)
+        return ChatGroq(model=model, api_key=key, temperature=temperature)
 
     if provider == "openrouter":
         try:
@@ -218,7 +232,7 @@ def _build_chat_model(provider: str, model: str, settings: Settings):
             model=model,
             api_key=key,
             base_url=settings.openrouter_base_url,
-            temperature=0.7,
+            temperature=temperature,
             max_retries=max(0, settings.llm_max_retries),
         )
 
@@ -252,7 +266,7 @@ def _build_chat_model(provider: str, model: str, settings: Settings):
             model=model,
             project=settings.google_cloud_project,
             location=settings.google_cloud_location,
-            temperature=0.7,
+            temperature=temperature,
             max_retries=max(0, settings.llm_max_retries),
         )
 
@@ -327,7 +341,7 @@ class _FallbackStructuredInvoker:
     def invoke(self, messages):
         def operation(provider: str, model: str):
             _RATE_LIMITER.wait(self.settings.llm_rpm_limit)
-            chat = _build_chat_model(provider, model, self.settings)
+            chat = _build_chat_model(provider, model, self.settings, role=self.role)
             callbacks = _usage_callbacks()
             return _invoke_structured_with_recovery(chat, self.schema, messages, callbacks, provider, model)
 

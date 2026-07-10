@@ -6,6 +6,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal, Optional
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Provider = Literal["gemini", "groq", "openrouter", "vertexai"]
@@ -43,6 +44,9 @@ class Settings(BaseSettings):
     llm_max_retries: int = 1
     llm_rpm_limit: int = 5
     llm_fail_fast_on_quota: bool = True
+    llm_director_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    llm_instrument_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    llm_arbiter_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
 
     max_rounds: int = 3
     reference_upload_dir: Optional[str] = None
