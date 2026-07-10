@@ -82,8 +82,35 @@ push was attempted; all pushes were rejected because the remote branch is ahead.
 
 ### Later priorities
 
-- [ ] Priority 2: non-destructive incremental composition editing (active).
-- [ ] Priority 3: genre-aware, purpose-driven minimal instrumentation.
+### Priority 2 — Human iteration (complete)
+
+Priority 2 completion audit: full backend suite 571 passed, 1 skipped; full
+frontend suite 60 passed with clean TypeScript and production build.
+
+- [x] Enforce non-destructive revision invariants at the application boundary.
+  - Status: fixed and verified.
+  - Root cause/evidence: `ComposeSong.revise_instrument` returns an adapter's
+    complete candidate `SongState` without a merge/postcondition. A malformed or
+    over-broad reviser can change header/harmony/roster and drop unrelated parts.
+  - Fix/tests/benchmark/commit/push: application merge accepts only the named
+    part and preserves header, request, roster, harmony, peer parts, negotiation
+    history, and errors. A deliberately destructive fake reviser is contained.
+    Merge-guard overhead averages 218.29 μs. Commit/push pending.
+- [x] Make targeted sound/timbre edits change the named instrument only.
+  - Status: fixed and verified.
+  - Root cause/evidence: all current edits call the note-revision agent. Roster
+    `instrument`, `midi_program`, and `playing_style` remain unchanged, so a
+    request for a different sound cannot affect playback identity.
+  - Fix/tests/benchmark/commit/push: explicit clean/acoustic/distorted/synth/piano
+    requests update only the target roster entry; unspecified sound requests ask
+    one clarification. Local playback maps program families to distinct local
+    oscillator timbres. Commit/push pending.
+- [x] Verify instrumentation, arrangement, harmony, rhythm, and musical identity
+  preservation across repeated edits to the internal current composition.
+  - Status: verified by repeated-edit sequence tests. Timbre persists into a
+    later note edit; all unrequested notes, peer parts, header, original request,
+    and roster state remain unchanged.
+- [ ] Priority 3: genre-aware, purpose-driven minimal instrumentation (active).
 - [ ] Priority 4: research-pipeline evaluation and benchmarked Giner comparison.
 - [ ] Full Phase 2 completion audit.
 
@@ -174,8 +201,8 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Phase 2 Priority 2: reproduce destructive composition edits, define preservation
-invariants, and make current-song revisions non-destructive.
+Phase 2 Priority 3: audit director ensemble selection and enforce genre-aware,
+purpose-driven minimal instrumentation.
 
 ## Remaining milestones
 

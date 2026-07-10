@@ -78,7 +78,25 @@ class ComposeSong:
             raise ComposeConfigurationError()
         if self.instrument_reviser is None:
             raise ComposeConfigurationError()
-        return self.instrument_reviser(song, instruction, instrument_id), "director"
+        candidate = self.instrument_reviser(deepcopy(song), instruction, instrument_id)
+        return _merge_targeted_revision(song, candidate, instrument_id), "director"
+
+
+def _merge_targeted_revision(original: SongState, candidate: SongState, instrument_id: str) -> SongState:
+    """Accept only the requested part from a revision candidate.
+
+    Header, harmony, roster, peer parts, negotiation history, and the original
+    request are composition identity. They cannot be changed by a one-part edit.
+    """
+    if instrument_id not in original.parts:
+        raise ValueError(f"unknown instrument id: {instrument_id}")
+    revised_part = candidate.parts.get(instrument_id, original.parts[instrument_id]).model_copy(
+        update={"instrument_id": instrument_id}
+    )
+    return original.model_copy(
+        deep=True,
+        update={"parts": {**original.parts, instrument_id: revised_part}},
+    )
 
 
 def prompt_from_composition_brief(brief: CompositionBrief) -> str:

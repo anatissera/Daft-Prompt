@@ -13,6 +13,7 @@ import {
 import {
   midiToName,
   resolveIsDrum,
+  resolveProgram,
 } from "@/lib/gmInstruments";
 
 interface TrackRow {
@@ -246,8 +247,18 @@ export default function TrackMixer({
 
 function makeLocalVoice(Tone: typeof ToneType, roster: RosterItem): LocalVoice {
   const isDrum = resolveIsDrum(roster);
+  const program = resolveProgram(roster);
+  const oscillator = isDrum
+    ? "sine"
+    : program >= 80 && program <= 87
+      ? "square"
+      : program >= 29 && program <= 31
+        ? "sawtooth"
+        : program >= 24 && program <= 28
+          ? "triangle"
+          : "sine";
   return new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: isDrum ? "sine" : "triangle" },
+    oscillator: { type: oscillator },
     envelope: isDrum
       ? { attack: 0.001, decay: 0.08, sustain: 0, release: 0.05 }
       : { attack: 0.01, decay: 0.12, sustain: 0.35, release: 0.25 },

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -370,6 +371,19 @@ class ChatMusic:
                 else f"Which generated instrument should I revise? Available instruments: {choices}."
             )
             return ChatResponse(intent="clarify", reply=clarification, clarification=clarification)
+        timbre = _requested_timbre(message)
+        if _is_timbre_edit(message):
+            if timbre is None:
+                clarification = (
+                    f"What sound should the {match.instrument} use (for example clean, acoustic, or distorted)?"
+                )
+                return ChatResponse(intent="clarify", reply=clarification, clarification=clarification)
+            revised = _apply_timbre_edit(song, match.id, timbre)
+            return ChatResponse(
+                intent="compose",
+                reply=f"Changed only the {match.instrument} sound to {timbre.label}; the notes and arrangement are unchanged.",
+                compose=ChatComposeResult(song=revised, source="director", warnings=_composition_warnings(revised)),
+            )
         try:
             revised, source = self.compose_song.revise_instrument(song, message, match.id)
         except OffTopicRequest as refusal:
@@ -718,6 +732,48 @@ def _looks_like_named_song_analysis(message: str) -> bool:
 
 def _looks_like_song_edit(message: str) -> bool:
     return bool(_SONG_EDIT_RE.search(message))
+
+
+@dataclass(frozen=True)
+class _TimbreChoice:
+    label: str
+    instrument: str
+    midi_program: int
+
+
+_TIMBRE_CHOICES = (
+    (re.compile(r"\b(clean|cleaner)\b", re.IGNORECASE), _TimbreChoice("clean electric", "electric_guitar_clean", 27)),
+    (re.compile(r"\b(acoustic|acústic[oa])\b", re.IGNORECASE), _TimbreChoice("acoustic", "acoustic_guitar_steel", 25)),
+    (re.compile(r"\b(distort(?:ed|ion)?|overdriv(?:e|en)|heavy)\b", re.IGNORECASE), _TimbreChoice("distorted", "electric_guitar_distorted", 30)),
+    (re.compile(r"\b(synth|synthesizer)\b", re.IGNORECASE), _TimbreChoice("synth lead", "synth_lead", 80)),
+    (re.compile(r"\b(piano|grand piano)\b", re.IGNORECASE), _TimbreChoice("acoustic piano", "acoustic_grand_piano", 0)),
+)
+
+
+def _is_timbre_edit(message: str) -> bool:
+    normalized = message.lower()
+    return bool(
+        re.search(r"\b(sound|tone|timbre|sonido|tono|timbre)\b", normalized)
+        or any(pattern.search(message) for pattern, _choice in _TIMBRE_CHOICES)
+    )
+
+
+def _requested_timbre(message: str) -> _TimbreChoice | None:
+    return next((choice for pattern, choice in _TIMBRE_CHOICES if pattern.search(message)), None)
+
+
+def _apply_timbre_edit(song: SongState, instrument_id: str, choice: _TimbreChoice) -> SongState:
+    roster = [
+        item.model_copy(
+            update={
+                "instrument": choice.instrument,
+                "midi_program": choice.midi_program,
+                "playing_style": f"{choice.label} timbre. {item.playing_style}".strip(),
+            }
+        ) if item.id == instrument_id else item
+        for item in song.roster
+    ]
+    return song.model_copy(deep=True, update={"roster": roster})
 
 
 def _instrument_label(item) -> str:

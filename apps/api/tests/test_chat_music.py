@@ -596,6 +596,59 @@ def test_current_song_edit_ambiguous_guitar_still_asks_one_clarification():
     assert composer.revision_calls == []
 
 
+def test_timbre_edit_changes_only_target_roster_identity_and_preserves_all_notes():
+    chat, composer, _, _ = _make_chat()
+    original = _generated_song()
+
+    response = chat.handle(ChatRequest(message="Make the guitar sound clean.", current_song=original))
+
+    assert response.compose is not None
+    revised = response.compose.song
+    assert revised.header == original.header
+    assert revised.parts == original.parts
+    assert revised.roster[1] == original.roster[1]
+    assert revised.roster[0].instrument == "electric_guitar_clean"
+    assert revised.roster[0].midi_program == 27
+    assert composer.revision_calls == []
+
+
+def test_unspecified_timbre_edit_asks_for_the_desired_sound_without_mutating_song():
+    chat, composer, _, _ = _make_chat()
+
+    response = chat.handle(ChatRequest(message="Change the guitar sound.", current_song=_generated_song()))
+
+    assert response.intent == "clarify"
+    assert "What sound" in response.reply
+    assert composer.revision_calls == []
+
+
+def test_repeated_edits_accumulate_on_current_song_without_changing_unrequested_material():
+    composer = _RecordingComposer()
+    chat, _, _, _ = _make_chat(composer=composer)
+    original = _generated_song()
+
+    timbre_response = chat.handle(
+        ChatRequest(message="Make the guitar sound distorted.", current_song=original)
+    )
+    assert timbre_response.compose is not None
+    after_timbre = timbre_response.compose.song
+    notes_before_revision = after_timbre.parts["guitar"].notes
+    bass_before_revision = after_timbre.parts["bass"]
+
+    note_response = chat.handle(
+        ChatRequest(message="Make the guitar less busy.", current_song=after_timbre)
+    )
+
+    assert note_response.compose is not None
+    final = note_response.compose.song
+    assert final.header == original.header
+    assert final.request == original.request
+    assert final.roster == after_timbre.roster
+    assert final.roster[0].midi_program == 30
+    assert final.parts["bass"] == bass_before_revision
+    assert final.parts["guitar"].notes != notes_before_revision
+
+
 def test_spanish_song_edit_routes_to_the_named_instrument():
     composer = _RecordingComposer()
     chat, _, _, _ = _make_chat(composer=composer)
