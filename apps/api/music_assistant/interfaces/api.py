@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 import re
 import time
+from importlib.util import find_spec
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -80,6 +81,7 @@ def health() -> dict[str, str]:
 
 @app.post("/references/analyze", response_model=ReferenceProfile)
 async def analyze_reference_upload(file: UploadFile | None = File(None)) -> ReferenceProfile:
+    _require_audio_analysis()
     source = await _store_reference_upload(file)
     try:
         profile = AnalyzeReference(_reference_analyzer(), transcriber=_reference_transcriber()).execute(source)
@@ -96,6 +98,7 @@ async def analyze_reference_upload(file: UploadFile | None = File(None)) -> Refe
 
 @app.post("/references/analyze/stream")
 async def analyze_reference_upload_stream(file: UploadFile | None = File(None)) -> StreamingResponse:
+    _require_audio_analysis()
     source = await _store_reference_upload(file)
 
     def sse() -> Iterator[str]:
@@ -308,6 +311,28 @@ def _reference_analyzer() -> DeepHarmonicAnalyzer:
         ),
     )
     return DeepHarmonicAnalyzer(output_root=upload_root, separator=separator)
+
+
+def _require_audio_analysis() -> None:
+    setup = (
+        "Start with `docker compose -f docker-compose.yml -f docker-compose.audio.yml up --build` "
+        "to enable uploads, Demucs, and MIR analysis."
+    )
+    if not bool(getattr(get_settings(), "enable_audio_analysis", False)):
+        raise HTTPException(
+            status_code=503,
+            detail=f"Local audio analysis is optional and is not enabled in this runtime. {setup}",
+        )
+    required_modules = ("librosa", "soundfile", "demucs", "torch", "torchaudio")
+    missing = [name for name in required_modules if find_spec(name) is None]
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Local audio analysis is enabled but its optional runtime is incomplete ({', '.join(missing)}). "
+                f"{setup}"
+            ),
+        )
 
 
 def _reference_transcriber() -> BasicPitchTranscriber | None:

@@ -35,6 +35,11 @@ from music_assistant.domain.audio_profile import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _enable_optional_audio_for_route_contract_tests(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api, "_require_audio_analysis", lambda: None)
+
+
 def _deterministic_profile(source: ReferenceSource) -> ReferenceProfile:
     chosen = ChordCandidate(root="A", quality="minor", label="Am", confidence=0.8)
     audio = AudioProfile(

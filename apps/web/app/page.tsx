@@ -66,6 +66,8 @@ interface ChatResponse {
   error?: { message?: string; code?: string; provider?: string | null; model?: string | null } | null;
 }
 
+const localAudioAnalysisEnabled = process.env.NEXT_PUBLIC_ENABLE_LOCAL_AUDIO_ANALYSIS === "true";
+
 export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messageIndexRef = useRef(1);
@@ -74,7 +76,9 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     createTextMessage(
       "assistant",
-      "Daft Prompt — multi-agent music studio. Ask me to compose a sketch (\"slow blues in F minor\"), upload audio to analyze, or ask about a loaded reference.",
+      localAudioAnalysisEnabled
+        ? "Daft Prompt — multi-agent music studio. Ask me to compose a sketch (\"slow blues in F minor\"), upload audio to analyze, or ask about a loaded reference."
+        : "Daft Prompt — multi-agent music studio. Ask me to compose a sketch (\"slow blues in F minor\"), explore music theory, or research a song when web research is enabled.",
       0,
     ),
   ]);
@@ -336,6 +340,7 @@ export default function Home() {
         ) : null}
         <ChatComposer
           busy={busy}
+          audioAttachmentEnabled={localAudioAnalysisEnabled}
           prompt={prompt}
           selectedFileName={selectedFile?.name ?? null}
           fileInputRef={fileInputRef}

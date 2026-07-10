@@ -118,6 +118,11 @@ _RESEARCH_PREFIX_RE = re.compile(
     r"(\s+(for|about|and\s+analyze|sobre))?\s*",
     re.IGNORECASE,
 )
+_GETTING_STARTED_RE = re.compile(
+    r"\b(what\s+can\s+you\s+(do|help)|how\s+(can|do)\s+(you|i)\s+(use|start)|help|"
+    r"what\s+do\s+you\s+do|qu[eé]\s+(pod[eé]s|puedes)\s+hacer|c[oó]mo\s+(uso|empiezo)|ayuda)\b",
+    re.IGNORECASE,
+)
 _REFERENCE_GUIDE_RE = re.compile(
     r"\b(like\s+this|like\s+the\s+(reference|song|track)|based\s+on\s+(this|the\s+(reference|song|track))|using\s+(this|the)\s+(reference|song|track)|inspired\s+by\s+(this|the\s+(reference|song|track))|same\s+(vibe|feel|energy)|in\s+this\s+style"
     r"|como\s+(esta|ésta|la)\s+(referencia|canci[oó]n|tema)|basad[oa]\s+en\s+(esta|la)\s+(referencia|canci[oó]n|tema)|usando\s+(esta|la)\s+(referencia|canci[oó]n|tema)|con\s+la\s+misma\s+(energ[ií]a|onda|vibra|estilo)|en\s+este\s+estilo)\b",
@@ -175,6 +180,9 @@ class ChatMusic:
         profiles = _profiles_from_request(request, self.reference_store)
         if profile is None and profiles:
             profile = profiles[0]
+
+        if self.chat_model is None and _GETTING_STARTED_RE.search(message):
+            return _getting_started_response(message)
 
         intent = self._classify(message, has_reference=profile is not None)
         if intent == "research_song":
@@ -475,6 +483,18 @@ class ChatMusic:
 
 def _off_topic_response(refusal: OffTopicRequest) -> ChatResponse:
     return ChatResponse(intent="off_topic", reply=refusal.message)
+
+
+def _getting_started_response(message: str) -> ChatResponse:
+    reply = (
+        "Puedo ayudarte a componer un boceto, explicar teoría musical y buscar información musical "
+        "cuando habilites la búsqueda web. Para generar con IA, configurá un proveedor LLM opcional; "
+        "mientras tanto probá: “componé un groove funk de 8 compases”."
+        if is_spanish(message)
+        else "I can help you compose a sketch, explain music theory, and research music when web research is enabled. "
+        "Configure an optional LLM provider for AI generation; meanwhile try: “compose an 8-bar funk groove.”"
+    )
+    return ChatResponse(intent="clarify", reply=reply, clarification=reply)
 
 
 def _compose_unavailable_response(

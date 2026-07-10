@@ -4,6 +4,7 @@ import type { FormEvent, RefObject } from "react";
 
 interface ChatComposerProps {
   busy: boolean;
+  audioAttachmentEnabled: boolean;
   prompt: string;
   selectedFileName: string | null;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -14,6 +15,7 @@ interface ChatComposerProps {
 
 export default function ChatComposer({
   busy,
+  audioAttachmentEnabled,
   prompt,
   selectedFileName,
   fileInputRef,
@@ -34,18 +36,22 @@ export default function ChatComposer({
           rows={1}
         />
         <div className="composer-actions">
-          <input
-            ref={fileInputRef}
-            id="audio-file"
-            type="file"
-            accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif"
-            className="sr-only"
-            onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
-          />
-          <label htmlFor="audio-file" className="attach-button">
-            <span className="attach-icon" aria-hidden="true">♪</span> Attach audio
-          </label>
-          {selectedFileName ? <span className="selected-file">{selectedFileName}</span> : null}
+          {audioAttachmentEnabled ? (
+            <>
+              <input
+                ref={fileInputRef}
+                id="audio-file"
+                type="file"
+                accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif"
+                className="sr-only"
+                onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+              />
+              <label htmlFor="audio-file" className="attach-button">
+                <span className="attach-icon" aria-hidden="true">♪</span> Attach audio
+              </label>
+              {selectedFileName ? <span className="selected-file">{selectedFileName}</span> : null}
+            </>
+          ) : null}
           <button type="submit" disabled={busy} className="send-button">
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
             {busy ? "WORKING…" : <>SEND <span aria-hidden="true">▸</span></>}

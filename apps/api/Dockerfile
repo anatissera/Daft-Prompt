@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,16 +10,26 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg build-essential curl \
-    && rm -rf /var/lib/apt/lists/*
+ARG INSTALL_AUDIO_SYSTEM_DEPS="false"
+RUN if [ "$INSTALL_AUDIO_SYSTEM_DEPS" = "true" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends ffmpeg build-essential \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 RUN python -m pip install --upgrade pip
 
+# Install dependencies before copying source so application edits can reuse the
+# expensive Torch/MIR/provider layer. pyproject.toml remains the only dependency
+# manifest; the helper simply selects the Docker runtime's Vertex extra.
 COPY pyproject.toml ./
-COPY music_assistant ./music_assistant
+COPY scripts/install_runtime_deps.py ./install_runtime_deps.py
+ARG RUNTIME_EXTRAS="vertexai"
+RUN --mount=type=cache,target=/root/.cache/pip \
+    PIP_NO_CACHE_DIR=0 python install_runtime_deps.py $RUNTIME_EXTRAS
 
-RUN pip install -e ".[vertexai]"
+COPY music_assistant ./music_assistant
+RUN pip install --no-deps -e .
 
 RUN mkdir -p /app/outputs /app/uploads /app/.cache/torch
 

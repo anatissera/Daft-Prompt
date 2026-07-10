@@ -129,6 +129,16 @@ def test_compose_intent_when_no_reference_and_no_question_topic():
     assert explainer.calls == []
 
 
+def test_no_provider_getting_started_question_returns_useful_local_guidance():
+    chat, composer, _, _ = _make_chat(chat_model=None)
+
+    response = chat.handle(ChatRequest(message="What can you help me with?"))
+
+    assert response.intent == "clarify"
+    assert "compose" in response.reply.lower()
+    assert composer.calls == []
+
+
 def test_answer_reference_intent_when_question_matches_profile_topic():
     profile = _make_profile()
     chat, composer, explainer, store = _make_chat()
