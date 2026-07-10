@@ -11,6 +11,7 @@ Last reviewed: 2026-07-09
 - Generated MIDI remains canonical and independently editable per part; targeted generated-part revisions are supported.
 - Spanish reference questions and reference-guided composition route through the same deterministic workflow as English.
 - The local Docker API runtime builds and passes its `/health` smoke test without requiring machine-specific cloud credentials.
+- LLM sampling is provider-agnostic and role-specific: director/reviewer defaults favor stable planning, while instrument agents retain expressive variance. All three values are environment-configurable.
 
 ## Current architecture
 
@@ -45,15 +46,14 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Adapt role-specific LLM sampling so the director and final reviewer make more
-stable arrangement decisions while instrument agents retain expressive variance.
+Add measured composition-stage timings before changing concurrency. This is the
+evidence gate for any future parallel-fill optimization.
 
 ## Remaining milestones
 
-1. Add and test role-specific LLM sampling; retain provider-agnostic behavior.
-2. Add measured composition-stage timings before changing concurrency.
-3. Evaluate optional, local-only style-card/groove providers behind ports; do not make corpora or web search required.
-4. Run a full completion audit against PRODUCT.md and the user goal, including an interactive local smoke path.
+1. Add measured composition-stage timings before changing concurrency.
+2. Evaluate optional, local-only style-card/groove providers behind ports; do not make corpora or web search required.
+3. Run a full completion audit against PRODUCT.md and the user goal, including an interactive local smoke path.
 
 ## Known technical debt and risks
 
