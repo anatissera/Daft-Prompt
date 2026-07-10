@@ -1,6 +1,63 @@
-# Daft Prompt progress
+# LLMinem progress
 
 Last reviewed: 2026-07-10
+
+## Phase 2 — Product polish (active)
+
+Evidence states used below: `pending`, `reproduced`, `root cause identified`,
+`fixed`, `verified`, and `committed`. A regression is not complete until its
+fix has been tested thoroughly, committed atomically, and a push has been
+attempted.
+
+### Priority 1 — Existing regressions
+
+- [ ] Browser playback: reproduce remote soundfont/load failures.
+  - Status: reproduced; root cause identified.
+  - Root cause/evidence: `TrackMixer` creates one `Tone.Sampler` per row and
+    blocks playback on sparse melodic anchors or the complete GM percussion
+    range from `https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/`.
+    Rejected sample promises escape `togglePlayback`; there is no local voice
+    or fallback, so one unavailable external host makes every sketch silent.
+  - Fix/tests/benchmark/commit/push: pending.
+- [ ] Score rendering: reproduce complete score-generation failures and verify
+  that missing notation can currently interrupt the product flow.
+  - Status: reproduced; root cause identified.
+  - Root cause/evidence: backend `render_artifacts` renders MIDI and MusicXML
+    as one all-or-nothing operation. The client always mounts `ScoreViewer`
+    when parts exist; its dynamic import/fetch/parse/render promise has no HTTP
+    status validation, catch path, or user-facing unavailable state.
+  - Fix/tests/benchmark/commit/push: pending.
+- [ ] Chat keyboard behavior: reproduce Enter not sending and establish the
+  current Shift+Enter behavior.
+  - Status: reproduced in the running browser; root cause identified.
+  - Root cause/evidence: after filling `keyboard regression probe`, Enter made
+    the textarea value `keyboard regression probe\n`; Shift+Enter added another
+    newline. `ChatComposer` has no `onKeyDown` submission behavior.
+  - Fix/tests/commit/push: pending.
+- [ ] Chat-first asset workflow: reproduce notation/tab/MIDI/preview rendering
+  interrupting or blocking continued conversation.
+  - Status: reproduced; root cause identified.
+  - Root cause/evidence: the synchronous `/chat` route calls
+    `render_artifacts` after composition and before returning `ChatResponse`.
+    MIDI conversion and MusicXML engraving therefore extend the chat request's
+    critical path; the UI remains globally busy until both finish.
+  - Fix/tests/benchmark/commit/push: pending.
+- [ ] Research conversation continuity: reproduce follow-up questions losing
+  freshly gathered song/artist/album evidence.
+  - Status: reproduced; root cause identified.
+  - Root cause/evidence: research profiles are saved and their id is returned,
+    but follow-up reuse depends on `_REFERENCE_TOPIC_RE`. A natural request such
+    as `What evidence did you find?` matches neither that regex nor composition,
+    is classified as `clarify`, and is sent back through the LLM tool selector
+    despite a current stored profile. This makes continuity probabilistic.
+  - Fix/tests/benchmark/commit/push: pending.
+
+### Later priorities (do not start before Priority 1 is verified)
+
+- [ ] Priority 2: non-destructive incremental composition editing.
+- [ ] Priority 3: genre-aware, purpose-driven minimal instrumentation.
+- [ ] Priority 4: research-pipeline evaluation and benchmarked Giner comparison.
+- [ ] Full Phase 2 completion audit.
 
 ## Developer-experience phase
 
@@ -89,14 +146,13 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-No active implementation task. The developer-experience pass is complete:
-default startup reaches a useful chat without credentials, Vertex is
-first-class, and local audio analysis remains opt-in.
+Phase 2 Priority 1 regression reproduction. All five named regressions must be
+reproduced before the first product-code fix.
 
 ## Remaining milestones
 
-No required milestones remain. Future work should begin only from an observed
-quality, reliability, or user-experience gap.
+Complete Phase 2 priorities 1 through 4 in order, followed by a
+requirement-by-requirement completion audit.
 
 ## Completion audit (current evidence)
 
