@@ -7,6 +7,7 @@ import GeneratedSongBlock from "@/components/GeneratedSongBlock";
 import Typewriter from "@/components/Typewriter";
 import AnalysisProgressChecklist from "@/components/AnalysisProgressChecklist";
 import type { AnalysisStageState } from "@/lib/analysisProgress.mjs";
+import { WORKFLOW_STAGES, activeWorkflowStage, type ChatWorkflow } from "@/lib/workflowProgress.mjs";
 
 interface ChatThreadProps {
   messages: ChatMessage[];
@@ -14,6 +15,7 @@ interface ChatThreadProps {
   busyElapsedMs?: number;
   onCancel?: () => void;
   analysisProgress?: AnalysisStageState[] | null;
+  workflow?: ChatWorkflow | null;
 }
 
 // Rough timeline of the compose pipeline. We can't show this list until the
@@ -21,26 +23,10 @@ interface ChatThreadProps {
 // then the request might bounce back as off-topic in < 1s and we'd flash a
 // fake list of stages. Wait until the classifier window has clearly passed
 // AND the busy label is the "Thinking…" one (analyze uses its own label).
-const PIPELINE_REVEAL_AFTER_SEC = 9;     // longer than the 8s classifier timeout
-const PIPELINE_STAGES: Array<{ label: string; atSec: number }> = [
-  { label: "Director arranging the band",             atSec: PIPELINE_REVEAL_AFTER_SEC },
-  { label: "Instrument agents composing parts",       atSec: PIPELINE_REVEAL_AFTER_SEC + 30 },
-  { label: "Arbiter finalizing the arrangement",      atSec: PIPELINE_REVEAL_AFTER_SEC + 170 },
-  { label: "Rendering MIDI + score",                  atSec: PIPELINE_REVEAL_AFTER_SEC + 220 },
-];
-
-function activeStageIndex(elapsedSec: number): number {
-  for (let i = PIPELINE_STAGES.length - 1; i >= 0; i--) {
-    if (elapsedSec >= PIPELINE_STAGES[i].atSec) return i;
-  }
-  return 0;
-}
-
-export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCancel, analysisProgress }: ChatThreadProps) {
+export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCancel, analysisProgress, workflow }: ChatThreadProps) {
   const elapsedSec = (busyElapsedMs ?? 0) / 1000;
-  const activeIdx = activeStageIndex(elapsedSec);
-  const showPipeline =
-    busyLabel === "Thinking…" && elapsedSec >= PIPELINE_REVEAL_AFTER_SEC;
+  const stages = workflow ? WORKFLOW_STAGES[workflow] : [];
+  const activeIdx = activeWorkflowStage(elapsedSec, stages.length);
   return (
     <div className="chat-thread" aria-live="polite">
       {messages.map((message) => (
@@ -83,17 +69,17 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
             {analysisProgress ? (
               <AnalysisProgressChecklist stages={analysisProgress} />
             ) : null}
-            {showPipeline && !analysisProgress ? (
+            {stages.length > 0 && !analysisProgress ? (
               <ol className="pipeline-steps">
-                {PIPELINE_STAGES.map((stage, idx) => {
+                {stages.map((label, idx) => {
                   const state =
                     idx < activeIdx ? "done" : idx === activeIdx ? "active" : "pending";
                   return (
-                    <li key={stage.label} className={`pipeline-step pipeline-step-${state}`}>
+                    <li key={label} className={`pipeline-step pipeline-step-${state}`}>
                       <span className="pipeline-step-marker" aria-hidden="true">
                         {state === "done" ? "✓" : state === "active" ? "›" : "·"}
                       </span>
-                      <span className="pipeline-step-label">{stage.label}</span>
+                      <span className="pipeline-step-label">{label}</span>
                     </li>
                   );
                 })}

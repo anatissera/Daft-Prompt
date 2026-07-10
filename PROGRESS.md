@@ -13,19 +13,45 @@ attempted.
 
 #### Additional chat regressions reported 2026-07-10
 
-- [ ] Intent-specific progress states: research currently displays composition
+- [x] Intent-specific progress states: research currently displays composition
   stages. Reproduce research, composition, and iterative-edit workflows; replace
   misleading shared states; cover with regression and browser validation.
+  - Reproduced: live browser showed `Director arranging the band`, instrument
+    agents, arbiter, and MIDI/score rendering 10.5 s into `Research Adiós by
+    Gustavo Cerati`.
+  - Root cause: `/chat` starts every request as `Thinking…`; after nine seconds
+    `ChatThread` reveals one hard-coded composition timeline with no workflow or
+    intent state.
+  - Fix/test/browser: client classifies research/composition/edit/answer workflow
+    before starting work and renders distinct stage contracts. Pure regression
+    tests pass. Browser validation at 0.5 s showed `Researching reference…` plus
+    the five research stages and no composition wording. Commit/push pending.
 - [ ] Visible tablature: reproduce research/generation → guitar-tab request,
   verify meaningful visible tab content, and surface rendering failures clearly.
+  - Reproduced: research loaded three meaningful 89-measure guitar tracks for
+    `Adiós`, but the follow-up returned prose and `tab_excerpt: null`.
+  - Root cause: the deterministic reference-answer shortcut invokes
+    `AnswerMusicQuestion`, bypassing `get_tab_excerpt`; generated `SongState`
+    has no tab projection; UI failure handling only renders text and provides no
+    explicit tab-unavailable attachment state.
 - [ ] Respectful conversation auto-follow: reproduce missing scroll-to-latest,
   follow progress/completion near the bottom, preserve manual upward scrolling,
   resume near-bottom/send behavior, and validate fixed-composer offset in browser.
+  - Reproduced/root cause: `ChatThread` has no scroll container/anchor refs,
+    near-bottom state, scroll listener, or effect responding to message/progress
+    growth. No code accounts for the fixed composer height.
 - [ ] Reliable famous-song lookup and entity resolution: reproduce `Adiós` by
   Gustavo Cerati and `I Kissed a Girl` by Katy Perry; support featured artists,
   collaborations, multiple primaries, remixes/live versions, aliases, accents,
   punctuation, translated/alternate titles, and provider fallbacks. Build and
   report a 30-50-track multi-decade benchmark.
+  - Reproduced: live lookups took 31.78 s and 43.97 s. Each returned claims from
+    Songsterr only while every other provider failed/was empty; generic search
+    shell results were counted as `tab` evidence without verified identity.
+  - Root cause: resolver only parses `title by artist`; there is no Unicode/
+    accent normalization, collaboration/version model, scored entity matching,
+    neutral metadata provider, query variants, cross-provider acceptance rule,
+    or reusable researcher cache.
 
 Prior completion audit gap: Priority 1 was marked complete from focused source
 and unit evidence without browser-validating these full chat workflows. That

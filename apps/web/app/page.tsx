@@ -24,6 +24,7 @@ import {
   referenceMemoryFromChatResponse,
 } from "@/lib/chatActionAdapter.mjs";
 import { deriveSessionTitle } from "@/lib/sessionTitle.mjs";
+import { classifyChatWorkflow, workflowBusyLabel, type ChatWorkflow } from "@/lib/workflowProgress.mjs";
 
 type Intent = "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
 
@@ -86,6 +87,7 @@ export default function Home() {
   const [activeReference, setActiveReference] = useState<{ referenceId: string; label: string } | null>(null);
   const [currentSong, setCurrentSong] = useState<SongState | null>(null);
   const [activeWork, setActiveWork] = useState<string | null>(null);
+  const [activeWorkflow, setActiveWorkflow] = useState<ChatWorkflow | null>(null);
   const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
   const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisStageState[] | null>(null);
@@ -112,13 +114,15 @@ export default function Home() {
     return () => clearInterval(id);
   }, [busyStartedAt]);
 
-  function startWork(label: string) {
+  function startWork(label: string, workflow: ChatWorkflow | null = null) {
     setActiveWork(label);
+    setActiveWorkflow(workflow);
     setBusyStartedAt(performance.now());
   }
 
   function stopWork() {
     setActiveWork(null);
+    setActiveWorkflow(null);
     setBusyStartedAt(null);
     abortRef.current = null;
   }
@@ -152,7 +156,8 @@ export default function Home() {
   }
 
   async function chat(message: string) {
-    startWork("Thinking…");
+    const workflow = classifyChatWorkflow(message, { hasCurrentSong: currentSong !== null });
+    startWork(workflowBusyLabel(workflow), workflow);
     const controller = new AbortController();
     abortRef.current = controller;
     const startedAt = performance.now();
@@ -334,7 +339,7 @@ export default function Home() {
           </div>
           <span className="app-topbar-meta">TWILIGHT · OUTPUT MIDI</span>
         </header>
-        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} analysisProgress={analysisProgress} />
+        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} analysisProgress={analysisProgress} workflow={activeWorkflow} />
         {error ? (
           <p className="error-banner" role="alert">{error}</p>
         ) : null}
