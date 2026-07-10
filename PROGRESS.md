@@ -14,6 +14,7 @@ Last reviewed: 2026-07-09
 - LLM sampling is provider-agnostic and role-specific: director/reviewer defaults favor stable planning, while instrument agents retain expressive variance. All three values are environment-configurable.
 - Composition SSE events now include cumulative and per-stage elapsed time; artifact completion reports total elapsed time. This is the profiling baseline before any concurrency redesign.
 - The compact negotiation detail now displays actual per-stage durations, keeping responsiveness visible without a dashboard-first workflow.
+- Bass/lead/solo/melody parts receive deterministic overlap validation, allowing the existing repair loop to reject physically implausible monophonic note collisions without restricting harmony tracks.
 
 ## Current architecture
 
@@ -48,14 +49,14 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Evaluate a local-only, compact style-card/groove-provider seam. It must remain
-optional and must not add web or large-corpus work to the interactive path.
+Perform the final completion audit and an interactive local smoke path. Any
+further style provider must remain optional, local-only, and evidence-driven.
 
 ## Remaining milestones
 
-1. Evaluate optional, local-only style-card/groove providers behind ports; do not make corpora or web search required.
-2. Use captured timing data to decide whether bounded parallelism is justified.
-3. Run a full completion audit against PRODUCT.md and the user goal, including an interactive local smoke path.
+1. Run a full completion audit against PRODUCT.md and the user goal, including an interactive local smoke path.
+2. Use captured timing data from a configured LLM run to decide whether bounded parallelism is justified.
+3. Evaluate optional, local-only style-card/groove providers only if they can improve an observed quality gap without becoming a required runtime dependency.
 
 ## Known technical debt and risks
 

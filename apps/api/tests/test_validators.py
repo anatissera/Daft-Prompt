@@ -169,3 +169,21 @@ def test_empty_drum_part_is_error():
     parts = {"drums": Part(instrument_id="drums", notes=[])}
     codes = {i.code for i in validate_song(_song(roster, parts))}
     assert "empty_part" in codes
+
+
+def test_monophonic_bass_overlap_is_an_error_but_piano_chords_are_allowed():
+    overlapping = [
+        Note(bar=0, start_beat=0.0, pitch=40, dur=2.0),
+        Note(bar=0, start_beat=1.0, pitch=43, dur=1.0),
+    ]
+    bass = _song(
+        [RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="bass")],
+        {"bass": Part(instrument_id="bass", notes=overlapping)},
+    )
+    piano = _song(
+        [RosterItem(id="keys", instrument="piano", midi_range=(28, 90), role="harmony")],
+        {"keys": Part(instrument_id="keys", notes=overlapping)},
+    )
+
+    assert "overlapping_notes" in {issue.code for issue in validate_song(bass)}
+    assert "overlapping_notes" not in {issue.code for issue in validate_song(piano)}
