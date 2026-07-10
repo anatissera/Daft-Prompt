@@ -108,11 +108,14 @@ def _research_node(state: _AgentState) -> _AgentState:
     # genre keyword and re-query — this typically recovers a real groove and
     # tempo prior without adding an LLM call.
     if not corpus.get("examples"):
-        # Try titles from the original search first; if that's silent, do a
-        # cheap second query biased toward genre pages ("<query> genre").
-        inferred_genre = infer_genre_from_titles(
-            _text_signals(research + [{"title": style}])
-        )
+        # The USER'S OWN WORDS win first: if the prompt names a known genre
+        # ("tango", "reggaeton"), use it directly. Only then scan web titles
+        # — title scanning used to let production-blog noise ("electronic
+        # music production…") overrule an explicit "tango" in the prompt,
+        # which filled the corpus with electronic exemplars.
+        inferred_genre = infer_genre_from_titles([style])
+        if inferred_genre is None:
+            inferred_genre = infer_genre_from_titles(_text_signals(research))
         if inferred_genre is None:
             extra = search_web(f"{style} genre", decorate=False)
             inferred_genre = infer_genre_from_titles(_text_signals(extra))
@@ -182,6 +185,17 @@ def _skeleton_node(state: _AgentState) -> _AgentState:
             "skeleton LLM call returned no parsed output after 2 attempts — "
             "likely a provider streaming/parse flake. Try again."
         )
+    # Audit trail: what did the director actually commit? Empty feel/plan or
+    # missing grids are the leading indicator of a bland, colliding mix.
+    _log.info(
+        "skeleton commitments: feel=%dch plan=%dch grids={%s}",
+        len(skeleton.rhythmic_feel or ""),
+        len(skeleton.arrangement_plan or ""),
+        ", ".join(
+            f"{i.id}:{i.onset_grid or '-'}/{i.max_notes_per_bar or '∞'}"
+            for i in skeleton.instruments
+        ),
+    )
     events = state.get("events", []) + [
         {
             "type": "progress",
@@ -208,6 +222,20 @@ _FILL_MAX_WORKERS = 16
 def _fills_node(state: _AgentState) -> _AgentState:
     skeleton = state["skeleton"]
     skeleton_ctx = skeleton.model_dump(mode="json", exclude={"instruments"})
+    # Every fill sees the WHOLE band (roles + committed playing styles), not
+    # just its own declaration — parallel-composed parts used to collide in
+    # register and rhythm because each agent wrote blind. Compact projection
+    # keeps the token cost small.
+    skeleton_ctx["ensemble"] = [
+        {
+            "id": i.id,
+            "instrument": i.instrument,
+            "role": i.role,
+            "playing_style": i.playing_style,
+            "is_drum": i.is_drum,
+        }
+        for i in skeleton.instruments
+    ]
     # Include drums now: the LLM writes GM percussion pitches from the
     # director's committed rhythmic_feel. If the drum fill fails at every
     # tier, `compose_band` still falls back to the corpus groove (or the

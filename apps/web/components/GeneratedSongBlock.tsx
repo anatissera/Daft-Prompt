@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { CompositionChatMessage } from "@/lib/chatTypes";
 import type { Part, RosterItem, SongState } from "@/lib/types";
+import type { PlayerApi } from "@/lib/playerApi";
 import { getAudibleTrackIds } from "@/lib/trackMixerLogic.mjs";
 import { harmonicFitView, harmonicFitLabel } from "@/lib/harmonicFitView.mjs";
 import { triggerMidiDownload } from "@/lib/midiExport";
@@ -13,6 +14,7 @@ import RosterView from "@/components/RosterView";
 
 const ScoreViewer = dynamic(() => import("@/components/ScoreViewer"), { ssr: false });
 const TrackMixer = dynamic(() => import("@/components/TrackMixer"), { ssr: false });
+const PianoRoll = dynamic(() => import("@/components/PianoRoll"), { ssr: false });
 
 function hasMixState(muted: Set<string>, solo: Set<string>): boolean {
   return muted.size > 0 || solo.size > 0;
@@ -73,6 +75,13 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
   const [mp3State, setMp3State] = useState<"idle" | "rendering" | "error">("idle");
   const [mp3Error, setMp3Error] = useState<string | null>(null);
 
+  // Shared playback clock: TrackMixer fills this handle, PianoRoll reads it.
+  const playerApiRef = useRef<PlayerApi | null>(null);
+  const audibleTrackIds = useMemo(
+    () => getAudibleTrackIds(Object.keys(song.parts), mutedTrackIds, soloTrackIds),
+    [song.parts, mutedTrackIds, soloTrackIds],
+  );
+
   return (
     <section className="song-deck" aria-label="Generated song">
       <header className="song-deck-header">
@@ -104,6 +113,7 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
 
       {hasPlayableParts ? (
         <>
+          <PianoRoll song={song} audibleTrackIds={audibleTrackIds} playerApiRef={playerApiRef} />
           <TrackMixer
             song={song}
             mutedTrackIds={mutedTrackIds}
@@ -111,6 +121,7 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             trackGains={trackGains}
             onMutedChange={setMutedTrackIds}
             onSoloChange={setSoloTrackIds}
+            playerApiRef={playerApiRef}
           />
           <div className="artifact-link-row">
             <button

@@ -63,18 +63,21 @@ export class NativeSynthLayer {
     }
   }
 
-  /** Play from `offsetSec` in song time. Schedules note triggers via
-   * `setTimeout` (for scheduling) + Tone's own ctx-anchored trigger
-   * timing, so notes align with spessasynth's sequencer. */
-  play(offsetSec: number): void {
+  /** Play from `offsetSec` in song (musical) time at `rate` (1 = normal).
+   * Schedules note triggers via `setTimeout` (for scheduling) + Tone's own
+   * ctx-anchored trigger timing, so notes align with spessasynth's
+   * sequencer — whose playbackRate the mixer sets to the same value. */
+  play(offsetSec: number, rate: number = 1): void {
     if (!this.tone) return;
     this.stopPending();
     this.playing = true;
+    const r = Math.max(0.25, Math.min(2, rate));
     const t0Wall = performance.now();
     for (const track of this.tracks.values()) {
       for (const ev of track.events) {
         if (ev.startSeconds < offsetSec) continue;
-        const delayMs = Math.max(0, (ev.startSeconds - offsetSec) * 1000);
+        // Musical seconds → wall clock: stretched by 1/rate.
+        const delayMs = Math.max(0, ((ev.startSeconds - offsetSec) / r) * 1000);
         const dueWall = t0Wall + delayMs;
         const handle = window.setTimeout(() => {
           if (!this.playing) return;
@@ -83,7 +86,7 @@ export class NativeSynthLayer {
             // `+0` (now) since our setTimeout already handled the delay.
             track.synth.triggerAttackRelease(
               ev.pitch,
-              Math.max(0.05, ev.durationSeconds),
+              Math.max(0.05, ev.durationSeconds / r),
               this.ctx.currentTime,
               Math.max(0, Math.min(1, ev.velocity)),
             );

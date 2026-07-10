@@ -96,13 +96,22 @@ You fill the fields IN ORDER, and each field constrains the next:
 
 2. `canonical_instruments` — the 5-10 instruments that are IDIOMATIC for
    this exact style. Think about what you would actually hear on a
-   reference track. Electronic styles (dubstep, trap, EDM, house, future
-   bass) are built from synthesized sources: sub bass, wobble/growl bass,
-   supersaw or pluck leads, pads, chopped vocal fx, electronic drum
-   machines — NOT acoustic pianos, organs, orchestral strings, or
-   hand percussion. Acoustic styles (jazz, folk, rock) get real
-   instruments. Never pad this list with instruments that merely
-   "could work" — only what DEFINES the style.
+   reference track, and match the SOUND SOURCE to the tradition:
+     - Acoustic/traditional styles get REAL instruments from the sampled
+       bank. Tango: tango_accordion (bandoneón), violin, acoustic piano,
+       contrabass, acoustic guitar — never synth pads or electronic
+       drums. Rock: electric guitars (distortion/overdriven/clean),
+       electric bass, drum kit, maybe hammond organ. Jazz, folk, salsa,
+       flamenco, classical: same principle — sampled acoustic patches.
+     - Electronic styles (dubstep, trap, EDM, house, future bass,
+       reggaeton's beat layer) are built from synthesized sources: sub
+       bass, wobble/growl bass, supersaw or pluck leads, pads, chopped
+       vocal fx, electronic drums.
+     - Hybrid styles mix deliberately: reggaeton = dembow electronic
+       drums + synth bass + plucked/latin melodic elements; latin pop =
+       acoustic percussion flavor + synth pads.
+   Never pad this list with instruments that merely "could work" — only
+   what DEFINES the style.
 
 3. `rhythmic_feel` — 3-6 sentences committing to the CONCRETE groove of
    this style. This is the ensemble-level groove skeleton every fill call
@@ -122,32 +131,78 @@ You fill the fields IN ORDER, and each field constrains the next:
    add something outside that list, the list was wrong: fix the list, not
    the roster.
 
+5. `arrangement_plan` (emitted AFTER the roster) — 3-6 sentences assigning
+   each roster id its OWN space so parallel-composed parts don't collide:
+     - REGISTER: which octave range each voice owns (e.g. "sub: C1-C2;
+       piano comps C3-C4; lead sings C5-C6"). No two sustained voices in
+       the same octave band.
+     - RHYTHMIC SLOT: who plays on the beat, who syncopates, who fills the
+       gaps (call-and-response with the lead, comping between vocal
+       phrases).
+     - DENSITY BUDGET: at most 1-2 voices busy at any moment; name which
+       voice leads each section and who steps back.
+   Reference roster ids explicitly. Every fill call reads this plan.
+
 RULES — non-negotiable:
 
-5. Every roster item's `patch` MUST be one of these exact strings (case-
-   sensitive), chosen to fit the style. Do NOT invent new names.
+6. Every roster item's `patch` MUST be one of these exact strings (case-
+   sensitive), chosen to fit the style. Do NOT invent new names. The
+   `instrument` display name and the `patch` MUST denote the SAME
+   instrument — a roster item named "guitar_rhythm" with a piano patch is
+   a defect, not a stylistic choice.
 
-   Sampled patches ({len(_SAMPLER_PATCHES)}):
+   Sampled patches ({len(_SAMPLER_PATCHES)} — real recorded instruments;
+   the right choice for every acoustic/traditional style):
 {_bullet_list(_SAMPLER_PATCHES)}
 
-   Native synth patches ({len(_SYNTH_PATCHES)} — best for EDM/pop/hip-hop
-   leads, pads, subs, plucks, vocal fx):
+   Native synth patches ({len(_SYNTH_PATCHES)} — true synthesis for
+   electronic styles: EDM/dubstep/trap leads, pads, subs, plucks,
+   vocal fx; do NOT use these for acoustic/traditional genres):
 {_bullet_list(_SYNTH_PATCHES)}
 
-6. Include exactly ONE drum roster item with `is_drum=true` and id `drums`.
+7. Include AT MOST one drum roster item with `is_drum=true` and id `drums`.
    Pick any patch as a placeholder (drums route through GM channel 10).
+   OMIT the drum item entirely for styles that have no drum kit — tango,
+   classical, choral, solo piano, bossa nova trio without kit. Forcing a
+   kit into those styles is a defect. When the style's percussion is not
+   a kit (congas, timbales, cajón), still use the single drum item — the
+   fill stage writes GM percussion pitches for those voices.
 
-7. `chord_progression` covers every bar 0..num_bars-1. Emit a chord at bar 0
+8. `chord_progression` covers every bar 0..num_bars-1. Emit a chord at bar 0
    and at every change. Use plain symbols: `Cmaj7`, `Am7`, `F#m`, `Bb7`,
    `G/B`, etc.
 
-8. Give at least 4 distinct instruments (bass, drums, and two melodic/
+9. Give at least 4 distinct instruments (bass, drums, and two melodic/
    harmonic voices at minimum). Give each a clear `role` and short
    `playing_style` — the fill stage relies on these to write good notes.
 
-9. Do NOT include a `notes` field. That comes later.
+   Each roster item ALSO commits two rhythmic contracts that are enforced
+   mechanically downstream (notes violating them get dropped):
 
-10. The CORPUS DIGEST's `common_roles` come from a coarse genre-tagged MIDI
+   - `onset_grid`: the instrument's one-bar rhythmic cell as a 16th-note
+     grid string — one char per 16th, "x" = onset, "." = rest; 16 chars
+     for 4/4 (numerator × 4 otherwise). This is where the GENRE'S RHYTHM
+     LIVES — write the actual pattern, not a generic one:
+       reggaeton dembow kick:  "x.......x......."
+       reggaeton dembow snare: "...x..x....x..x."  (as part of drums' grid)
+       tango habanera bass:    "x.....x.x...x..."
+       four-on-the-floor kick: "x...x...x...x..."
+       offbeat house hats:     "..x...x...x...x."
+     Drums are the exception: their kit has several voices with different
+     patterns, so put the EXACT per-voice beats in `rhythmic_feel` /
+     `playing_style` instead (e.g. "kick on 1 and 3; snare on the
+     2.75 and 3.5") and leave the drum item's grid empty. Bass and
+     comping voices get STRICT grids. Leads/melodies that need free
+     phrasing may leave it empty ("").
+   - `max_notes_per_bar`: hard density ceiling per bar (simultaneous
+     chord tones count as ONE event). Calm/sparse styles: 2-4 for
+     accompaniment. Busy styles: 8-16. 0 = unlimited (use sparingly).
+   A slow blues where every instrument commits max 3-4 events/bar CANNOT
+   turn into a wall of sound — that is the point of these fields.
+
+10. Do NOT include a `notes` field. That comes later.
+
+11. The CORPUS DIGEST's `common_roles` come from a coarse genre-tagged MIDI
     corpus and are only a WEAK prior. When they conflict with the style you
     identified in `style_summary` (e.g. corpus says piano/guitar but the
     style is dubstep), trust your style analysis and the research excerpts,
@@ -172,7 +227,7 @@ def skeleton_user_prompt(
         f"USER REQUEST:\n{style.strip() or 'a short demo song'}\n\n"
         f"{excerpt_block}"
         f"WEB RESEARCH (titles only):\n{json.dumps(research, ensure_ascii=False, indent=2)}\n\n"
-        f"CORPUS DIGEST (weak prior — see rule 10):\n{json.dumps(corpus, ensure_ascii=False, indent=2)}\n\n"
+        f"CORPUS DIGEST (weak prior — see rule 11):\n{json.dumps(corpus, ensure_ascii=False, indent=2)}\n\n"
         "Emit a BandSkeleton. Prefer the corpus's median tempo and common "
         "keys unless the style prompt or research overrides them. NO notes."
     )
@@ -223,12 +278,27 @@ RULES — non-negotiable:
    per-bar default. Genres like dubstep, trap, drum-and-bass need 8-16
    notes/bar on lead/bass parts; ballads may need 1-2/bar. Let the feel
    dictate.
+   Your instrument carries two BINDING contracts (enforced mechanically —
+   violating notes are deleted, so don't waste them):
+     - `onset_grid`: a 16th-note grid of your one-bar cell ("x" = allowed
+       onset slot, "." = rest; slot k = beat k/4). Every note's start_beat
+       MUST land on an "x" slot. You may SKIP slots (especially in low-
+       energy sections) but never add onsets between them. Empty grid =
+       free phrasing.
+     - `max_notes_per_bar`: your density ceiling (chord tones struck
+       together count as one event). Stay under it.
 4. On the downbeat of each bar, land on a chord tone of that bar's chord.
    Bass-role instruments should land on the ROOT of the chord, dropped to
    MIDI 28-48. Rests: `pitch: null`.
 5. Respect the instrument's `role` and `playing_style` — they refine the
    feel for this specific voice.
 6. If the target instrument has `is_drum=true`, you WRITE the drum groove.
+   Your onset_grid does NOT bind you (a kit has several voices with
+   different patterns) — instead, work VOICE BY VOICE: first decide the
+   kick's one-bar pattern from the rhythmic_feel, then the snare's, then
+   the hats', and only then emit the notes, repeating each voice's cell
+   every bar (with fills at section boundaries). If the rhythmic_feel
+   names exact beats for a voice, those beats are law.
    Emit GM channel-10 percussion pitches, following the ensemble
    `rhythmic_feel` literally. Use these pitches:
       36  kick        (bass drum)
@@ -263,6 +333,17 @@ RULES — non-negotiable:
        (velocity 120+) with your lowest/strongest register.
    A song whose sections all have the same density has no build and no
    drop, whatever the genre.
+9. ARRANGEMENT AWARENESS. The skeleton's `ensemble` lists every band
+   member's role and committed playing style, and `arrangement_plan`
+   assigns registers, rhythmic slots and the density budget. You are ONE
+   voice in that band — carve your own space:
+     - Stay in the register the plan assigns you; if unassigned, pick a
+       band no other sustained voice occupies.
+     - Do not duplicate another instrument's rhythmic pattern in the same
+       register; interlock instead (comp between the lead's phrases,
+       syncopate against the on-beat voice).
+     - Respect the density budget: when the plan says another voice leads
+       a section, play sparser there — long notes, gaps, or rest.
 """
 
 

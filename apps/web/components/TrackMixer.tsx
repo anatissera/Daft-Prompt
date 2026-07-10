@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { RosterItem, SongState } from "@/lib/types";
+import type { PlayerApi } from "@/lib/playerApi";
 import { instrumentColor } from "@/lib/colors";
 import {
   buildTrackEvents,
@@ -29,6 +30,9 @@ interface TrackMixerProps {
   trackGains?: Record<string, number>;
   onMutedChange?: (next: Set<string>) => void;
   onSoloChange?: (next: Set<string>) => void;
+  /** Populated with an engine-agnostic clock handle so the piano roll can
+   *  share this transport's playhead. See lib/playerApi.ts. */
+  playerApiRef?: MutableRefObject<PlayerApi | null>;
 }
 
 function buildRows(song: SongState): TrackRow[] {
@@ -64,6 +68,7 @@ export default function TrackMixer({
   trackGains,
   onMutedChange,
   onSoloChange,
+  playerApiRef,
 }: TrackMixerProps) {
   const rows = useMemo(() => buildRows(song), [song]);
   const trackIds = useMemo(() => rows.map((row) => row.id), [rows]);
@@ -90,6 +95,9 @@ export default function TrackMixer({
   // as spessasynth so both share a clock and mix into the same destination.
   const nativeLayerRef = useRef<NativeSynthLayer | null>(null);
   const nativePartIdsRef = useRef<Set<string>>(new Set());
+  // Playback-speed multiplier shared by both engines (sequencer playbackRate
+  // + native layer's wall-clock scheduling).
+  const rateRef = useRef(1);
 
   const audibleTrackIds = useMemo(
     () => getAudibleTrackIds(trackIds, mutedTrackIds, soloTrackIds),
@@ -298,10 +306,51 @@ export default function TrackMixer({
     if (layer) {
       layer.pause();
       if (playing) {
-        try { layer.play(clamped); } catch { /* noop */ }
+        try { layer.play(clamped, rateRef.current); } catch { /* noop */ }
       }
     }
   }
+
+  // Publish the engine-agnostic transport handle for the piano roll. Times
+  // are musical seconds: the Sequencer reports song time regardless of
+  // playbackRate, so the roll and the transport display never diverge.
+  useEffect(() => {
+    const ref = playerApiRef;
+    if (!ref) return;
+    const api: PlayerApi = {
+      getTime: () => {
+        const seq = seqRef.current;
+        if (seq) {
+          try { return seq.currentHighResolutionTime; } catch { /* fall through */ }
+        }
+        return position;
+      },
+      getDuration: () => duration,
+      isPlaying: () => playing,
+      seek: (seconds) => seek(seconds),
+      setRate: (rate) => {
+        const clamped = Math.min(1.5, Math.max(0.5, rate));
+        rateRef.current = clamped;
+        const seq = seqRef.current;
+        if (seq) {
+          try { seq.playbackRate = clamped; } catch { /* noop */ }
+        }
+        // Re-anchor the native layer's wall-clock schedule at the new rate.
+        const layer = nativeLayerRef.current;
+        if (layer && playing) {
+          const at = seq ? seq.currentHighResolutionTime : position;
+          layer.pause();
+          try { layer.play(at, clamped); } catch { /* noop */ }
+        }
+      },
+      getRate: () => rateRef.current,
+    };
+    ref.current = api;
+    return () => {
+      if (ref.current === api) ref.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerApiRef, duration, playing, position]);
 
   const toggleMuted = useCallback(
     (id: string) => {
