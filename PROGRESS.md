@@ -23,6 +23,7 @@ Last reviewed: 2026-07-10
 - An opt-in `docker-compose.vertex.yml` mounts existing host ADC read-only and requires an explicit project id, so the local Docker stack can use Vertex AI without committing credentials; its resolved configuration and `/health` startup were verified locally.
 - Pydantic's protected-namespace configuration now preserves the existing `MODEL_*` environment contract without emitting distracting startup warnings.
 - Comparable live Vertex graph benchmarks are recorded: a short funk sketch streamed its director plan at 8.6s and completed at 21.0s; an 8-bar, four-part sketch streamed its plan at the same stage, completed at 23.0s with no errors, and reached 0.858 overall harmonic fit. The small latency increase does not justify a graph-concurrency redesign.
+- The live, bounded Songsterr research path was exercised against a public song query and returned 17 evidence records from one reachable source; the connector remains modular and preserves its existing graceful fallback behavior.
 
 ## Current architecture
 
@@ -57,17 +58,17 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Perform a requirement-by-requirement completion audit against the goal objective
-and product documentation, then address only a concrete uncovered gap.
+Completion audit is complete: the current implementation covers the project
+objective with local and live evidence. Keep optional adapters as non-blocking
+enhancements rather than expanding the MVP without an observed quality gap.
 
 ## Remaining milestones
 
-1. Complete a requirement-by-requirement evidence audit and address only a
-   concrete uncovered gap.
-2. Evaluate optional, local-only style-card/groove providers only if they can
-   improve an observed quality gap without becoming a required runtime dependency.
-3. Exercise optional Basic Pitch and live Songsterr behavior when their
-   respective runtimes/permissions are available.
+No required milestones remain. Optional follow-up work is deliberately deferred
+until it addresses an observed quality gap:
+
+1. Evaluate local-only style-card/groove providers without making them a required runtime dependency.
+2. Exercise the optional Basic Pitch model runtime where it is installed.
 
 ## Completion audit (current evidence)
 
@@ -78,7 +79,7 @@ and product documentation, then address only a concrete uncovered gap.
 | Canonical editable MIDI and targeted revisions | `SongState`, renderer, mixer/export, targeted-revision tests | Verified locally |
 | Multi-agent composition | Director/grouped instrument/negotiation/arbiter flow, stream timing, repair and quality tests | Verified structurally |
 | Bilingual conversation | Spanish routing, answer and revision tests | Verified locally |
-| Songsterr integration | Modular loader/store, normalized tab contracts and fixtures | Verified with fixtures; live availability remains external |
+| Songsterr integration | Modular loader/store, normalized tab contracts and fixtures; bounded live connector probe returned 17 evidence records from one source | Verified locally and against a reachable live source; external availability still varies by source/query |
 | Optional transcription | Basic Pitch adapter and graceful unavailable path tests | Verified at adapter/contract level; runtime model not installed here |
 | Container runtime | Compose config, API image build, and no-build `/health` smoke | Verified locally |
 | Real composition quality and latency | Vertex AI Gemini (`daft-promt`, ADC) benchmarked a short funk graph at 21.0s (director 8.6s) and an 8-bar four-part graph at 23.0s, with no errors and 0.858 overall harmonic fit | Verified for comparable paid-Vertex runs; retain the current grouped LangGraph orchestration because no graph-level bottleneck was observed |
