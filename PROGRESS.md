@@ -13,6 +13,7 @@ Last reviewed: 2026-07-09
 - The local Docker API runtime builds and passes its `/health` smoke test without requiring machine-specific cloud credentials.
 - LLM sampling is provider-agnostic and role-specific: director/reviewer defaults favor stable planning, while instrument agents retain expressive variance. All three values are environment-configurable.
 - Composition SSE events now include cumulative and per-stage elapsed time; artifact completion reports total elapsed time. This is the profiling baseline before any concurrency redesign.
+- The compact negotiation detail now displays actual per-stage durations, keeping responsiveness visible without a dashboard-first workflow.
 
 ## Current architecture
 

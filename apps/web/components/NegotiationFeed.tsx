@@ -3,6 +3,12 @@ import { instrumentColor } from "@/lib/colors";
 
 type FeedEvent = Extract<ComposeEvent, { type: "agent_pass" | "convergence" | "error" }>;
 
+function stageDuration(event: Extract<FeedEvent, { type: "agent_pass" | "convergence" }>): string {
+  return typeof event.stage_elapsed_seconds === "number"
+    ? ` · ${event.stage_elapsed_seconds.toFixed(1)}s`
+    : "";
+}
+
 function CheckIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -93,7 +99,7 @@ export default function NegotiationFeed({ events, embedded = false }: { events: 
               <span className="feed-body">
                 <span className="feed-header">
                   <span className="feed-instrument">{e.instrument_id}</span>
-                  <span className="feed-round">round {e.round}</span>
+                  <span className="feed-round">round {e.round}{stageDuration(e)}</span>
                 </span>
                 <p className="feed-summary">{e.notes_summary}</p>
 
@@ -132,7 +138,7 @@ export default function NegotiationFeed({ events, embedded = false }: { events: 
             <li key={i} className="feed-convergence">
               <span className="feed-convergence-line" />
               <span>
-                Round {e.round} converged
+                Round {e.round} converged{stageDuration(e)}
                 {e.resolved_requests.length > 0
                   ? ` — arbiter resolved ${e.resolved_requests.length} request(s)`
                   : ""}
