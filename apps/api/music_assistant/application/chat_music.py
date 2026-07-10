@@ -25,6 +25,9 @@ from music_assistant.application.music_tool_models import (
     ChatAgentDecision as ChatToolDecision,
     CompositionRequestToolInput,
     CompositionToolOutput,
+    TabExcerptEvent,
+    TabExcerptMeasure,
+    TabExcerptToolInput,
     TabExcerptToolOutput,
 )
 from music_assistant.application.music_tools import MusicTools
@@ -171,6 +174,9 @@ class ChatMusic:
 
     def _handle(self, request: ChatRequest) -> ChatResponse:
         message = request.message.strip()
+        if request.current_song is not None and _is_tab_request(message):
+            excerpt = _tab_excerpt_from_song(request.current_song, message)
+            return _tab_chat_response(excerpt)
         if request.current_song is not None and _looks_like_song_edit(message):
             return self._revise_current_song(message, request.current_song)
         profile = (
@@ -181,6 +187,21 @@ class ChatMusic:
         profiles = _profiles_from_request(request, self.reference_store)
         if profile is None and profiles:
             profile = profiles[0]
+
+        if profile is not None and _is_tab_request(message):
+            tools = MusicTools(
+                reference_store=self.reference_store,
+                answer_music_question=self.answer_music_question,
+                songsterr_tab_store=self.songsterr_tab_store,
+            )
+            excerpt = tools.get_tab_excerpt(
+                TabExcerptToolInput(
+                    reference_id=profile.reference_id,
+                    instrument=_tab_instrument(message),
+                    measure_count=4,
+                )
+            )
+            return _tab_chat_response(excerpt, profile=profile)
 
         if self.chat_model is None and _GETTING_STARTED_RE.search(message):
             return _getting_started_response(message)
@@ -732,6 +753,111 @@ def _looks_like_named_song_analysis(message: str) -> bool:
 
 def _looks_like_song_edit(message: str) -> bool:
     return bool(_SONG_EDIT_RE.search(message))
+
+
+def _is_tab_request(message: str) -> bool:
+    return bool(re.search(r"\b(tab|tabs|tablature|tablatura)\b", message, re.IGNORECASE))
+
+
+def _tab_instrument(message: str) -> str:
+    normalized = message.lower()
+    for aliases, instrument in [
+        (("bass", "bajo"), "bass"),
+        (("drum", "drums", "batería", "bateria"), "drums"),
+        (("piano", "keyboard", "keys", "teclado"), "piano"),
+        (("guitar", "guitarra"), "guitar"),
+    ]:
+        if any(alias in normalized for alias in aliases):
+            return instrument
+    return "guitar"
+
+
+def _tab_chat_response(excerpt: TabExcerptToolOutput, profile: ReferenceProfile | None = None) -> ChatResponse:
+    error = None
+    if excerpt.error:
+        error = {"code": excerpt.error, "message": excerpt.answer}
+    return ChatResponse(
+        intent="answer_reference",
+        reply=excerpt.answer,
+        reference_id=profile.reference_id if profile else excerpt.reference_id,
+        reference_label=_reference_label(profile) if profile else None,
+        tab_excerpt=excerpt,
+        error=error,
+    )
+
+
+_GUITAR_OPEN_MIDI = ((1, 64), (2, 59), (3, 55), (4, 50), (5, 45), (6, 40))
+
+
+def _tab_excerpt_from_song(song: SongState, message: str) -> TabExcerptToolOutput:
+    requested = _tab_instrument(message)
+    target = next(
+        (
+            item for item in song.roster
+            if item.id in song.parts and requested in f"{item.id} {item.instrument} {item.role}".lower()
+        ),
+        None,
+    )
+    if target is None:
+        return TabExcerptToolOutput(
+            instrument=requested,
+            answer=f"I cannot render {requested} tab because the current composition has no {requested} part.",
+            summary="Tab unavailable for the requested instrument.",
+            error="instrument_missing",
+        )
+    part = song.parts[target.id]
+    measures: list[TabExcerptMeasure] = []
+    for bar in range(min(song.header.num_bars, 4)):
+        events = []
+        for note in sorted((note for note in part.notes if note.bar == bar), key=lambda note: note.start_beat):
+            if note.pitch is None:
+                continue
+            string, fret = _guitar_position(note.pitch) if requested == "guitar" else (None, None)
+            events.append(
+                TabExcerptEvent(
+                    beat_index=note.start_beat,
+                    duration=f"{note.dur:g} beats",
+                    string=string,
+                    fret=fret,
+                    pitch=note.pitch,
+                )
+            )
+        measures.append(
+            TabExcerptMeasure(
+                index=bar,
+                note_events=len(events),
+                durations=list(dict.fromkeys(event.duration for event in events)),
+                events=events,
+            )
+        )
+    sounding = sum(measure.note_events for measure in measures)
+    if sounding == 0:
+        return TabExcerptToolOutput(
+            instrument=requested,
+            track_name=target.instrument,
+            answer=f"The {target.instrument} part has no playable notes to render as tab.",
+            summary="Tab unavailable because the selected part is empty.",
+            measures=measures,
+            error="empty_part",
+        )
+    summary = f"Generated {requested} tab for {target.instrument}: {sounding} notes across {len(measures)} measures."
+    return TabExcerptToolOutput(
+        answer=summary,
+        summary=summary,
+        evidence=[f"songstate:{target.id}:measures={len(measures)}:notes={sounding}"],
+        instrument=requested,
+        track_name=target.instrument,
+        tuning=["E4", "B3", "G3", "D3", "A2", "E2"] if requested == "guitar" else [],
+        measures=measures,
+    )
+
+
+def _guitar_position(pitch: int) -> tuple[int | None, int | None]:
+    for string, open_pitch in _GUITAR_OPEN_MIDI:
+        fret = pitch - open_pitch
+        if 0 <= fret <= 24:
+            return string, fret
+    return None, None
 
 
 @dataclass(frozen=True)

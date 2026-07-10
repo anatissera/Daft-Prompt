@@ -245,6 +245,33 @@ def test_get_piano_excerpt_includes_source_provided_midi_pitch():
     assert output.measures[0].events[0].fret is None
 
 
+def test_tab_excerpt_skips_leading_rest_only_measures_to_show_playable_content():
+    store = InMemorySongsterrTabStore()
+    bundle = _bundle()
+    bass = bundle.tracks[0]
+    leading_rest = TabMeasure(
+        index=0,
+        events=[TabEvent(measure_index=0, beat_index=0, duration="1/4", rest=True)],
+    )
+    playable = bass.measures[0].model_copy(update={"index": 1})
+    store.save("ref_queen", bundle.model_copy(update={
+        "tracks": [bass.model_copy(update={"measures": [leading_rest, playable]}), *bundle.tracks[1:]],
+    }))
+    tools = MusicTools(
+        reference_store=_tools().reference_store,
+        answer_music_question=AnswerMusicQuestion(),
+        songsterr_tab_store=store,
+    )
+
+    output = tools.get_tab_excerpt(
+        TabExcerptToolInput(reference_id="ref_queen", instrument="bass", start_measure=0, measure_count=1)
+    )
+
+    assert output.measures[0].index == 1
+    assert output.measures[0].note_events == 2
+    assert "measures 1-1" in output.summary
+
+
 def test_get_instrument_summary_uses_loaded_songsterr_bundle():
     output = _tools().get_instrument_summary(
         InstrumentSummaryToolInput(reference_id="ref_queen", instrument="bass")

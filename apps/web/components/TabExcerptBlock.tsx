@@ -24,6 +24,14 @@ function midiNoteName(pitch: number): string {
 }
 
 export default function TabExcerptBlock({ excerpt }: { excerpt: TabExcerpt }) {
+  if (excerpt.error) {
+    return (
+      <section className="tab-excerpt tab-excerpt-error" role="alert" aria-label="Tab unavailable">
+        <p className="tab-excerpt-eyebrow">Tab unavailable</p>
+        <p>{excerpt.answer || excerpt.summary || "I could not render this tablature."}</p>
+      </section>
+    );
+  }
   return (
     <section className="tab-excerpt" aria-label={`${excerpt.instrument} tab excerpt`}>
       <header className="tab-excerpt-header">

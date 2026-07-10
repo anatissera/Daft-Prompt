@@ -267,6 +267,18 @@ class MusicTools:
             )
         track = tracks[0]
         selected = track.measures[payload.start_measure : payload.start_measure + payload.measure_count]
+        if selected and not any(
+            event for measure in selected for event in measure.events if not event.rest
+        ):
+            first_playable = next(
+                (
+                    index for index, measure in enumerate(track.measures)
+                    if any(not event.rest for event in measure.events)
+                ),
+                None,
+            )
+            if first_playable is not None:
+                selected = track.measures[first_playable : first_playable + payload.measure_count]
         measures = [
             TabExcerptMeasure(
                 index=measure.index,
@@ -292,7 +304,8 @@ class MusicTools:
         marker_text = ", ".join(measure.marker for measure in selected if measure.marker) or "no markers"
         summary = (
             f"{track.instrument_family.title()} excerpt from Songsterr track {track.name}: "
-            f"measures {payload.start_measure}-{payload.start_measure + max(len(selected) - 1, 0)}, "
+            f"measures {selected[0].index if selected else payload.start_measure}-"
+            f"{selected[-1].index if selected else payload.start_measure}, "
             f"{sum(measure.note_events for measure in measures)} note events, markers: {marker_text}."
         )
         return TabExcerptToolOutput(

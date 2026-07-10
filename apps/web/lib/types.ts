@@ -134,6 +134,7 @@ export interface TabExcerpt {
   tuning: string[];
   measures: TabExcerptMeasure[];
   evidence?: string[];
+  error?: string | null;
 }
 
 export interface ChordChartRow { label: string; chords: string[]; confidence: number; }
@@ -431,6 +432,12 @@ export interface MissingData {
 export interface SongIdentity {
   title: string;
   artist: string | null;
+  primary_artists?: string[];
+  featured_artists?: string[];
+  collaborating_artists?: string[];
+  producers?: string[];
+  remix_artist?: string | null;
+  alternate_titles?: string[];
   album: string | null;
   year: number | null;
   version: string | null;

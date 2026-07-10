@@ -24,6 +24,8 @@ from music_assistant.domain.audio_profile import (
 )
 from music_assistant.domain.song_state import Header, Note, Part, RosterItem, SongState
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
+from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
+from music_assistant.infrastructure.web_research.songsterr_tabs import InstrumentTabTrack, SongsterrTabBundle, TabEvent, TabMeasure
 
 
 def _make_profile(reference_id: str = "ref_demo") -> ReferenceProfile:
@@ -92,6 +94,7 @@ def _make_chat(
     chat_model=None,
     song_researcher=None,
     enable_web_research: bool = True,
+    songsterr_tab_store=None,
 ) -> tuple[ChatMusic, _RecordingComposer, _CountingExplainer, InMemoryReferenceStore]:
     store = store or InMemoryReferenceStore()
     composer = composer or _RecordingComposer()
@@ -102,6 +105,7 @@ def _make_chat(
         reference_store=store,
         chat_model=chat_model,
         song_researcher=song_researcher,
+        songsterr_tab_store=songsterr_tab_store,
         enable_web_research=enable_web_research,
     )
     return chat, composer, explainer, store
@@ -211,6 +215,70 @@ def test_tab_tool_output_is_exposed_as_a_native_chat_excerpt():
     assert response.tab_excerpt is not None
     assert response.tab_excerpt.track_name == "Bass"
     assert response.tab_excerpt.measures[0].events[0].fret == 5
+
+
+def test_reference_tab_followup_invokes_tab_tool_and_returns_visible_content():
+    profile = _make_profile("ref_tab")
+    store = InMemoryReferenceStore()
+    store.save(profile)
+    tabs = InMemorySongsterrTabStore()
+    tabs.save("ref_tab", SongsterrTabBundle(
+        source_url="https://songsterr.test/tab",
+        song_id=1,
+        revision_id=2,
+        image="fixture",
+        title="Fixture Song",
+        artist="Fixture Artist",
+        tracks=[InstrumentTabTrack(
+            part_id=4,
+            name="Electric Guitar",
+            instrument="Guitar",
+            instrument_family="guitar",
+            is_guitar=True,
+            tuning=["E4", "B3", "G3", "D3", "A2", "E2"],
+            source_url="https://songsterr.test/tab",
+            measures=[TabMeasure(index=0, marker="Intro", events=[
+                TabEvent(measure_index=0, beat_index=0, duration="1/4", string=2, fret=3, pitch=62),
+            ])],
+            note_count=1,
+            beat_count=1,
+        )],
+    ))
+    chat, _, _, _ = _make_chat(store=store, songsterr_tab_store=tabs, chat_model=_FailingChatModel())
+
+    response = chat.handle(ChatRequest(message="Show me the guitar tab", reference_id="ref_tab"))
+
+    assert response.tab_excerpt is not None
+    assert response.tab_excerpt.error is None
+    assert response.tab_excerpt.measures[0].events[0].fret == 3
+    assert response.tab_excerpt.measures[0].note_events == 1
+
+
+def test_generated_song_tab_is_derived_from_current_song_without_regeneration():
+    chat, composer, _, _ = _make_chat()
+
+    response = chat.handle(ChatRequest(message="Show the guitar tab", current_song=_generated_song()))
+
+    assert response.tab_excerpt is not None
+    assert response.tab_excerpt.error is None
+    assert response.tab_excerpt.track_name == "electric_guitar"
+    assert response.tab_excerpt.measures[0].events[0].pitch == 64
+    assert response.tab_excerpt.measures[0].events[0].fret == 0
+    assert composer.calls == []
+    assert composer.revision_calls == []
+
+
+def test_tab_failure_returns_renderable_user_facing_attachment():
+    profile = _make_profile("ref_no_tabs")
+    chat, _, _, store = _make_chat(songsterr_tab_store=InMemorySongsterrTabStore())
+    store.save(profile)
+
+    response = chat.handle(ChatRequest(message="Show me guitar tab", reference_id="ref_no_tabs"))
+
+    assert response.tab_excerpt is not None
+    assert response.tab_excerpt.error == "songsterr_bundle_missing"
+    assert "do not have loaded" in response.reply
+    assert response.error == {"code": "songsterr_bundle_missing", "message": response.reply}
 
 
 def test_reference_question_uses_local_analysis_before_llm_router():
