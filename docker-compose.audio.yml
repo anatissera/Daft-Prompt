@@ -1,0 +1,13 @@
+# Opt-in local audio analysis. This installs the heavy Demucs/Torch/MIR stack
+# and makes the upload affordance available in the chat UI.
+services:
+  api:
+    build:
+      args:
+        RUNTIME_EXTRAS: audio-analysis
+        INSTALL_AUDIO_SYSTEM_DEPS: "true"
+    environment:
+      ENABLE_AUDIO_ANALYSIS: "true"
+  web:
+    environment:
+      NEXT_PUBLIC_ENABLE_LOCAL_AUDIO_ANALYSIS: "true"

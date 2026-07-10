@@ -10,9 +10,17 @@ Last reviewed: 2026-07-10
 - `Settings` now treats a blank provider as the documented no-provider mode.
   This keeps default chat available while composition requests return the
   existing explicit configuration guidance.
-- Next: consolidate the duplicate environment examples, forward only the
-  documented optional provider values through Compose, and replace the README
-  setup sections with a clone-to-chat Quick Start.
+- Local audio analysis is now an explicit runtime capability rather than a
+  default dependency. The normal image keeps the Vertex AI Gemini adapter,
+  while the large PyTorch/Demucs/MIR Python and system stacks are installed
+  only with `docker-compose.audio.yml`. Disabled uploads return actionable
+  opt-in guidance and the chat UI hides the attachment control.
+- The dependency installation layer is isolated from application source, so
+  ordinary backend edits reuse the provider dependency layer during Docker
+  rebuilds. The default image also avoids `ffmpeg` and a compiler toolchain.
+- Next: consolidate duplicate environment examples, forward the documented
+  provider values through Compose, and replace the README setup sections with
+  a clone-to-chat Quick Start.
 
 ## Completed milestones
 
@@ -70,17 +78,18 @@ separate from composition and supplies compact summaries only.
 
 ## Current highest-priority task
 
-Completion audit is complete: the current implementation covers the project
-objective with local and live evidence. Keep optional adapters as non-blocking
-enhancements rather than expanding the MVP without an observed quality gap.
+Complete the developer-experience pass: a clean clone should reach a useful
+chat without configuration, Vertex should be a documented first-class default,
+and local audio analysis should remain a clearly documented opt-in capability.
 
 ## Remaining milestones
 
-No required milestones remain. Optional follow-up work is deliberately deferred
-until it addresses an observed quality gap:
-
-1. Evaluate local-only style-card/groove providers without making them a required runtime dependency.
-2. Exercise the optional Basic Pitch model runtime where it is installed.
+1. Add one root environment template and forward the selected provider values
+   through Compose.
+2. Rewrite README setup as a verified clone-to-chat Quick Start, including
+   Vertex credentials and optional audio analysis.
+3. Re-run default Compose startup and primary chat-flow verification from the
+   documented path.
 
 ## Completion audit (current evidence)
 
@@ -101,5 +110,7 @@ until it addresses an observed quality gap:
 - Optional Basic Pitch requires an extra dependency and model runtime; unavailable transcription is deliberately nonfatal.
 - Deep audio analysis can be slow for long songs and stem separation is best-effort.
 - Existing Pydantic/third-party deprecation warnings should be addressed separately from product work.
-- The Docker image is necessarily large because local MIR depends on Torch/Demucs.
+- The default image excludes the local MIR stack; audio-enabled images remain
+  intentionally heavier because they include Torch, Demucs, `ffmpeg`, and
+  native build tools.
 - Short Vertex results are encouraging but are not a full latency SLO: real performance varies with arrangement size, group dependencies, and Vertex service latency. Preserve the current bounded negotiation unless a future benchmark shows a graph-level bottleneck.

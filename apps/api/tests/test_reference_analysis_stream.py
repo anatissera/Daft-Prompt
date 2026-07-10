@@ -30,6 +30,11 @@ from music_assistant.domain.audio_profile import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _enable_optional_audio_for_stream_contract_tests(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api, "_require_audio_analysis", lambda: None)
+
+
 def _parse_sse(text: str) -> list[dict]:
     events = []
     for chunk in text.strip().split("\n\n"):
