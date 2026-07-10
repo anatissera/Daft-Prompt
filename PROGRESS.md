@@ -27,13 +27,15 @@ attempted.
     when parts exist; its dynamic import/fetch/parse/render promise has no HTTP
     status validation, catch path, or user-facing unavailable state.
   - Fix/tests/benchmark/commit/push: pending.
-- [ ] Chat keyboard behavior: reproduce Enter not sending and establish the
+- [x] Chat keyboard behavior: reproduce Enter not sending and establish the
   current Shift+Enter behavior.
-  - Status: reproduced in the running browser; root cause identified.
+  - Status: fixed and verified.
   - Root cause/evidence: after filling `keyboard regression probe`, Enter made
     the textarea value `keyboard regression probe\n`; Shift+Enter added another
     newline. `ChatComposer` has no `onKeyDown` submission behavior.
-  - Fix/tests/commit/push: pending.
+  - Fix/tests/commit/push: Enter now requests form submission, Shift+Enter keeps
+    its native newline, and IME composition is protected. TypeScript and 12
+    focused frontend tests pass. Commit/push pending.
 - [ ] Chat-first asset workflow: reproduce notation/tab/MIDI/preview rendering
   interrupting or blocking continued conversation.
   - Status: reproduced; root cause identified.

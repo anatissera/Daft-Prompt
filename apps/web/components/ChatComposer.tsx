@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent, RefObject } from "react";
+import { shouldSubmitChatKey } from "@/lib/chatComposerKeys.mjs";
 
 interface ChatComposerProps {
   busy: boolean;
@@ -31,6 +32,11 @@ export default function ChatComposer({
           id="prompt-input"
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (!shouldSubmitChatKey(event.nativeEvent)) return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
           placeholder="Describe the track you want the studio to compose…"
           className="chat-input"
           rows={1}
