@@ -472,6 +472,11 @@ class ChatMusic:
                 return "compose"
             if asks_about_reference or wants_reference_guidance:
                 return "answer_reference"
+            # A current reference is conversation state. Natural question-shaped
+            # follow-ups query it deterministically instead of asking the LLM to
+            # rediscover which freshly researched song the user means.
+            if "?" in message or _LOCAL_REFERENCE_QUESTION_RE.search(message):
+                return "answer_reference"
             return "clarify"
 
         if wants_compose:

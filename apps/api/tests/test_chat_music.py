@@ -336,6 +336,29 @@ def test_research_phrase_triggers_web_research_without_an_llm():
     assert store.get("ref_researched") is not None
 
 
+def test_research_followup_reuses_stored_profile_without_llm_rediscovery():
+    store = InMemoryReferenceStore()
+    researcher = _FakeResearcher()
+    explainer = _CountingExplainer()
+    chat = ChatMusic(
+        compose_song=_RecordingComposer(),
+        answer_music_question=AnswerMusicQuestion(explainer),
+        reference_store=store,
+        chat_model=_FailingChatModel(),
+        song_researcher=researcher,
+        enable_web_research=True,
+    )
+    researched = chat.handle(ChatRequest(message="Research Every Breath You Take by The Police"))
+
+    followup = chat.handle(ChatRequest(message="What evidence did you find?", reference_id=researched.reference_id))
+
+    assert followup.intent == "answer_reference"
+    assert followup.reference_id == "ref_researched"
+    assert followup.answer is not None
+    assert followup.answer.evidence == ["fake evidence"]
+    assert explainer.calls == [("What evidence did you find?", "ref_researched")]
+
+
 def test_look_up_and_analyze_routes_to_research_even_with_a_reference_loaded():
     store = InMemoryReferenceStore()
     profile = _make_profile()

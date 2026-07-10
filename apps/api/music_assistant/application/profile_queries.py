@@ -238,6 +238,19 @@ class ProfileQueryTools:
             evidence=[f"missing:{item.field}:{item.needed_evidence}" for item in profile.missing_data],
         )
 
+    def evidence_summary(self, profile: SongKnowledgeProfile) -> ProfileQueryAnswer:
+        claims = sorted(profile.evidence_claims, key=lambda claim: claim.confidence, reverse=True)
+        if not claims:
+            return ProfileQueryAnswer(answer="This research profile does not contain source-backed claims yet.")
+        selected = claims[:5]
+        sources = list(dict.fromkeys(claim.source_name for claim in selected if claim.source_name))
+        source_text = ", ".join(sources) if sources else "the collected sources"
+        findings = "; ".join(f"{claim.claim_type}: {claim.value}" for claim in selected)
+        return ProfileQueryAnswer(
+            answer=f"The strongest findings from {source_text} are: {findings}.",
+            evidence=[_evidence_line(claim) for claim in selected],
+        )
+
     def unsupported(self, profile: SongKnowledgeProfile, question: str) -> ProfileQueryAnswer:
         return ProfileQueryAnswer(
             answer=(
@@ -252,6 +265,8 @@ def answer_from_profile(question: str, profile: SongKnowledgeProfile) -> Profile
     tools = ProfileQueryTools()
     normalized = question.lower()
     section = _mentioned_section(normalized)
+    if any(token in normalized for token in ["evidence", "what did you find", "findings", "research result"]):
+        return tools.evidence_summary(profile)
     wants_chords = any(token in normalized for token in ["chord", "progression", "harmony"])
     wants_key_bpm = any(token in normalized for token in ["tempo", "bpm", "key", "scale"])
     if wants_chords and wants_key_bpm:

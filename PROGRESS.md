@@ -57,15 +57,20 @@ attempted.
     canned sketch, synchronous artifact rendering took 32.446 ms while task
     scheduling took 0.016 ms. Focused API/architecture/stream tests pass.
     Commit/push pending.
-- [ ] Research conversation continuity: reproduce follow-up questions losing
+- [x] Research conversation continuity: reproduce follow-up questions losing
   freshly gathered song/artist/album evidence.
-  - Status: reproduced; root cause identified.
+  - Status: fixed and verified.
   - Root cause/evidence: research profiles are saved and their id is returned,
     but follow-up reuse depends on `_REFERENCE_TOPIC_RE`. A natural request such
     as `What evidence did you find?` matches neither that regex nor composition,
     is classified as `clarify`, and is sent back through the LLM tool selector
     despite a current stored profile. This makes continuity probabilistic.
-  - Fix/tests/benchmark/commit/push: pending.
+  - Fix/tests/benchmark/commit/push: question-shaped follow-ups with a current
+    reference now deterministically query the stored profile without another
+    LLM routing call. Evidence/findings questions summarize the five strongest
+    source-backed claims. A full research-then-follow-up regression test passes
+    with an LLM stub that raises if invoked; 68 focused chat/query/answer tests
+    pass. Commit/push pending.
 
 ### Later priorities (do not start before Priority 1 is verified)
 

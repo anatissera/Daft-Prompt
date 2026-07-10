@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
-from music_assistant.application.profile_queries import ProfileQueryTools
+from music_assistant.application.profile_queries import ProfileQueryTools, answer_from_profile
 from music_assistant.domain.audio_profile import (
     EvidenceClaim,
     EvidenceConflict,
@@ -408,6 +408,16 @@ def test_listening_questions_without_evidence_stay_honest():
     assert "do not have timbre evidence" in answer_from_profile("How does it sound?", empty).answer
     assert "do not have groove evidence" in answer_from_profile("Does it swing?", empty).answer
     assert "do not have dynamics or arrangement evidence" in answer_from_profile("Where is the drop?", empty).answer
+
+
+def test_evidence_followup_summarizes_strongest_research_claims():
+    profile = knowledge_profile()
+
+    answer = answer_from_profile("What evidence did you find?", profile)
+
+    assert "strongest findings" in answer.answer
+    assert answer.evidence
+    assert len(answer.evidence) <= 5
 
 
 def test_answer_music_question_routes_listening_questions_end_to_end():
