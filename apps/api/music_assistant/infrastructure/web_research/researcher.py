@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
+from typing import Literal
 
 from music_assistant.domain.audio_profile import (
     AnalysisNote,
@@ -11,6 +13,7 @@ from music_assistant.domain.audio_profile import (
     ReferenceProfile,
     ReferenceSource,
     ResearchEvidence,
+    SongIdentity,
     SongKnowledgeProfile,
 )
 from music_assistant.infrastructure.web_research.connectors import (
@@ -46,16 +49,41 @@ class DefaultSongResearcher(SongResearcher):
         self.fuser = fuser or EvidenceFuser()
 
     def research(self, query: str) -> ReferenceProfile:
-        pages = []
-        for result in self.search.search(query, limit=12):
+        results = self.search.search(query, limit=6)
+
+        def fetch_and_parse(result):
             try:
                 html_text = self.fetcher.fetch(result.url)
             except RuntimeError:
-                continue
+                return None
             page = self.parser.parse(result, html_text)
-            if page.claims:
-                pages.append(page)
-        return self.fuser.fuse(query, pages)
+            return page if page.claims else None
+
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(results)))) as pool:
+            pages = [page for page in pool.map(fetch_and_parse, results) if page is not None]
+        profile = self.fuser.fuse(query, pages)
+        evidence_claims = [
+            EvidenceClaim(
+                claim_id=f"broad_{page_index}_{claim_index}",
+                claim_type="chord_progression" if claim.type == "chords" else claim.type,
+                value=claim.value,
+                normalized_value=claim.value,
+                source_name=page.site,
+                source_url=page.url,
+                extraction_method="site_parser",
+                confidence=claim.confidence,
+                snippet=claim.snippet,
+            )
+            for page_index, page in enumerate(pages)
+            for claim_index, claim in enumerate(page.claims)
+        ]
+        knowledge = SongKnowledgeProfile(
+            profile_id=profile.reference_id.replace("ref_", "context_", 1),
+            identity=SongIdentity(title=query),
+            evidence_claims=evidence_claims,
+            confidence_summary={"scope": classify_research_scope(query)},
+        )
+        return profile.model_copy(update={"knowledge": knowledge})
 
 
 class ConnectorSongResearcher(SongResearcher):
@@ -67,6 +95,7 @@ class ConnectorSongResearcher(SongResearcher):
         fuser: EvidenceFuser | None = None,
         songsterr_tab_loader: SongsterrTabLoader | None = None,
         songsterr_tab_store: SongsterrTabStore | None = None,
+        broad_researcher: SongResearcher | None = None,
     ) -> None:
         self.connectors = connectors or [
             HookTheoryConnector(),
@@ -78,8 +107,11 @@ class ConnectorSongResearcher(SongResearcher):
         self.fuser = fuser or EvidenceFuser()
         self.songsterr_tab_loader = songsterr_tab_loader or (SongsterrTabLoader() if songsterr_tab_store is not None else None)
         self.songsterr_tab_store = songsterr_tab_store
+        self.broad_researcher = broad_researcher
 
     def research(self, query: str) -> ReferenceProfile:
+        if classify_research_scope(query) != "song" and self.broad_researcher is not None:
+            return self.broad_researcher.research(query)
         resolved = _resolve_song_query(query)
         search_results = self.search.search(_search_query(resolved), limit=12)
         results = [
@@ -96,6 +128,23 @@ class ConnectorSongResearcher(SongResearcher):
         if bundle is not None and self.songsterr_tab_store is not None:
             self.songsterr_tab_store.save(profile.reference_id, bundle)
         return profile
+
+
+ResearchScope = Literal["song", "artist", "album", "style", "genre", "era"]
+
+
+def classify_research_scope(query: str) -> ResearchScope:
+    normalized = query.strip().lower()
+    for scope, pattern in [
+        ("album", r"\b(album|record)\b"),
+        ("artist", r"\b(artist|band|music of|style of)\b"),
+        ("era", r"\b(era|decade|\d{2}s|\d{4}s)\b"),
+        ("genre", r"\b(genre|grunge|punk|blues|folk|jazz|reggaeton|cumbia|metal)\b"),
+        ("style", r"\b(production style|production|sound|aesthetic)\b"),
+    ]:
+        if re.search(pattern, normalized):
+            return scope  # type: ignore[return-value]
+    return "song"
 
 
 def _reference_from_knowledge(

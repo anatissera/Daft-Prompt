@@ -66,3 +66,24 @@ class SeededWebSearch(WebSearch):
             ),
         ]
         return candidates[:limit]
+
+
+class BroadMusicWebSearch(WebSearch):
+    """Small, provider-free candidate set for artist/album/style research."""
+
+    def search(self, query: str, *, limit: int = 10) -> list[SearchResult]:
+        grounded = quote_plus(f"{query} instrumentation production sound tempo genre")
+        wiki = quote_plus(query)
+        candidates = [
+            SearchResult(
+                url=f"https://html.duckduckgo.com/html/?q={grounded}",
+                title=f"Music production research for {query}",
+                site="DuckDuckGo",
+            ),
+            SearchResult(
+                url=f"https://en.wikipedia.org/w/index.php?search={wiki}",
+                title=f"Background research for {query}",
+                site="Wikipedia",
+            ),
+        ]
+        return candidates[:limit]

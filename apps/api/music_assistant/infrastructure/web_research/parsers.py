@@ -14,6 +14,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _BPM_RE = re.compile(r"\b(?:tempo|bpm)\b[^0-9]{0,20}(\d{2,3}(?:\.\d+)?)\s*(?:bpm)?", re.IGNORECASE)
 _KEY_RE = re.compile(r"\bkey\b[^A-G]{0,20}([A-G](?:#|b|♯|♭)?\s*(?:major|minor|maj|min|m)?)", re.IGNORECASE)
 _CHORD_LINE_RE = re.compile(r"\b([A-G](?:#|b)?(?:m|maj|min|dim|sus|add)?(?:\d{0,2})?(?:\s*[-|]\s*[A-G](?:#|b)?(?:m|maj|min|dim|sus|add)?(?:\d{0,2})?){2,})\b")
+_PRODUCTION_SENTENCE_RE = re.compile(r"[^.!?]{0,260}\b(instrument|guitar|bass|drum|piano|synth|keyboard|production|producer|sound|timbre|groove|rhythm|tempo|bpm)\b[^.!?]{0,220}[.!?]", re.IGNORECASE)
 
 
 class GenericSongPageParser:
@@ -27,12 +28,25 @@ class GenericSongPageParser:
             claims.append(ResearchClaim(type="key", value=match.group(1).strip(), confidence=0.58, snippet=_snippet(text, match.start())))
         for match in _CHORD_LINE_RE.finditer(text):
             claims.append(ResearchClaim(type="chords", value=match.group(1).strip(), confidence=0.45, snippet=_snippet(text, match.start())))
+        for match in _PRODUCTION_SENTENCE_RE.finditer(text):
+            sentence = re.sub(r"\s+", " ", match.group(0)).strip()
+            claim_type = _production_claim_type(sentence)
+            claims.append(ResearchClaim(type=claim_type, value=sentence[:240], confidence=0.5, snippet=sentence[:280]))
         return ResearchPage(
             url=result.url,
             site=result.site or _site_from_url(result.url),
             title=result.title or _title(html_text),
             claims=claims[:20],
         )
+
+
+def _production_claim_type(sentence: str) -> str:
+    normalized = sentence.lower()
+    if any(token in normalized for token in ["groove", "rhythm", "beat", "swing"]):
+        return "groove"
+    if any(token in normalized for token in ["sound", "timbre", "production", "producer"]):
+        return "timbre"
+    return "instrumentation"
 
 
 def _visible_text(html_text: str) -> str:

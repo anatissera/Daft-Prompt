@@ -38,7 +38,8 @@ from music_assistant.infrastructure.storage.in_memory_reference_store import InM
 from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
-from music_assistant.infrastructure.web_research.researcher import ConnectorSongResearcher
+from music_assistant.infrastructure.web_research.researcher import ConnectorSongResearcher, DefaultSongResearcher
+from music_assistant.infrastructure.web_research.search import BroadMusicWebSearch
 from music_assistant.infrastructure.llm import LLMAllProvidersFailed, LLMError, make_llm
 from music_assistant.interfaces.api_models import (
     AnalysisDoneEvent,
@@ -177,7 +178,10 @@ def _compact_instrument_profile(profile) -> dict:
 
 
 def _song_researcher() -> ConnectorSongResearcher:
-    return ConnectorSongResearcher(songsterr_tab_store=SONGSTERR_TAB_STORE)
+    return ConnectorSongResearcher(
+        songsterr_tab_store=SONGSTERR_TAB_STORE,
+        broad_researcher=DefaultSongResearcher(search=BroadMusicWebSearch()),
+    )
 
 
 async def _store_reference_upload(file: UploadFile | None) -> ReferenceSource:

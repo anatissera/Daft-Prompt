@@ -131,6 +131,33 @@ Priority 3 completion audit: 574 backend tests passed, 1 skipped.
 - [x] Require a defined purpose and stylistic justification per instrument.
   - Status: fixed and verified. Schema fields reject empty purpose/style and the
     director prompt requires a distinct musical purpose and genre justification.
+
+### Priority 4 — Research pipeline (complete)
+
+Priority 4 completion audit: 577 backend tests passed, 1 skipped. Full rationale
+and benchmark evidence: `docs/phase2-research-pipeline-evaluation.md`.
+
+- [x] Inspect `origin/giner` without merging it.
+  - Evidence: 83 changed files, +14,223/-635 lines; adds a parallel 666-line
+    `band_agent` pipeline, 10-21 concurrent fill units, a required optional
+    ~1.6 GB Lakh corpus, web excerpts, and deterministic fallbacks. Its manual
+    evaluation results are unfilled; its handoff notes duplicate exemplars and
+    mislabeled corpus genre/key rows.
+- [x] Benchmark current and Giner approaches on latency, evidence, and runtime
+  complexity; document the decision.
+  - Result: current hybrid keeps zero-LLM research, two broad production
+    candidates, four-worker bound, no corpus requirement, and one canonical
+    composer. Giner has an 8-second excerpt ceiling, 10-21 concurrent fill units,
+    ~1.6 GB optional corpus, and no completed quality results.
+- [x] Add scope-aware artist/album/style/genre/era retrieval without replacing
+  the source-backed song connector pipeline.
+  - Result: explicit scope classifier preserves specialized song connectors and
+    routes broad context through bounded provider-free candidates.
+- [x] Verify broad research becomes reusable conversation evidence and remains
+  bounded/offline-safe.
+  - Result: production/timbre/instrument/groove sentences become knowledge claims;
+    follow-up evidence queries pass. Four simulated 30 ms fetches finish under
+    90 ms versus ~120 ms sequential. Existing offline guard remains upstream.
   - Root cause/evidence: role and playing-style fields are required keys but
     accept empty strings; the prompt does not make ensemble choice a first step.
 - [ ] Priority 4: research-pipeline evaluation and benchmarked Giner comparison.
