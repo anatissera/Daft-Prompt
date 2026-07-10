@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-07-10
 
-## Phase 2 — Product polish (active)
+## Phase 2 — Product polish (complete)
 
 Evidence states used below: `pending`, `reproduced`, `root cause identified`,
 `fixed`, `verified`, and `committed`. A regression is not complete until its
@@ -95,7 +95,8 @@ frontend suite 60 passed with clean TypeScript and production build.
   - Fix/tests/benchmark/commit/push: application merge accepts only the named
     part and preserves header, request, roster, harmony, peer parts, negotiation
     history, and errors. A deliberately destructive fake reviser is contained.
-    Merge-guard overhead averages 218.29 μs. Commit/push pending.
+    Merge-guard overhead averages 218.29 μs. Committed as `fd70d57`; push
+    attempted and rejected non-fast-forward.
 - [x] Make targeted sound/timbre edits change the named instrument only.
   - Status: fixed and verified.
   - Root cause/evidence: all current edits call the note-revision agent. Roster
@@ -104,7 +105,8 @@ frontend suite 60 passed with clean TypeScript and production build.
   - Fix/tests/benchmark/commit/push: explicit clean/acoustic/distorted/synth/piano
     requests update only the target roster entry; unspecified sound requests ask
     one clarification. Local playback maps program families to distinct local
-    oscillator timbres. Commit/push pending.
+    oscillator timbres. Committed as `fd70d57`; push attempted and rejected
+    non-fast-forward.
 - [x] Verify instrumentation, arrangement, harmony, rhythm, and musical identity
   preservation across repeated edits to the internal current composition.
   - Status: verified by repeated-edit sequence tests. Timbre persists into a
@@ -131,6 +133,8 @@ Priority 3 completion audit: 574 backend tests passed, 1 skipped.
 - [x] Require a defined purpose and stylistic justification per instrument.
   - Status: fixed and verified. Schema fields reject empty purpose/style and the
     director prompt requires a distinct musical purpose and genre justification.
+  - Root cause/evidence: role and playing-style fields were required keys but
+    accepted empty strings; the prompt did not make ensemble choice a first step.
 
 ### Priority 4 — Research pipeline (complete)
 
@@ -158,10 +162,23 @@ and benchmark evidence: `docs/phase2-research-pipeline-evaluation.md`.
   - Result: production/timbre/instrument/groove sentences become knowledge claims;
     follow-up evidence queries pass. Four simulated 30 ms fetches finish under
     90 ms versus ~120 ms sequential. Existing offline guard remains upstream.
-  - Root cause/evidence: role and playing-style fields are required keys but
-    accept empty strings; the prompt does not make ensemble choice a first step.
-- [ ] Priority 4: research-pipeline evaluation and benchmarked Giner comparison.
-- [ ] Full Phase 2 completion audit.
+
+### Phase 2 completion audit
+
+- [x] Priority 1: all five named regressions were reproduced before fixes;
+  root causes, tests, benchmarks, atomic commits, and push attempts are recorded.
+- [x] Priority 2: current-song edits are incremental and preserve all unrequested
+  composition state across repeated edits.
+- [x] Priority 3: ensemble selection is minimal, purpose-driven, and guarded
+  against unrequested electronic textures in named roots genres.
+- [x] Priority 4: Giner was inspected and benchmarked without merge; only bounded
+  broad-context retrieval was integrated into the existing architecture.
+- [x] Final verification: backend 577 passed/1 skipped; frontend TypeScript clean,
+  60 tests passed, production build passed; repository search finds no remaining
+  remote soundfont or legacy MIDI-player dependency.
+- [x] Every implementation iteration is committed locally and a push was
+  attempted. Pushes were rejected non-fast-forward because the remote branch is
+  one commit ahead; per goal instructions, work continued locally without merge.
 
 ## Developer-experience phase
 
