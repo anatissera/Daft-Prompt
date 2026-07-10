@@ -65,6 +65,9 @@ def validate_song(song: SongState) -> list[ValidationIssue]:
                         f"(a non-empty list of notes with real pitches)"))
             continue
 
+        if _is_monophonic_role(roster):
+            issues.extend(_overlap_issues(part_id, part.notes, bpb))
+
         lo, hi = roster.midi_range
         for n in part.notes:
             # bar index
@@ -129,6 +132,45 @@ def validate_song(song: SongState) -> list[ValidationIssue]:
                     instrument_id=part_id, severity="warning", code="out_of_key", bar=n.bar,
                     message=f"pitch {n.pitch} fits neither {where} (chromaticism?)"))
 
+    return issues
+
+
+def _is_monophonic_role(roster) -> bool:
+    """Bass and lead lines should not contain overlapping note-ons.
+
+    Harmony/pad/piano tracks remain polyphonic by design; drums are handled
+    separately. This remains a narrow quality guard rather than assuming every
+    melodic instrument is monophonic.
+    """
+    if roster.is_drum:
+        return False
+    label = f"{roster.id} {roster.instrument} {roster.role}".lower()
+    return any(token in label for token in ("bass", "lead", "solo", "melody"))
+
+
+def _overlap_issues(part_id: str, notes, beats_per_bar: float) -> list[ValidationIssue]:
+    sounding = sorted(
+        (note for note in notes if note.pitch is not None and note.dur > 0),
+        key=lambda note: (note.bar * beats_per_bar + note.start_beat, note.pitch),
+    )
+    issues: list[ValidationIssue] = []
+    previous_end: float | None = None
+    for note in sounding:
+        start = note.bar * beats_per_bar + note.start_beat
+        if previous_end is not None and start < previous_end - _EPS:
+            issues.append(
+                ValidationIssue(
+                    instrument_id=part_id,
+                    severity="error",
+                    code="overlapping_notes",
+                    bar=note.bar,
+                    message=(
+                        f"monophonic {part_id} note at beat {note.start_beat} overlaps a previous note; "
+                        "shorten or move one note"
+                    ),
+                )
+            )
+        previous_end = max(previous_end or 0.0, start + note.dur)
     return issues
 
 
