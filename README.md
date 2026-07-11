@@ -207,4 +207,12 @@ node --test lib/*.test.mjs
 
 ## Credits
 
-Built by Ana Paula Tissera for the NLP course at Universidad de San Andres. Music analysis meets multi-agent reasoning.
+Built for the NLP course at Universidad de San Andres by:
+
+* [Ana Paula Tissera](https://github.com/anatissera)
+* [Franco Amato de Lusarreta](https://github.com/famatodlr)
+* [Juan Cruz Giner Pulero](https://github.com/ginerJuanUdesa)
+* [Valentino Arbelaiz Alberti](https://github.com/varbelaiz)
+* [Naomi Couriel](https://github.com/naomicouriel)
+
+Music analysis meets multi-agent reasoning.
