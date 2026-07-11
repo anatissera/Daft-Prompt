@@ -1079,6 +1079,134 @@ code, pre, .mono { font-family: var(--font-mono); }
     0 10px 22px -10px rgba(0, 0, 0, 0.6);
 }
 
+.chord-diagram-block {
+  margin-top: 12px;
+  width: min(100%, 820px);
+  padding: 16px;
+  background: linear-gradient(180deg, rgba(8, 14, 28, 0.88), rgba(12, 20, 36, 0.96));
+  border: 1px solid rgba(243, 196, 90, 0.28);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 -10px 18px -15px rgba(255, 122, 31, 0.55) inset,
+    0 12px 24px -16px rgba(0, 0, 0, 0.7);
+}
+
+.chord-diagram-header,
+.chord-section-title-row,
+.chord-card-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chord-diagram-header {
+  margin-bottom: 14px;
+}
+
+.chord-diagram-badge,
+.chord-diagram-source,
+.chord-section-title-row span,
+.chord-card-label span {
+  font-family: var(--font-tech);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chord-diagram-badge {
+  color: var(--gold-bright);
+  font-size: 12px;
+}
+
+.chord-diagram-source,
+.chord-section-title-row span,
+.chord-card-label span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chord-section-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.chord-section-card {
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  background: rgba(4, 9, 18, 0.48);
+}
+
+.chord-section-title-row {
+  margin-bottom: 10px;
+}
+
+.chord-section-title-row h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.chord-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.chord-card {
+  display: grid;
+  gap: 8px;
+}
+
+.chord-card-label strong {
+  color: var(--gold-bright);
+  font-size: 18px;
+}
+
+.mini-keyboard {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(14px, 1fr));
+  align-items: end;
+  height: 54px;
+  min-width: 0;
+  border: 1px solid rgba(243, 196, 90, 0.22);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.mini-key {
+  display: grid;
+  place-items: end center;
+  height: 100%;
+  min-width: 0;
+  padding-bottom: 5px;
+  font-family: var(--font-tech);
+  font-size: 9px;
+  color: rgba(10, 12, 18, 0.72);
+  border-right: 1px solid rgba(0, 0, 0, 0.22);
+}
+
+.mini-key:last-child {
+  border-right: 0;
+}
+
+.mini-key-white {
+  background: linear-gradient(180deg, #fff8df, #d9d5c9);
+}
+
+.mini-key-black {
+  height: 66%;
+  align-self: start;
+  background: linear-gradient(180deg, #222735, #05070c);
+}
+
+.mini-key-active {
+  background: linear-gradient(180deg, #ffe99a, #ff9f42);
+  box-shadow: 0 0 16px rgba(255, 184, 74, 0.48) inset;
+}
+
 /* ═══ SONG DECK ═══════════════════════════════════════════════════════════ */
 
 .song-deck {

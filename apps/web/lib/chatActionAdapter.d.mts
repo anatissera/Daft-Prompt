@@ -1,4 +1,4 @@
-import type { ChatMessage, FeedEvent } from "./chatTypes";
+import type { ChatMessage, FeedEvent, PlayableChords } from "./chatTypes";
 import type { ComposeResponse, Header, ReferenceProfile } from "./types";
 
 export type ChatAction =
@@ -19,6 +19,13 @@ export function createAnalysisMessage(
   role: ChatMessage["role"],
   text: string,
   profile: ReferenceProfile,
+  index: number,
+): ChatMessage;
+
+export function createChordDiagramMessage(
+  role: ChatMessage["role"],
+  text: string,
+  playableChords: PlayableChords,
   index: number,
 ): ChatMessage;
 
