@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
-import { DaftHelmetIcon, LcIcon } from "@/components/icons";
-import { AgentGraphView, LangGraphView } from "@/components/PipelineGraphs";
+import { DaftHelmetIcon } from "@/components/icons";
+import { AgentGraphView } from "@/components/PipelineGraphs";
 import ChatThread, { type PipelineState, type PipelineStageIdx } from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
 import type { AnalysisEvent, ReferenceProfile, SongState } from "@/lib/types";
@@ -89,9 +89,8 @@ export default function Home() {
   const messageIndexRef = useRef(1);
   const [prompt, setPrompt] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  // Main-panel view: chat, or one of the two architecture graphs opened from
-  // the sidebar squares (helmet = agent map, LC = LangGraph internals).
-  const [view, setView] = useState<"chat" | "agents" | "lc">("chat");
+  // Main-panel view: chat, or the unified architecture graph (helmet button).
+  const [view, setView] = useState<"chat" | "agents">("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([
     createTextMessage(
       "assistant",
@@ -453,16 +452,6 @@ export default function Home() {
           </button>
           <button
             type="button"
-            className={`sidebar-square sidebar-square-icon${view === "lc" ? " sidebar-square-active" : ""}`}
-            onClick={() => setView((v) => (v === "lc" ? "chat" : "lc"))}
-            title="LangGraph architecture"
-            aria-label="LangGraph architecture"
-            aria-pressed={view === "lc"}
-          >
-            <LcIcon size={26} />
-          </button>
-          <button
-            type="button"
             className={`sidebar-square sidebar-square-icon${view === "agents" ? " sidebar-square-active" : ""}`}
             onClick={() => setView((v) => (v === "agents" ? "chat" : "agents"))}
             title="Agent map"
@@ -501,7 +490,7 @@ export default function Home() {
           <div className="app-topbar-left">
             <span className="app-topbar-dot" aria-hidden="true" />
             <span className="app-topbar-title">
-              {view === "agents" ? "Agent map" : view === "lc" ? "LangGraph architecture" : sessionTitle}
+              {view === "agents" ? "Architecture" : sessionTitle}
             </span>
           </div>
           <span className="app-topbar-meta">
@@ -510,8 +499,6 @@ export default function Home() {
         </header>
         {view === "agents" ? (
           <AgentGraphView />
-        ) : view === "lc" ? (
-          <LangGraphView />
         ) : (
           <>
             <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} pipeline={pipeline} />

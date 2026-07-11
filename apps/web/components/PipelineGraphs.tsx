@@ -1,12 +1,10 @@
 "use client";
 
-/** Full-screen graph views toggled from the sidebar square buttons:
- *  - AgentGraphView  (helmet): the conceptual pipeline — every component the
- *    agent has at its disposal from prompt to rendered song (tools, composer,
- *    fallbacks, players).
- *  - LangGraphView   (LC): the hard LangChain/LangGraph architecture — the
- *    actual StateGraph nodes, conditional edges, LLM stack and streaming.
- *  Both are hand-laid-out SVGs so they stay dependency-free and theme-true.
+/** Full-screen architecture graph (helmet sidebar button): the UNIFIED map —
+ *  conceptual pipeline (tools, director commitments, instrument agents,
+ *  enforcement, players) annotated with the hard LangGraph identities
+ *  (do_* nodes, pydantic schemas, models per role) plus the LLM stack and
+ *  streaming transport. Hand-laid-out SVG: dependency-free and theme-true.
  */
 
 interface NodeSpec {
@@ -166,10 +164,10 @@ function Graph({ title, subtitle, nodes, edges, viewW, viewH }: {
 
 const AGENT_NODES: NodeSpec[] = [
   { id: "prompt", x: 20, y: 320, w: 120, h: 52, title: "PROMPT", lines: ["user request"], accent: SILVER, kind: "input" },
-  { id: "intent", x: 190, y: 320, w: 150, h: 66, title: "INTENT", lines: ["compose vs replicate", "LLM classifier"], kind: "llm call" },
+  { id: "intent", x: 190, y: 320, w: 150, h: 80, title: "INTENT", lines: ["do_intent · graph node", "IntentDecision schema", "compose vs replicate"], kind: "llm call" },
 
   // replicate branch (top)
-  { id: "bitmidi", x: 400, y: 52, w: 160, h: 80, title: "BITMIDI SEARCH", lines: ["find the exact song", "similarity guard on hits", "download .mid"], accent: OXBLOOD, kind: "tool · http api" },
+  { id: "bitmidi", x: 400, y: 52, w: 160, h: 94, title: "BITMIDI SEARCH", lines: ["do_replicate · graph node", "find the exact song", "similarity guard on hits", "corrupt-file fallback"], accent: OXBLOOD, kind: "tool · http api" },
   { id: "import", x: 620, y: 60, w: 150, h: 66, title: "MIDI IMPORT", lines: ["verbatim tracks", "no re-generation"], accent: OXBLOOD, kind: "tool · parser" },
 
   // research tools
@@ -178,17 +176,19 @@ const AGENT_NODES: NodeSpec[] = [
   { id: "corpus", x: 400, y: 370, w: 160, h: 66, title: "CORPUS", lines: ["Lakh exemplars", "Groove drum patterns"], accent: TEAL, kind: "tool · offline index" },
   { id: "evidence", x: 400, y: 468, w: 160, h: 80, title: "SONG EVIDENCE", lines: ["MusicBrainz resolve", "CifraClub/HookTheory", "key + section chords"], accent: TEAL, kind: "tool · scrapers" },
   { id: "answer", x: 20, y: 468, w: 150, h: 66, title: "ANSWER", lines: ["evidence or websearch", "+ 1 small LLM call"], accent: SILVER, kind: "q&a" },
-  { id: "edit", x: 20, y: 570, w: 150, h: 80, title: "EDIT", lines: ["plan: transpose, swap,", "remove, tempo, velocity", "applied deterministically"], accent: OXBLOOD, kind: "llm plan + pure fn" },
+  { id: "edit", x: 20, y: 570, w: 150, h: 80, title: "EDIT", lines: ["plan: transpose, swap,", "add, remove, tempo", "applied deterministically"], accent: OXBLOOD, kind: "llm plan + pure fn" },
+  { id: "llmstack", x: 620, y: 566, w: 220, h: 96, title: "LLM STACK", lines: ["make_llm(role) → fallback chain", "ChatOpenAI · opencode.ai", "minimax-m3 / m2.5 (fills)", "pydantic structured output"], kind: "langchain · http" },
+  { id: "stream", x: 900, y: 680, w: 230, h: 80, title: "STREAMING", lines: ['graph.stream("values") → SSE', "FastAPI /chat/stream → proxy", "→ pipeline stepper + deck"], accent: SILVER, kind: "langgraph api · transport" },
 
   // director
-  { id: "director", x: 640, y: 240, w: 190, h: 116, title: "DIRECTOR", lines: ["style + canon instruments", "rhythmic feel + onset grids", "registers + density budgets", "roster + chords + plan"], kind: "llm call · minimax-m3" },
+  { id: "director", x: 640, y: 240, w: 190, h: 116, title: "DIRECTOR", lines: ["do_skeleton → BandSkeleton", "style + canon instruments", "feel + grids + registers", "roster + chords + plan"], kind: "graph node · llm · m3" },
 
   // fills
-  { id: "fills", x: 900, y: 240, w: 190, h: 96, title: "INSTRUMENT AGENTS", lines: ["one per instrument", "× section slice", "16 parallel workers"], kind: "llm calls ×N · m2.5" },
+  { id: "fills", x: 900, y: 240, w: 190, h: 96, title: "INSTRUMENT AGENTS", lines: ["do_fills → InstrumentFill ×N", "one per instrument × slice", "ThreadPool(16) workers"], kind: "graph node · llm ×N · m2.5" },
   { id: "fallbacks", x: 900, y: 400, w: 190, h: 82, title: "FALLBACK CHAIN", lines: ["rich → minimal schema", "LLM-seeded 1-bar loop", "deterministic pattern"], accent: SILVER, kind: "llm + deterministic" },
 
   // compose + render
-  { id: "compose", x: 1160, y: 240, w: 180, h: 110, title: "COMPOSER", lines: ["grid/density/register", "enforcement (binding)", "patch reconciliation", "drums + bass roots"], kind: "deterministic" },
+  { id: "compose", x: 1160, y: 240, w: 180, h: 124, title: "COMPOSER", lines: ["do_compose · pure fn", "grid/density/register", "enforcement (binding)", "patch reconciliation", "drums + bass roots"], kind: "graph node · deterministic" },
   { id: "render", x: 1160, y: 400, w: 180, h: 66, title: "RENDER", lines: ["song.mid + MusicXML", "artifacts + SSE done"], kind: "deterministic" },
   { id: "player", x: 900, y: 540, w: 190, h: 82, title: "PLAYER", lines: ["SF3 soundfont (sampled)", "Tone.js synths (native)", "per-agent mixer"], accent: TEAL, kind: "frontend · web audio" },
 ];
@@ -204,8 +204,11 @@ const AGENT_EDGES: EdgeSpec[] = [
   { from: "evidence", to: "director" },
   { from: "intent", to: "answer", label: "question", fromSide: "bottom", toSide: "top" },
   { from: "evidence", to: "answer", dashed: true },
-  { from: "intent", to: "edit", label: "edit last song", fromSide: "bottom", toSide: "top" },
+  { from: "intent", to: "edit", label: "edit", fromSide: "bottom", toSide: "top" },
   { from: "edit", to: "render", dashed: true, fromSide: "bottom", toSide: "bottom" },
+  { from: "director", to: "llmstack", dashed: true, fromSide: "bottom", toSide: "top" },
+  { from: "fills", to: "llmstack", dashed: true, fromSide: "bottom", toSide: "top" },
+  { from: "render", to: "stream", dashed: true, fromSide: "bottom", toSide: "right" },
   { from: "websearch", to: "excerpts", dashed: true },
   { from: "websearch", to: "director" },
   { from: "excerpts", to: "director" },
@@ -222,76 +225,11 @@ export function AgentGraphView() {
   return (
     <Graph
       title="AGENT MAP"
-      subtitle="Todo lo que el agente tiene a disposición desde el prompt hasta la canción — herramientas, director, agentes de instrumento y compositor."
+      subtitle="El sistema completo: del prompt a la canción — nodos del LangGraph (do_*), herramientas, compromisos del director, agentes de instrumento, enforcement y el stack LLM/streaming."
       nodes={AGENT_NODES}
       edges={AGENT_EDGES}
       viewW={1380}
-      viewH={680}
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// LC view: the hard LangChain / LangGraph architecture.
-// ---------------------------------------------------------------------------
-
-const LC_NODES: NodeSpec[] = [
-  // StateGraph lane
-  { id: "start", x: 20, y: 90, w: 100, h: 46, title: "START", accent: SILVER, kind: "entry point" },
-  { id: "do_intent", x: 170, y: 80, w: 150, h: 62, title: "do_intent", lines: ["IntentDecision", "conditional edges"], kind: "graph node · llm" },
-  { id: "do_replicate", x: 380, y: 20, w: 160, h: 56, title: "do_replicate", lines: ["Bitmidi → import"], accent: OXBLOOD, kind: "graph node · tools" },
-  { id: "do_research", x: 380, y: 110, w: 160, h: 56, title: "do_research", lines: ["DDG + page excerpts", "+ song evidence"], accent: TEAL, kind: "graph node · tools" },
-  { id: "do_skeleton", x: 600, y: 110, w: 160, h: 62, title: "do_skeleton", lines: ["BandSkeleton", "retry on parse-None"], kind: "graph node · llm" },
-  { id: "do_fills", x: 820, y: 110, w: 160, h: 62, title: "do_fills", lines: ["InstrumentFill × N", "ThreadPool(16)"], kind: "graph node · llm ×N" },
-  { id: "do_compose", x: 1040, y: 110, w: 160, h: 56, title: "do_compose", lines: ["BandSpec → SongState", "grid/register enforce"], kind: "graph node · pure fn" },
-  { id: "end", x: 1260, y: 116, w: 90, h: 46, title: "END", accent: SILVER, kind: "terminal" },
-
-  // LLM infrastructure lane
-  { id: "make_llm", x: 170, y: 300, w: 160, h: 62, title: "make_llm(role)", lines: ["director / instrument", "role-scoped models"], kind: "factory · python" },
-  { id: "fallback", x: 400, y: 300, w: 180, h: 62, title: "FallbackChatModel", lines: ["provider chain", "cancel-aware httpx"], kind: "langchain wrapper" },
-  { id: "chatopenai", x: 650, y: 300, w: 190, h: 76, title: "ChatOpenAI", lines: ["opencode.ai gateway", "minimax-m3 (director)", "minimax-m2.5 (fills)"], kind: "langchain client · http" },
-  { id: "structured", x: 910, y: 300, w: 210, h: 76, title: "with_structured_output", lines: ["pydantic schemas:", "IntentDecision · BandSkeleton", "InstrumentFill · _MinimalFill"], kind: "langchain api · pydantic" },
-
-  // streaming lane
-  { id: "stream", x: 170, y: 470, w: 200, h: 62, title: 'graph.stream("values")', lines: ["progress event per node"], accent: TEAL, kind: "langgraph api" },
-  { id: "fastapi", x: 430, y: 466, w: 190, h: 80, title: "FastAPI SSE", lines: ["/chat/stream + intent router", "song_question + edit_song", "CancelToken per request"], accent: TEAL, kind: "backend endpoint" },
-  { id: "nextproxy", x: 680, y: 470, w: 170, h: 62, title: "Next.js proxy", lines: ["same-origin SSE relay", "no undici timeouts"], accent: TEAL, kind: "frontend route" },
-  { id: "ui", x: 920, y: 470, w: 150, h: 56, title: "UI", lines: ["pipeline stepper", "song deck"], accent: SILVER, kind: "react" },
-];
-
-const LC_EDGES: EdgeSpec[] = [
-  { from: "start", to: "do_intent" },
-  { from: "do_intent", to: "do_replicate", label: "replicate" },
-  { from: "do_intent", to: "do_research", label: "compose" },
-  { from: "do_replicate", to: "do_research", label: "miss", dashed: true },
-  { from: "do_replicate", to: "end", fromSide: "right", toSide: "top", dashed: true, label: "hit" },
-  { from: "do_research", to: "do_skeleton" },
-  { from: "do_skeleton", to: "do_fills" },
-  { from: "do_fills", to: "do_compose" },
-  { from: "do_compose", to: "end" },
-
-  { from: "do_intent", to: "make_llm", dashed: true, fromSide: "bottom", toSide: "top" },
-  { from: "do_skeleton", to: "chatopenai", dashed: true, fromSide: "bottom", toSide: "top" },
-  { from: "do_fills", to: "structured", dashed: true, fromSide: "bottom", toSide: "top" },
-  { from: "make_llm", to: "fallback" },
-  { from: "fallback", to: "chatopenai" },
-  { from: "chatopenai", to: "structured" },
-
-  { from: "stream", to: "fastapi" },
-  { from: "fastapi", to: "nextproxy" },
-  { from: "nextproxy", to: "ui" },
-  { from: "make_llm", to: "stream", dashed: true, fromSide: "bottom", toSide: "top" },
-];
-
-export function LangGraphView() {
-  return (
-    <Graph
-      title="LANGGRAPH ARCHITECTURE"
-      subtitle="La arquitectura dura: StateGraph con edges condicionales, stack LLM con structured output pydantic, y el camino de streaming hasta la UI."
-      nodes={LC_NODES}
-      edges={LC_EDGES}
-      viewW={1380}
-      viewH={570}
+      viewH={790}
     />
   );
 }
