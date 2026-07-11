@@ -107,9 +107,42 @@ export default function Home() {
     return () => clearInterval(id);
   }, [busyStartedAt]);
 
+  // Composes run for minutes over a live SSE stream. On phones the screen
+  // times out mid-generation, the OS suspends the browser's network, the
+  // stream dies AND the backend cancels the job on disconnect. A screen
+  // wake lock while busy keeps the device awake for the duration; released
+  // (and auto-released by the OS) as soon as work ends. Requires a secure
+  // context — the tailscale-serve HTTPS endpoint qualifies.
+  const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
+
+  async function acquireWakeLock() {
+    try {
+      const wl = (navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> } }).wakeLock;
+      if (wl) wakeLockRef.current = await wl.request("screen");
+    } catch { /* unsupported or denied — degrade silently */ }
+  }
+
+  function releaseWakeLock() {
+    wakeLockRef.current?.release().catch(() => { /* noop */ });
+    wakeLockRef.current = null;
+  }
+
+  // The OS drops wake locks when the tab is hidden; re-acquire when the
+  // user returns while a compose is still running.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && busyStartedAt !== null && !wakeLockRef.current) {
+        void acquireWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [busyStartedAt]);
+
   function startWork(label: string) {
     setActiveWork(label);
     setBusyStartedAt(performance.now());
+    void acquireWakeLock();
   }
 
   function stopWork() {
@@ -117,6 +150,7 @@ export default function Home() {
     setBusyStartedAt(null);
     setPipeline(null);
     abortRef.current = null;
+    releaseWakeLock();
   }
 
   function cancelWork() {
