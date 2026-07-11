@@ -1,7 +1,8 @@
 # Architecture Notes
 
-This document preserves technical decisions that remain valid after the product
-direction moved from "multi-agent band demo" to "chat-first musical workspace".
+This document preserves technical decisions for Daft Prompt, a chat-first music
+assistant that answers from public evidence and composes or edits MIDI-first
+songs through a multi-agent band.
 
 `PRODUCT.md` is the product source of truth. This document is technical support.
 
@@ -9,14 +10,56 @@ direction moved from "multi-agent band demo" to "chat-first musical workspace".
 
 The backend follows clean architecture boundaries:
 
-- `domain/`: stable music and reference models.
-- `application/`: use cases such as composition, reference analysis, and music Q&A.
-- `ports/`: interfaces for LLMs, storage, MIR analysis, transcription, and stems.
-- `infrastructure/`: adapters for providers, storage, MIR libraries, and deployment.
+- `domain/`: stable music, evidence, style, playable, tone, brief, and song
+  models.
+- `application/`: use cases such as chat routing, song knowledge lookup, artist
+  style profiling, playable rendering, composition, and edits.
+- `ports/`: interfaces for LLMs, source connectors, storage, rendering, and
+  other dependencies.
+- `infrastructure/`: adapters for providers, scraping, web search, storage,
+  rendering, and deployment.
 - `interfaces/`: FastAPI HTTP/SSE boundary.
 
-Composition code should not import MIR/audio adapters directly. It receives only
-compact domain summaries, especially `ReferenceProfile`.
+Preferred flow:
+
+```text
+FastAPI route
+  -> application use case
+  -> domain models
+  -> ports
+  -> infrastructure adapters
+```
+
+Routes stay thin: parse/validate input, call use cases, and return models or
+streams. Business rules do not belong in route handlers.
+
+## Song Knowledge
+
+Known-song understanding is connector-based. User-uploaded file analysis and
+local audio analysis are not supported Daft Prompt product paths.
+
+The song knowledge bounded context should expose compact provider-agnostic
+domain models:
+
+- `SongKnowledgeProfile`: evidence-backed facts and claims about a known song,
+  artist, album, or genre.
+- `EvidenceClaim`: one attributed source claim with confidence, conflicts, and
+  optional section/time context.
+- `PlayablePart`: a requested part represented as guitar tab, bass tab, drum
+  tab, piano keys, piano roll, chord chart, or rhythm grid.
+- `ArtistStyleProfile`: aggregated traits from representative songs and style
+  evidence.
+- `ToneProfile`: compact tone, patch, amp, pedal, synth, and production traits.
+- `CompositionBrief`: instructions for the composer derived from chat plus
+  optional song/style evidence.
+
+Infrastructure adapters may scrape Songsterr, tab/chord pages, metadata pages,
+or style/corpus sources. Raw HTML, source-specific response shapes, and
+provider clients must not leak into `domain/`, `application/`, `agents/`, or
+`music/`.
+
+Songsterr/tab evidence is expected to be an important connector, but the domain
+model must remain source-agnostic.
 
 ## Canonical Music Representation
 
@@ -33,62 +76,132 @@ Important rules:
 - `notes_summary` is the compact peer context used by instrument agents;
 - `negotiation_requests` are the observable inter-agent protocol.
 
-The LLM should emit structured data that maps to this schema. MIDI, MusicXML, and
-notation are exports, not the source of truth.
+The LLM should emit structured data that maps to this schema. MIDI, audio,
+MusicXML, tabs, piano keys, and piano roll views are exports or projections, not
+the source of truth for generated compositions.
 
 ## Composition Engine
 
-The current composition engine remains valuable:
+The multi-agent composer remains valuable and should stay isolated from source
+connector details.
 
-1. A director chooses key, tempo, meter, form, and instrumentation.
-2. Instrument agents compose parts into `SongState.parts`.
-3. Agents negotiate through `negotiation_requests` in shared state.
-4. An arbiter resolves any remaining requests at the round cap.
-5. Deterministic renderers convert `SongState` to MIDI and MusicXML.
+Composition flow:
 
-LangGraph does not provide direct peer-to-peer calls. Agent communication is
-modeled as structured requests written to shared state and routed on later turns.
+```text
+chat request + context
+  -> CompositionBrief
+  -> director/orchestrator
+  -> dynamic instrument or role agents
+  -> negotiation through shared SongState
+  -> arbiter/reviewer
+  -> render artifacts and playable views
+```
 
-## Reference Analysis
+Agent communication happens through structured `negotiation_requests` in shared
+state. Do not add a separate message bus without a strong reason.
 
-Reference analysis is a separate bounded context.
+Composition agents may consume compact `SongKnowledgeProfile`,
+`ArtistStyleProfile`, `PlayablePart`, `ToneProfile`, and `CompositionBrief`
+summaries. They must not call scrapers, storage adapters, web search, raw
+provider APIs, or legacy audio analyzers directly.
 
-For the MVP it accepts local files only. The target profile includes:
+For evidence-guided composition, default behavior is transformative:
 
-- duration;
-- tempo estimate;
-- key estimate;
-- energy or section-level energy;
-- simple section boundaries;
-- chord estimates by section or time range;
-- confidence values where possible.
+- use requested traits explicitly;
+- preserve exact parts only when the user asks;
+- do not copy complete source songs by default;
+- keep source attribution visible in the response and details.
 
-Chord, key, beat, and section estimates are probabilistic. The assistant should
-explain uncertainty instead of presenting estimates as ground truth.
+## Artist Style Profiling
 
-## Reference-Guided Composition
+Artist/band style profiling is an application use case.
 
-Composition from reference should pass only a compact `ReferenceProfile` summary
-into the composer.
+It should:
 
-Default transfer behavior:
+- resolve the artist or band;
+- select representative songs using popularity, tab availability, user mentions,
+  and musical relevance;
+- fetch evidence through source connector ports;
+- aggregate genre, harmony, rhythm, instrumentation, form, tone, and production
+  traits;
+- preserve sources and confidence;
+- cache the compact profile in chat context.
 
-- use tempo when confidence is reasonable;
-- use structure and energy by default;
-- use key when confidence is reasonable;
-- do not copy chord estimates by default;
-- use chord estimates only when the user asks for them or accepts them.
+For prompts like "compose something similar to this band", the resulting
+`ArtistStyleProfile` feeds `CompositionBrief`. Raw pages and full tabs do not.
 
-This keeps the product transformative and avoids coupling composer agents to raw
-audio files or MIR internals.
+## Chat Router
+
+The chat router should classify requests into tool paths:
+
+- identify song/entity;
+- fetch or refresh song evidence;
+- build or reuse artist/band style profile;
+- answer music theory or production question;
+- render a requested playable part;
+- compose from scratch;
+- compose from song, artist, album, or genre evidence;
+- edit an existing generated `SongState`;
+- ask one clarification when required.
+
+The router preserves conversational context:
+
+- current song knowledge profile;
+- current artist/band style profile;
+- current generated song;
+- selected instrument or section;
+- accepted constraints;
+- evidence already gathered.
+
+LangGraph can orchestrate routing, but deterministic fallback behavior should
+exist for obvious prompts and tests.
 
 ## Frontend / Backend Split
 
 The frontend is Next.js. The backend is FastAPI/Python.
 
-The Python backend should be containerized because the project depends on music
-and audio libraries that are better suited to a container than to serverless
-frontend functions.
+Frontend responsibilities:
+
+- render chat, contextual evidence, playable views, mixer, piano roll, and
+  agent details;
+- manage local UI state;
+- call API routes.
+
+Frontend code should not decide musical analysis, source fusion, chat routing,
+composition policy, or edit semantics.
+
+Backend responsibilities:
+
+- route chat intent in `application/`;
+- fetch and fuse evidence through ports;
+- create style profiles and composition briefs;
+- run the composer and edit use cases;
+- render artifacts through deterministic helpers.
+
+## Architecture Graphs Must Stay In Sync
+
+The UI ships hand-maintained architecture/pipeline diagrams in
+`apps/web/components/PipelineGraphs.tsx`, opened from sidebar controls when
+present.
+
+If you change anything those diagrams describe, update them in the same change.
+This includes:
+
+- adding, removing, or renaming pipeline nodes, tools, or fallback tiers;
+- changing which models or providers each role uses;
+- changing structured output schemas;
+- changing the SSE streaming path or parallelism;
+- changing what a node fundamentally is.
+
+Stale diagrams are worse than no diagrams because they are part of the product
+and onboarding.
+
+## Deployment Direction
+
+The MVP does not require persisted memory or a database.
+
+Generated songs, gathered evidence, profiles, and chat state may disappear when
+the process or container restarts.
 
 Likely deployment shape:
 
@@ -101,23 +214,27 @@ Likely deployment shape:
 ## Gotchas
 
 - Keep TypeScript types in sync with Pydantic models.
+- Keep source attribution and confidence attached to claims.
+- Do not let raw scraped HTML leak past infrastructure adapters.
 - Validate note timing carefully; beat/bar math is a common failure source.
 - Drums use GM percussion semantics and should not be validated like pitched
   instruments.
 - Keep round caps and recursion limits on negotiation.
 - Keep peer context compact to avoid token blowup.
 - Do not make notation a hard dependency for playback.
-- Do not let analysis confidence disappear before explanation.
-- Do not add YouTube ingestion to the MVP.
+- Do not reintroduce upload-first or local-audio analysis as a supported
+  product path.
+- Do not add YouTube download or conversion.
 
 ## Verification Expectations
 
 The repo should continue to support:
 
-- backend unit tests for validators, converters, agents, negotiation, provider
-  routing, and reference boundaries;
+- backend unit tests for domain contracts, connectors, profile aggregation,
+  chat routing, validators, converters, agents, negotiation, provider routing,
+  and composition/edit behavior;
 - frontend type checking;
-- focused tests for mixer/playback logic;
-- local end-to-end smoke testing once chat analysis and composition are connected;
-- Docker build verification once containerization is added.
-
+- focused tests for mixer/playback logic and pure UI adapters;
+- local end-to-end smoke testing once chat, evidence, and composition are
+  connected;
+- Docker build verification for deployable runtime changes.

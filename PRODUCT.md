@@ -1,191 +1,191 @@
-# Product — LLMinem
+# Product - Daft Prompt
 
-LLMinem is a conversational music workspace.
+Daft Prompt is a chat-first AI music assistant for understanding songs,
+learning playable parts, and composing or editing MIDI music.
 
-The product lets a user talk with an assistant that understands songs, analyzes
-local audio files with music tools when that optional capability is enabled, and can compose new songs either from a text
-prompt or from a previously analyzed reference.
+The product answers song and music questions from scraped public evidence such
+as Songsterr, tab/chord pages, metadata pages, artist/album information, and
+style or corpus references. It can render requested playable views such as
+guitar tabs, bass tabs, drum tabs, piano keys, chord charts, and piano rolls.
+It can also compose original MIDI-first sketches through a dynamic multi-agent
+band system.
 
-The core experience is a chat. The user should not need to choose a rigid mode
-before acting. They can ask a question, upload a local audio file when analysis is enabled, request a new
-composition, or ask the system to compose using a reference. The system infers
-the intent, uses the right tools, and asks a short follow-up only when the
-request is ambiguous.
-
-This document is the source of truth for product behavior and MVP scope.
-
-## Problem
-
-Musicians and music students often want to understand a song and quickly turn
-that understanding into a new musical idea.
-
-They may ask:
-
-- What key is this in?
-- What is the tempo?
-- What chords does the chorus probably use?
-- Why does this section feel bigger?
-- Can you make something with this energy but not copy the song?
-- Can you compose a disco/cumbia/blues track from scratch?
-
-Most tools split these workflows apart: analysis tools expose technical data,
-composition tools generate material, and chat assistants explain music without
-grounding their answers in deterministic analysis. LLMinem should connect those
-steps in one conversational flow.
+This document is the product source of truth.
 
 ## Product Goal
 
 The MVP goal is:
 
-> A chat-first assistant that analyzes local songs with tools and can compose new
-> songs from scratch or from the analyzed musical profile.
+> A chat-first assistant that answers music questions from attributed public
+> evidence, renders playable teaching views when useful, and composes or edits
+> generated MIDI music through a multi-agent band.
 
-The product should feel like a small conversational studio, not a dashboard and
-not a form-heavy generator.
+The product should feel like a small conversational studio and teacher, not a
+dashboard, a form-heavy generator, a full DAW, or a file-analysis utility.
 
 ## Core User
 
-The initial user is a music-curious technical user: a student, musician, producer,
-or course evaluator who wants to see both musical reasoning and agentic
-composition.
+The initial user is a music-curious technical user: a student, musician,
+producer, or course evaluator who wants grounded musical answers and playable
+generated output.
 
 They value:
 
-- quick local experimentation;
-- visible evidence for musical claims;
-- playable output;
-- a clear explanation of what the agents did;
-- low setup friction;
-- few manual controls unless they are useful.
+- natural chat instead of mode selection;
+- visible sources and uncertainty for song claims;
+- practical playable tabs, keys, rolls, and chord guidance;
+- original MIDI sketches that can be heard, exported, and edited;
+- clear but compact agent transparency;
+- low setup friction.
 
 ## MVP Capabilities
 
 ### 1. Conversational Chat
 
-The chat is the primary interface.
+Chat is the primary interface.
 
 The user can write naturally:
 
-- "Analyze this audio."
-- "What chords are probably in the chorus?"
-- "Compose a slow blues from scratch."
-- "Use the energy of this reference, but do not copy the chords."
-- "Make it more like Argentine cumbia."
+- "What chords are in One More Time?"
+- "How do I play the main bass part?"
+- "What scale should I improvise over the chorus?"
+- "Compose a French-house groove with robot disco energy."
+- "Make something similar to Twenty One Pilots, but with a funk bassline."
+- "Keep the drums exactly and change the piano chords."
 
 The assistant should route the request to the right use case:
 
-- answer from existing context;
-- analyze an attached local audio file when the optional audio runtime is enabled;
-- compose from a text prompt;
-- compose from a previously analyzed `ReferenceProfile`;
-- ask one short clarification if needed.
+- identify the referenced song, artist, album, genre, or prior generated song;
+- fetch or reuse public evidence;
+- answer a music theory or production question from evidence;
+- render requested playable tabs, keys, rolls, or chord charts;
+- build or reuse an artist/band style profile;
+- compose from scratch or from evidence;
+- edit an existing generated `SongState`;
+- ask one concise clarification when required.
 
-### 2. Local Audio Analysis
+The user should not need to choose a mode first.
 
-The MVP accepts local audio files only when the optional audio-analysis runtime
-is enabled. It is intentionally excluded from the default image because its
-PyTorch/Demucs/MIR dependencies materially increase build time and image size.
-The default chat and composition experience must remain fully usable without it.
+### 2. Evidence-Based Song Knowledge
 
-Out of scope for the MVP:
+Known-song knowledge must come from evidence connectors, not user-uploaded file
+analysis.
 
-- YouTube search;
-- YouTube download or conversion;
-- commercial-song acquisition;
-- external music catalog integrations beyond bounded Songsterr/web research;
-- persistent reference libraries.
+Preferred sources include:
 
-The analysis tools should extract:
+- Songsterr tab, chord, and metadata evidence;
+- public chord/tab pages;
+- metadata pages for artist, album, writer, performer, year, genre, and BPM/key
+  claims;
+- style and corpus references that can inform composition.
 
-- duration;
-- estimated tempo;
-- estimated key;
-- energy curve or section-level energy;
-- simple section boundaries;
-- estimated chords by section or time range.
+The product should build compact `SongKnowledgeProfile` objects that preserve:
 
-Chord analysis must be presented as an estimate, not a fact. The assistant should
-use language such as:
+- title, artist, album, writers, year, and version when available;
+- likely key, tempo, meter, sections, and chord progressions;
+- instrument-specific playable parts from tab evidence;
+- instrumentation, groove, arrangement, tone, and production claims;
+- source attribution, conflicts, and confidence.
 
-> "Probably Am - F - C - G in this section."
+The assistant must be honest about source quality:
 
-When possible, the answer should include confidence language: high, medium, low,
-or an equivalent score.
+- "Songsterr shows..."
+- "This tab source suggests..."
+- "A practical scale choice would be..."
+- "I would treat this progression as probably..."
 
-### 3. Named-Song Research
+Do not claim perfect analysis or present a single scraped source as absolute
+truth when confidence is limited.
 
-Songsterr/web research is available by default for named-song questions. It
-creates a compact, source-backed profile for follow-up questions and
-reference-guided composition. The runtime may be placed in offline mode with
-`ENABLE_WEB_RESEARCH=false`; in that mode the assistant must explain how to
-enable research and must not make a network request.
+### 3. Playable Teaching Views
 
-### 4. Music Explanation
+When the user asks how to play something, the answer should combine concise
+musical explanation with a playable representation.
 
-The assistant explains songs using the analysis results as evidence.
+Supported teaching views should include, as evidence allows:
 
-Good answers should connect technical observations to musical interpretation:
+- guitar tabs;
+- bass tabs;
+- drum tabs;
+- piano keys;
+- piano roll;
+- chord chart;
+- rhythm grid.
 
-- tempo and groove;
-- key and harmonic color;
-- chord motion;
-- energy changes;
-- section contrast;
-- density, register, and rhythmic activity when available.
+These views are contextual result blocks. They should not replace chat as the
+main surface.
 
-The assistant should avoid pretending to know more than the tools support. If an
-estimate is uncertain, it should say so.
+### 4. Artist/Band Style Profiles
 
-### 5. Composition From Scratch
+For prompts like "compose something similar to this band", the app should build
+an `ArtistStyleProfile`.
 
-The user can compose without analyzing a prior song.
+The profile should select representative evidence using a mix of:
 
-Example:
+- popular or canonical songs;
+- songs with useful Songsterr/tab evidence;
+- songs specifically mentioned by the user;
+- genre and corpus references when source evidence is thin.
 
-> "Compose a dark cumbia villera loop of 16 bars."
+The resulting profile should summarize:
 
-This uses the existing multi-agent composition pipeline:
+- genre and subgenre tags;
+- tempo range, meter, key, mode, and harmonic habits;
+- common chord progressions or scale choices;
+- typical instruments and roles;
+- drum, bass, guitar, keys, synth, hook, and production traits;
+- section/form and energy patterns;
+- sources and confidence.
 
-- director agent decides the arrangement;
-- instrument agents compose parts;
-- agents negotiate through shared structured state;
-- the result is exported as structured JSON and playable audio/MIDI.
+For artist similarity prompts, the composer should use the compact
+`ArtistStyleProfile` through a `CompositionBrief`. It should not copy a single
+song unless the user explicitly asks for a specific transformation.
 
-Composition from scratch is a first-class path, not a fallback.
+### 5. Composition And Editing
 
-### 6. Composition From Reference
+Composition is MIDI-first and uses the existing multi-agent band direction:
 
-After analyzing a local audio file, the user can ask the assistant to compose
-using that reference.
+- an orchestrator/director owns global constraints;
+- instrument or role agents compose specialized parts;
+- the number of instruments can be dynamic;
+- agents communicate through shared `SongState` and structured negotiation
+  requests;
+- an arbiter/reviewer validates the result;
+- renderers create playable artifacts.
 
-The reference is passed to the composition system as a compact
-`ReferenceProfile`, not as raw audio or provider-specific data.
+Composition should respect:
 
-The default transfer behavior should be intelligent and conservative:
+- requested genre, tempo, meter, key, scale, and form;
+- requested instruments and exact preservation constraints;
+- referenced drum patterns, riffs, tabs, chords, or style traits when the user
+  asks for them;
+- `SongKnowledgeProfile` and `ArtistStyleProfile` evidence supplied through a
+  compact `CompositionBrief`.
 
-- use tempo by default when confidence is reasonable;
-- use section shape and energy curve by default;
-- use general mood/style observations by default;
-- use key when confidence is reasonable;
-- do not copy estimated chords by default;
-- use estimated chords only when the user asks for it or accepts it in chat.
+Generated-song edits should preserve unaffected tracks when possible.
 
-The user should be able to override this conversationally:
+Useful edits include:
 
-- "Use only the tempo."
-- "Keep the energy curve but change the harmony."
-- "Use the same chords as a guide."
-- "Ignore the reference and compose from scratch."
+- change guitar tone;
+- change piano chords;
+- regenerate only bass;
+- keep drums exactly;
+- make it faster;
+- transpose to another key;
+- make it more like a given song, artist, album, or genre;
+- simplify a part for a beginner.
 
-### 7. Playable Output
+### 6. Playable Output
 
 Generated songs should be playable in the UI.
 
 The MVP should support:
 
 - play/stop;
-- a simple per-instrument mixer with mute/solo after a song exists;
-- MIDI download or equivalent export.
+- per-instrument mute/solo after a song exists;
+- MIDI export;
+- generated or browser-rendered audio playback;
+- MP3 export when the playback path supports it.
 
 The mixer is useful after generation, but it should not dominate the initial
 chat experience.
@@ -194,120 +194,102 @@ chat experience.
 
 The user should be able to understand what happened without reading raw logs.
 
-The UI should expose, in a compact way:
+The UI should expose, compactly:
 
-- which tools were used for analysis;
-- what the detected musical profile was;
-- which agents participated in composition;
+- which evidence connectors were used;
+- what claims were found and how confident they are;
+- what playable views were rendered;
+- which agents participated in composition or editing;
 - important negotiation requests and resolutions;
 - final composition status.
 
-This should be available as contextual detail, not as the main interaction.
+This belongs in contextual details, not as the main interaction.
 
 ## Non-Goals
 
-The MVP does not need:
+The MVP does not support:
 
+- user-uploaded file analysis as a product path;
+- local audio analysis as a supported song-knowledge source;
+- YouTube download, conversion, or commercial-song acquisition;
 - persistent user accounts;
 - a database;
 - long-term chat history;
 - collaborative editing;
 - production-grade audio mastering;
-- perfect chord transcription;
-- perfect stem separation;
-- YouTube ingestion;
+- perfect chord, tab, stem, or tone extraction;
 - a full DAW interface;
-- notation as a primary experience.
+- notation as the primary experience.
 
-Sheet music can remain optional or hidden behind a detail view. It should not be
-the center of the product unless it becomes reliable and useful.
+Legacy audio-analysis modules may exist during migration, but they are not part
+of the supported Daft Prompt product surface.
 
 ## Product Principles
 
 ### Chat First
 
-The user should mostly type what they want. Buttons and toggles should be
-minimal.
+The user should mostly type what they want. Buttons and toggles should appear
+only when they reduce friction.
 
 Useful controls:
 
-- attach local audio;
+- send message;
 - play/stop;
 - mute/solo generated instruments;
-- export MIDI;
-- show/hide technical details.
+- export MIDI or audio;
+- show/hide evidence, tabs, roll, and agent details.
 
-Avoid permanent panels full of switches. When configuration is needed, prefer a
-short conversational clarification.
+Avoid permanent panels full of switches. When configuration is needed, ask
+conversationally.
 
-### Evidence-Based Answers
+### Evidence Over Memory
 
-Musical explanations should be grounded in tool outputs. The assistant can
-interpret, but it should distinguish interpretation from measured or estimated
-facts.
+Musical explanations should be grounded in tool outputs and source claims. The
+assistant can interpret, but it must distinguish interpretation from sourced or
+estimated facts.
 
-### Defaults Over Configuration
+### Source Attribution And Uncertainty
 
-The system should choose sensible defaults and tell the user what it is doing.
+Every nontrivial song claim should retain where it came from and how reliable it
+appears. Conflicts should stay visible instead of being flattened into certainty.
 
-Example:
+### Reference As Traits, Not Copying
 
-> "I will use the reference tempo, structure, and energy curve. I will not copy
-> the estimated chords unless you ask me to."
+Using a song, artist, album, or genre as a reference should mean transferring
+explicitly requested traits:
 
-### Reference As Context, Not Copying
+- groove;
+- harmonic language;
+- section shape;
+- instrumentation;
+- energy;
+- tone or production choices;
+- playable part constraints.
 
-Using a reference should mean borrowing high-level musical traits, not copying a
-song. The product should encourage transformation:
+Default behavior should be transformative and original.
 
-- similar energy;
-- similar structure;
-- similar tempo;
-- similar mood;
-- different melody and arrangement;
-- optional harmonic guidance only when requested.
+### Simplicity First
 
-### Local-First MVP
-
-The first working version should run well locally. It can lose chats, songs, and
-artifacts when restarted. Persistence is not required for the MVP.
+Keep the application local-friendly and production-minded. Do not add a
+database, event bus, microservice split, or dashboard layer unless the product
+requirements clearly change.
 
 ## Architecture Expectations
 
 The repository should keep a clean separation of responsibilities:
 
-- UI renders chat, context, playback, and compact details.
-- API boundaries accept chat, upload, analysis, and composition requests.
+- UI renders chat, evidence, tabs, piano roll, playback, mixer, and compact
+  details.
+- API boundaries accept chat, composition, evidence, render, and edit requests.
 - Application use cases orchestrate behavior.
-- Domain models represent song state and reference profiles.
-- Ports define LLM, audio analysis, transcription, storage, and composition
+- Domain models represent song knowledge, style profiles, composition briefs,
+  playable parts, tones, and generated song state.
+- Ports define LLM, source connector, storage, renderer, and composition
   dependencies.
-- Infrastructure adapters implement local storage, MIR analysis, LLM providers,
-  and future cloud/object storage.
-- Composition agents consume `ReferenceProfile` summaries, never raw audio or
-  provider internals.
-
-The existing multi-agent composer remains valuable. The product direction does
-not replace it; it wraps it in a broader conversational music workflow.
-
-## Deployment Direction
-
-The MVP does not require persisted memory or a database.
-
-It is acceptable for generated songs, uploaded references, and chat state to be
-lost when the process or container restarts.
-
-The backend should be containerized before deployment because audio analysis,
-music rendering, and Python music libraries are better suited to a container
-host than to serverless frontend functions.
-
-The likely deployment shape is:
-
-- frontend on Vercel or another static/Next.js host;
-- Python backend as a container on Render, Railway, Fly.io, Cloud Run, or a
-  similar provider;
-- local filesystem storage for MVP/local use;
-- optional object storage later if deployed artifacts need stable URLs.
+- Infrastructure adapters implement scraping, provider, storage, and rendering
+  details.
+- Composition agents consume compact domain profiles and briefs, never raw
+  scraped pages or provider-specific responses.
 
 ## MVP Success Criteria
 
@@ -315,11 +297,14 @@ The MVP is successful when a user can:
 
 1. Open the app locally.
 2. Chat naturally with the assistant.
-3. When audio analysis is enabled, upload or select a local audio file.
-4. Ask for tempo, key, sections, energy, and probable chords.
-5. Receive an evidence-based answer with uncertainty where appropriate.
-6. Ask for a new composition from scratch.
-7. Ask for a new composition using the analyzed reference.
-8. Hear the generated result.
-9. Mute or solo generated instruments.
-10. Understand, at a high level, which tools and agents were involved.
+3. Ask about a known song and receive an attributed, uncertainty-aware answer.
+4. Ask how to play a part and see a relevant tab, keys view, chord chart, or
+   piano roll when evidence supports it.
+5. Ask for an original composition from scratch.
+6. Ask for a composition using song, artist, album, or genre evidence.
+7. Hear the generated result.
+8. Mute or solo generated instruments.
+9. Request a natural-language edit and keep unaffected parts intact when
+   possible.
+10. Understand, at a high level, which evidence connectors and agents were
+    involved.

@@ -1,24 +1,25 @@
-# Design — LLMinem
+# Design - Daft Prompt
 
-LLMinem is a conversational music workspace.
+Daft Prompt is a conversational music teacher, producer, and composition
+partner. The interface should make the user feel like they are talking with a
+musically useful assistant, not configuring a generator form or managing a
+dashboard.
 
-The interface should make the user feel like they are working with a musical
-assistant, not filling out a generator form. The product can expose technical
-analysis and agent activity, but those details should support the conversation
-instead of becoming the main surface.
-
-This document defines the UX direction. It does not lock the final visual style.
+This document defines the UX direction. `PRODUCT.md` remains the product source
+of truth.
 
 ## Design Goal
 
-The UI should support three actions through one conversational flow:
+The UI should support five actions through one conversational flow:
 
-1. analyze a local audio file;
-2. compose a song from scratch;
-3. compose a song using a previous analysis as reference.
+1. ask evidence-backed questions about songs, artists, albums, or genres;
+2. learn how to play parts through tabs, keys, rolls, and chord charts;
+3. compose original MIDI music from scratch;
+4. compose from song, artist, album, or genre evidence;
+5. edit generated music in natural language.
 
-The user should mostly type what they want. Buttons and toggles should appear
-only when they reduce friction.
+The user should mostly type what they want. Controls appear only when they make
+the current result easier to inspect, play, or export.
 
 ## Interaction Model
 
@@ -28,26 +29,29 @@ Chat is the primary surface.
 
 The user can write:
 
-- "Analyze this file."
-- "What chords are probably in the chorus?"
-- "Compose a dark cumbia villera loop."
-- "Use this reference's energy but change the harmony."
-- "Make the drums less busy."
+- "What chords are in the chorus?"
+- "How do I play the drum groove?"
+- "Show me the bass tab."
+- "Compose a French-house loop with a darker bridge."
+- "Make it more like this artist without copying a song."
+- "Change the piano chords but keep the drums."
 
 The app should infer intent from the conversation and current context.
 
 ### Contextual Details
 
-Technical details should appear as contextual panels or expandable sections.
+Technical details should appear as contextual panels or expandable result
+blocks.
 
 Useful context includes:
 
-- uploaded local reference;
-- detected tempo, key, sections, energy, and probable chords;
-- tool calls and confidence values;
+- current song knowledge profile;
+- current artist or band style profile;
+- source claims, conflicts, and confidence;
+- rendered tab, keys, roll, chord chart, or rhythm grid;
 - generated song summary;
 - agent roster and negotiation highlights;
-- playback and export controls.
+- playback, mixer, and export controls.
 
 The user should be able to ignore these details and continue chatting.
 
@@ -55,77 +59,94 @@ The user should be able to ignore these details and continue chatting.
 
 Always useful controls:
 
-- attach local audio;
 - send message;
-- play/stop generated audio;
-- export MIDI;
-- show/hide details.
+- play/stop generated audio when a song exists;
+- export MIDI or audio when a song exists;
+- show/hide evidence, playable views, and agent details.
 
 Useful only after generation:
 
-- mute/solo per generated instrument.
+- mute/solo per generated instrument;
+- selected track or section edit targets.
 
 Avoid:
 
-- a permanent form of toggles for every musical trait;
+- upload-first analysis affordances;
+- permanent forms of toggles for every musical trait;
 - forcing the user to choose a mode before typing;
 - making sheet music the default focus;
 - showing raw JSON or logs as the primary representation.
 
 When configuration is needed, ask conversationally:
 
-> "I detected the chorus chords with medium confidence. Should I use them as a
-> guide, or only use the tempo and energy?"
+> "I found two conflicting chord sources. Should I treat Songsterr as the main
+> guide, or use the simpler chord-chart version?"
 
 ## Main States
 
 ### Empty / Start
 
-The first screen should make it obvious that the user can either ask or compose.
+The first screen should make it obvious that the user can ask, learn, compose,
+or edit.
 
 Good starter affordances:
 
 - one chat input;
-- local audio attachment;
 - a few example prompts;
-- no large marketing hero.
+- no large marketing hero;
+- no upload prompt as a primary action.
 
-### Analysis In Progress
+### Evidence Search In Progress
 
-When analyzing a local audio file, the UI should show progress in plain language:
+When the assistant researches a song or artist, the UI should show progress in
+plain language:
 
-- file accepted;
-- audio profile extraction running;
-- chord estimation running;
-- summary ready.
+- resolving song or artist;
+- checking Songsterr/tab evidence;
+- checking metadata or style sources;
+- summarizing sources;
+- preserving uncertainty.
 
 The user should see that tools are working without needing to understand the
 implementation.
 
-### Analysis Result
+### Song Knowledge Result
 
 The result should be readable at a glance:
 
-- tempo;
-- key;
-- sections;
-- energy shape;
-- probable chords with confidence.
+- song identity and source confidence;
+- key, tempo, meter, and sections when available;
+- likely or source-backed chords;
+- playable part availability;
+- source list and conflicts.
 
-Chord language should remain probabilistic:
+Language should remain probabilistic when needed:
 
-> "Probably Am - F - C - G in this section."
+> "Songsterr suggests this guitar figure, while the chord page simplifies the
+> chorus to four chords."
+
+### Playable Teaching Result
+
+After a playable request, the user should get:
+
+- a short natural explanation;
+- the relevant tab, keys view, chord chart, piano roll, or rhythm grid;
+- source attribution;
+- optional playback for the requested part when available.
+
+Playable views should be compact by default and expandable for longer parts.
 
 ### Composition In Progress
 
 Composition should show enough agent activity to prove the system is agentic:
 
-- director selected an arrangement;
-- instrument agents composed parts;
+- brief created from prompt and evidence;
+- director selected arrangement constraints;
+- instrument agents composed or preserved parts;
 - important negotiation request or resolution;
-- convergence/done status.
+- reviewer/arbiter status.
 
-This should be compact. The feed should not dominate the page.
+This should stay compact. The activity feed should not dominate the page.
 
 ### Generated Song
 
@@ -134,41 +155,46 @@ After composition, the user should get:
 - a short assistant summary;
 - play/stop;
 - per-instrument mute/solo;
-- MIDI export;
-- optional technical details;
-- optional notation if reliable.
+- MIDI export and audio export when available;
+- optional piano roll or technical details;
+- optional agent detail.
 
 The next chat message should be able to modify the song:
 
 - "Make it faster."
-- "Mute the guitar."
-- "Regenerate the bass."
-- "Use the reference chords after all."
-
-These edit flows can be future work, but the UI should not make them impossible.
+- "Regenerate only the bass."
+- "Keep the drums exactly."
+- "Change the guitar tone."
+- "Simplify the piano part."
 
 ## Visual Direction
 
-The visual style is still open.
+Daft Prompt should feel robotic, futuristic, musical, and modern, inspired by
+Daft Punk without becoming gimmicky.
 
-What should stay true:
+Use:
 
-- modern and focused;
-- musical but not gimmicky;
-- comfortable for repeated local experimentation;
-- clear hierarchy between chat, context, and playback;
-- restrained animation;
-- no dense dashboard-first layout.
+- dark metallic base;
+- restrained chrome and gold accents;
+- clean typography;
+- subtle motion for streaming, evidence search, agent activity, and playback;
+- compact panels for evidence, tabs, piano roll, mixer, and agents.
 
-The app can borrow from lightweight DAW concepts only where useful, such as a
-simple mixer after a song exists. It should not attempt to become a full DAW.
+Avoid:
+
+- dashboard-first layout;
+- oversized marketing hero;
+- permanent control walls;
+- raw JSON as primary UI;
+- overdesigned neon clutter;
+- visual noise that makes the chat harder to read.
 
 ## Responsive Behavior
 
 Desktop should prioritize:
 
 - chat as the main column;
-- contextual details/playback as a secondary area.
+- contextual evidence/playback as a secondary area.
 
 Mobile should prioritize:
 
@@ -189,17 +215,18 @@ The MVP should keep standard accessibility basics:
 
 ## Content Tone
 
-Copy should be direct and conversational.
+Copy should be direct, grounded, and conversational.
 
 Good:
 
-- "I found a likely 118 BPM tempo."
-- "The chorus probably moves Am - F - C - G."
-- "I will use the tempo and energy, but not copy the chords."
+- "Songsterr shows a picked guitar part for this section."
+- "This chord page suggests the chorus is probably Am - F - C - G."
+- "I will preserve the drums exactly and rewrite the piano harmony."
+- "I do not have strong enough evidence for the bridge yet."
 
 Avoid:
 
-- overstating uncertain analysis;
+- overstating uncertain evidence;
+- pretending scraped claims are perfect;
 - long technical dumps in the main chat;
-- unexplained model/provider errors.
-
+- unexplained model or connector errors.

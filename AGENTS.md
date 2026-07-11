@@ -1,7 +1,8 @@
 # AGENTS.md
 
-This repository contains LLMinem, a chat-first musical workspace for analyzing
-local songs and composing new songs from scratch or from an analyzed reference.
+This repository contains Daft Prompt, a chat-first AI music assistant for
+evidence-backed song understanding, playable teaching views, and multi-agent
+MIDI composition/editing.
 
 The application should stay focused. The goal is not to demonstrate every
 possible agent pattern or music library; the goal is to deliver a clean,
@@ -12,28 +13,30 @@ Before implementing any change, read:
 1. `PRODUCT.md`
 2. `DESIGN.md`
 3. `docs/architecture.md`
-4. `plans/chat-musical-mvp.md` when working on MVP implementation
+4. `plans/daft-prompt-convergence.md` when working on the current Daft Prompt
+   convergence
+5. `plans/chat-musical-mvp.md` only as historical context for the superseded
+   local-audio MVP
 
 `PRODUCT.md` is the product source of truth. `DESIGN.md` defines UX direction.
-`docs/architecture.md` preserves technical boundaries. The plan in
-`plans/chat-musical-mvp.md` is the current roadmap.
+`docs/architecture.md` preserves technical boundaries. The convergence plan is
+the active roadmap.
 
 ## Repository
 
-LLMinem is a monorepo with a Python backend and a Next.js frontend.
+Daft Prompt is a monorepo with a Python backend and a Next.js frontend.
 
 ```text
 apps/
-  api/                    # FastAPI, LangGraph, music/audio processing
+  api/                    # FastAPI, LangGraph, music/source processing
     music_assistant/
-      domain/             # SongState, ReferenceProfile, AudioProfile
-      application/        # compose/analyze/answer/chat use cases
-      ports/              # LLM, storage, audio analysis, transcription, stems
-      infrastructure/     # provider, storage, MIR, and deployment adapters
+      domain/             # SongState, song knowledge, style, playable, brief models
+      application/        # chat, evidence, composition, style, render, edit use cases
+      ports/              # LLM, source connector, storage, render, composer ports
+      infrastructure/     # provider, scraping, research, storage, deployment adapters
       interfaces/         # FastAPI HTTP/SSE boundary
       agents/             # director, instrument, arbiter agents
       music/              # validation and symbolic rendering helpers
-    tests/
   web/                    # Next.js App Router UI
     app/
     components/
@@ -53,11 +56,13 @@ The application uses:
 - LangGraph
 - music21
 - pretty_midi
-- local MIR/audio analysis adapters
 - Next.js
 - React
 - TypeScript
 - Docker
+
+Some legacy audio-analysis modules still exist during migration. They are not a
+supported Daft Prompt product path.
 
 ## Before Implementing Anything
 
@@ -66,10 +71,11 @@ Always follow this process:
 1. Read `PRODUCT.md`.
 2. Read `DESIGN.md`.
 3. Read `docs/architecture.md` if touching backend boundaries.
-4. Inspect the existing implementation.
-5. Identify existing patterns.
-6. Extend existing patterns whenever possible.
-7. Only then implement changes.
+4. Read `plans/daft-prompt-convergence.md` for current convergence work.
+5. Inspect the existing implementation.
+6. Identify existing patterns.
+7. Extend existing patterns whenever possible.
+8. Only then implement changes.
 
 Do not introduce new patterns without a clear reason.
 
@@ -79,10 +85,12 @@ The MVP is chat-first.
 
 The user should mostly type what they want:
 
-- analyze a local audio file;
-- ask a question about a song;
+- ask a question about a known song, artist, album, or genre;
+- ask how to play a part on guitar, bass, drums, or piano;
+- request tabs, keys, rolls, rhythm grids, or chord charts;
 - compose from scratch;
-- compose from an analyzed reference.
+- compose from song, artist, album, genre, or style evidence;
+- edit a generated song.
 
 Avoid turning the product into:
 
@@ -90,17 +98,21 @@ Avoid turning the product into:
 - a form-heavy generator;
 - a full DAW;
 - a notation-first product;
-- a YouTube ingestion tool.
+- a file-upload analyzer;
+- a YouTube download or conversion tool.
 
-Use local files for analysis in the MVP. YouTube search, download, conversion,
-and commercial-song acquisition are out of scope.
+Song knowledge must come from evidence connectors such as Songsterr, tab/chord
+pages, metadata pages, artist/album information, and style/corpus references.
+Do not make local audio analysis or user-uploaded file analysis a supported
+product path.
 
-Chord analysis is probabilistic. Use language like:
+Keep source attribution and uncertainty visible. Use language like:
 
-> "Probably Am - F - C - G in this section."
+> "Songsterr shows this guitar part, while the chord page simplifies the chorus
+> differently."
 
-Do not present estimated chords, key, beats, or sections as certain when the
-tools cannot support that certainty.
+Do not present scraped claims, estimated chords, keys, beats, sections, or tone
+details as certain when sources cannot support that certainty.
 
 ## Architecture Rules
 
@@ -130,20 +142,24 @@ Application use cases orchestrate behavior.
 
 Examples:
 
-- compose a song;
-- analyze a local reference;
-- answer a music question from a `ReferenceProfile`;
-- route a chat message to analysis, explanation, or composition.
+- route a chat message to evidence lookup, explanation, playable rendering,
+  composition, or edit;
+- build a `SongKnowledgeProfile`;
+- build an `ArtistStyleProfile`;
+- create a `CompositionBrief`;
+- compose or edit a generated `SongState`.
 
 Domain models represent stable concepts.
 
 Examples:
 
 - `SongState`;
-- `ReferenceProfile`;
-- `AudioProfile`;
-- sections;
-- chord estimates;
+- `SongKnowledgeProfile`;
+- `ArtistStyleProfile`;
+- `EvidenceClaim`;
+- `PlayablePart`;
+- `ToneProfile`;
+- `CompositionBrief`;
 - negotiation requests.
 
 Ports define dependencies.
@@ -151,37 +167,58 @@ Ports define dependencies.
 Examples:
 
 - LLM provider;
-- audio analyzer;
-- transcription;
-- stem separation;
-- artifact storage.
+- source connectors;
+- web search;
+- page fetcher;
+- artifact storage;
+- playable renderers.
 
-Infrastructure adapters implement ports. They should not leak provider or library
-details into `application/`, `domain/`, `agents/`, or `music/`.
+Infrastructure adapters implement ports. They should not leak provider,
+scraper, or library details into `application/`, `domain/`, `agents/`, or
+`music/`.
 
 ## Composition Rules
 
-The existing multi-agent composer is valuable and should remain isolated.
+The multi-agent composer is valuable and should remain isolated.
 
 Composition flow:
 
 ```text
-director
-  -> instrument agents
+CompositionBrief
+  -> director/orchestrator
+  -> dynamic instrument or role agents
   -> negotiation through shared SongState
-  -> arbiter
+  -> arbiter/reviewer
   -> render artifacts
 ```
 
 Agent communication happens through structured `negotiation_requests` in shared
 state. Do not add a separate message bus unless there is a strong reason.
 
-Composition agents may consume a compact `ReferenceProfile` summary. They must
-not call audio analyzers, storage adapters, YouTube resolvers, or raw provider
-APIs directly.
+Composition agents may consume compact `SongKnowledgeProfile`,
+`ArtistStyleProfile`, `PlayablePart`, `ToneProfile`, and `CompositionBrief`
+summaries. They must not call source connectors, storage adapters, web search,
+legacy audio analyzers, or raw provider APIs directly.
 
-Do not copy estimated reference chords by default. Use them only when the user
-explicitly asks for harmonic guidance or accepts it in chat.
+Do not copy source songs by default. Preserve exact parts only when the user
+explicitly asks for preservation.
+
+## Architecture Graphs Must Stay In Sync
+
+The UI ships hand-maintained architecture diagrams in
+`apps/web/components/PipelineGraphs.tsx` when present.
+
+If you change anything those diagrams describe, update them in the same change.
+This includes:
+
+- adding, removing, or renaming pipeline nodes, tools, or fallback tiers;
+- changing which models or providers each role uses;
+- changing structured output schemas;
+- changing the streaming path or parallelism;
+- changing what a node fundamentally is.
+
+Stale diagrams are worse than no diagrams because they are part of the product
+and onboarding.
 
 ## UI Rules
 
@@ -194,20 +231,21 @@ Components and pages are responsible for:
 - local UI state;
 - calling API routes.
 
-UI should not contain business logic for musical analysis, chat routing, or
-composition decisions.
+UI should not contain business logic for musical evidence fusion, chat routing,
+composition decisions, or edit semantics.
 
 Prefer:
 
 - one main chat surface;
-- local audio attachment;
-- contextual analysis details;
+- contextual evidence details;
+- contextual playable tabs/keys/rolls;
 - contextual generated-song playback;
 - compact tool/agent details;
 - playback and mute/solo only after a song exists.
 
 Avoid:
 
+- upload-first analysis affordances;
 - permanent panels full of toggles;
 - forcing a mode selection before the user can type;
 - raw JSON as the primary UI;
@@ -229,10 +267,10 @@ Handle expected failures clearly.
 
 Examples:
 
-- unsupported audio file;
-- analyzer failure;
-- low-confidence analysis;
-- missing reference context;
+- source connector unavailable;
+- source lookup found multiple likely matches;
+- evidence is thin or conflicting;
+- unsupported playable view for the available evidence;
 - LLM quota/provider failure;
 - no playable parts generated;
 - invalid composition output;
@@ -243,13 +281,13 @@ what failed.
 
 ## Docker
 
-The backend should be containerized early and remain container-friendly.
+The backend should be containerized and remain container-friendly.
 
 Requirements:
 
-- backend Dockerfile stays functional once added;
+- backend Dockerfile stays functional;
 - environment variables remain configurable;
-- generated artifacts and uploads use configurable local paths;
+- generated artifacts use configurable local paths;
 - local Docker runtime works without a database;
 - the backend can be deployed as a container image.
 
@@ -259,7 +297,7 @@ Do not introduce machine-specific assumptions.
 
 The MVP does not need persistent memory or a database.
 
-It is acceptable for chats, uploaded references, generated songs, and artifacts
+It is acceptable for chats, evidence profiles, generated songs, and artifacts
 to disappear when the process or container restarts.
 
 Do not add a database unless the product requirements change.
@@ -339,18 +377,19 @@ When asked to create commits:
 Examples:
 
 ```text
-docs: add product direction
-docs: define chat-first design rules
-chore: add backend docker runtime
-feat: add reference profile contract
-feat: analyze local audio files
-feat: route chat intents
-feat: compose from reference profile
-feat: redesign UI around chat
+docs: align Daft Prompt product truth
+feat: add song knowledge contracts
+feat: add Songsterr evidence connector
+feat: build artist style profiles
+feat: route chat through evidence and composition tools
+feat: compose from evidence briefs
+feat: render playable teaching views
+feat: support generated song edits
+feat: refine Daft Prompt UI
 ```
 
-The commit history should clearly explain how the project moved from the
-composition prototype toward the chat musical MVP.
+The commit history should clearly explain how the project moved from the older
+local-audio MVP toward Daft Prompt.
 
 ## Security
 
@@ -365,4 +404,3 @@ Never commit:
 - `.env` files.
 
 Use local, generated, or explicitly permitted fixtures for tests.
-

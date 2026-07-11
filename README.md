@@ -1,13 +1,16 @@
 # Daft Prompt
 
-Daft Prompt is a chat-first music workspace. Ask it to compose an original
-sketch, explore a musical idea, look up a named song through Songsterr/web
-research, or—when explicitly enabled—analyze a local audio reference. Generated
-songs are playable and exportable as MIDI and MusicXML.
+Daft Prompt is a chat-first AI music assistant. Ask it about songs from public
+evidence, learn playable parts through tabs/keys/rolls, compose original MIDI
+sketches, or edit a generated song in natural language.
 
-The normal runtime favors responsive composition: it includes the Vertex AI
-Gemini provider and bounded Songsterr/web research, but leaves the large local
-audio-analysis stack out of the image. Audio analysis is a deliberate opt-in.
+Song knowledge comes from evidence connectors such as Songsterr, tab/chord
+pages, metadata pages, artist/album information, and style or corpus references.
+The app keeps source attribution and uncertainty visible instead of claiming
+perfect analysis.
+
+User-uploaded file analysis and local audio analysis are not supported product
+paths for Daft Prompt.
 
 ## Quick Start
 
@@ -43,37 +46,12 @@ export GCP_ADC_HOST_PATH="$HOME/.config/gcloud"
 docker compose -f docker-compose.yml -f docker-compose.vertex.yml up --build
 ```
 
-Now ask for a composition in the chat, for example: “Compose an eight-bar
-French-house groove with a warm bassline.” The credential directory is mounted
+Now ask for a composition in the chat, for example: "Compose an eight-bar
+French-house groove with a warm bassline." The credential directory is mounted
 read-only; no key or credential is copied into the image or repository.
 
 If your ADC lives elsewhere, set `GCP_ADC_HOST_PATH` to that directory. Use
 `gcloud config get-value project` to discover the active project ID.
-
-### 3. Enable local audio analysis only if you need it
-
-Audio uploads install PyTorch, Demucs, MIR libraries, `ffmpeg`, and native build
-tools. That makes the image much slower and larger, so it is intentionally
-separate:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.audio.yml up --build
-```
-
-To use Vertex and uploads together, include both overlays:
-
-```bash
-export GCP_ADC_HOST_PATH="$HOME/.config/gcloud"
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.vertex.yml \
-  -f docker-compose.audio.yml \
-  up --build
-```
-
-The attachment control appears only in this audio-enabled runtime. Calling an
-upload endpoint without it returns a clear opt-in instruction rather than a
-missing-dependency error.
 
 ## Configuration
 
@@ -91,7 +69,7 @@ Songsterr/web research is enabled by default. Set
 requests will then explain how to restore it instead of making a network call.
 
 For a non-Docker backend workflow, copy the same template to `apps/api/.env`,
-install the desired extras, and run the API from `apps/api`:
+install dependencies, and run the API from `apps/api`:
 
 ```bash
 python -m venv .venv
@@ -100,21 +78,18 @@ pip install -e ".[vertexai]"
 uvicorn music_assistant.interfaces.api:app --reload --port 8000
 ```
 
-Install local analysis dependencies only when required:
+## What It Does
 
-```bash
-pip install -e ".[audio-analysis]"
-```
-
-## What it does
-
-- Conversational composition from a text prompt or compact analyzed reference.
+- Conversational answers about known songs from attributed public evidence.
+- Songsterr/tab/chord/metadata research with uncertainty and source visibility.
+- Playable teaching views such as guitar tab, bass tab, drum tab, piano keys,
+  chord charts, and piano roll as the implementation converges.
+- Composition from a text prompt, song evidence, artist/band style profile,
+  album, or genre traits.
+- Natural-language edits over generated MIDI/SongState.
 - Vertex/Gemini-backed director, instrument, negotiation, and arbiter agents.
-- Browser playback, per-track mute/solo, MIDI export, and MusicXML export.
-- Optional local audio analysis with clearly probabilistic chord, key, tempo,
-  and section estimates.
-- Built-in, bounded Songsterr/web research for named-song questions, kept
-  separate from the interactive composition pipeline.
+- Browser playback, per-track mute/solo, MIDI export, and audio export where
+  the playback path supports it.
 
 ## Architecture
 
@@ -123,29 +98,32 @@ Next.js chat UI
   -> FastAPI HTTP/SSE boundary
   -> application use cases
   -> domain models and ports
-  -> provider, storage, research, and optional MIR adapters
+  -> provider, source connector, storage, render, and deployment adapters
 
-Composition: director -> grouped instrument agents -> negotiation -> arbiter
-             -> canonical SongState -> MIDI/MusicXML/playback
+Composition: CompositionBrief -> director/orchestrator
+             -> dynamic instrument agents -> negotiation -> arbiter
+             -> canonical SongState -> MIDI/audio/playable views
 ```
 
-The architecture keeps raw audio adapters out of composition. Agents receive a
-compact `ReferenceProfile`, never provider clients or audio-analyzer details.
+The architecture keeps raw scraped pages, provider responses, and connector
+details out of composition. Agents receive compact domain summaries such as
+`SongKnowledgeProfile`, `ArtistStyleProfile`, and `CompositionBrief`.
 
 ## Validation
 
 ```bash
 cd apps/api && python -m pytest
-cd apps/web && npm run typecheck && node --test lib/*.test.mjs && npm run build
+cd apps/web && npm run typecheck && node --test lib/trackMixerLogic.test.mjs
 ```
 
-The backend suite uses fakes for expensive local MIR work, so it does not need
-Demucs models or network access.
+Backend tests use fakes for connector and provider boundaries where possible,
+so they should not depend on network access.
 
-## Further documentation
+## Further Documentation
 
 - [Product behavior](./PRODUCT.md)
 - [Chat-first UX direction](./DESIGN.md)
 - [Architecture boundaries](./docs/architecture.md)
-- [Implementation roadmap](./plans/chat-musical-mvp.md)
+- [Daft Prompt convergence plan](./plans/daft-prompt-convergence.md)
+- [Superseded local-audio MVP plan](./plans/chat-musical-mvp.md)
 - [Current engineering progress](./PROGRESS.md)
