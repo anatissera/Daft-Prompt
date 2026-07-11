@@ -319,6 +319,7 @@ export type TransferMode =
   | "energy_only"
   | "avoid_copying"
   | "clarify";
+export type FidelityMode = "similar" | "very_similar" | "exact_or_as_close_as_possible";
 export type EvidenceClaimType =
   | "tempo"
   | "key"
@@ -861,6 +862,7 @@ export interface CompositionBrief {
   song_profile_ids: string[];
   artist_style_profile_ids: string[];
   artist_style_profiles: ArtistStyleProfile[];
+  fidelity_mode: FidelityMode;
   transfer_policy: Record<string, string[]>;
   harmonic_guidance: Record<string, unknown>;
   rhythmic_guidance: Record<string, unknown>;
@@ -868,6 +870,8 @@ export interface CompositionBrief {
   form_guidance: Record<string, unknown>;
   style_guidance: Record<string, unknown>;
   instrumentation: Record<string, unknown>;
+  reference_instrumentation: Record<string, unknown>;
+  style_guardrails: Record<string, unknown>;
   instrument_requests: Record<string, Record<string, unknown>>;
   timbre_traits: Record<string, unknown>;
   tone_requests: ToneProfile[];

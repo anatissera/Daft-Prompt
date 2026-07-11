@@ -145,6 +145,8 @@ If the style description contains a CompositionBrief with instrument_requests, t
 - For literal transfer, mention the seed as a starting motif/pattern, not raw tab text.
 If the CompositionBrief contains playable_parts_to_preserve or preservation_requests, keep those instrument families in the roster and name the preservation constraint in role or playing_style. Do not claim perfect copying; treat source-backed tabs as exact constraints only where the brief marks them for preservation.
 
+When `fidelity_mode` is `very_similar` or `exact_or_as_close_as_possible`, treat `reference_instrumentation_json` as a strong roster constraint: retain the source-backed instrument families and their salience (for example, guitar-led with restrained piano support). Do not replace a guitar/bass/drums reference with piano or synth filler. Avoid unsupported synths and keyboards unless the user explicitly asks for them or the evidence supports them. For `similar`, use the same evidence as a creative anchor but keep room for an original variation. `style_guardrails_json` contains non-binding quality checks, not a deterministic genre template; follow the LLM's musical judgment while avoiding obvious mismatches.
+
 Genre compatibility is mandatory. Do not add synth leads, synth pads, electronic textures, or keyboard-like filler to grunge, punk, blues, folk, garage rock, or acoustic music unless the user explicitly requests that electronic voice. Prefer drums/bass/guitar or a still smaller idiomatic ensemble where appropriate. Do not use more instruments to make the plan look more sophisticated.
 
 Do not use a fixed genre-to-instrument mapping. Reason about what genuinely fits the requested style."""
@@ -267,6 +269,141 @@ def _requested_instrument_families(style: str) -> list[str]:
         if family in parsed:
             families.append(family)
     return families
+
+
+def _composition_prompt_context(style: str) -> tuple[str, dict, dict, str]:
+    fidelity_match = re.search(r"^fidelity_mode:\s*(.+?)\s*$", style, re.MULTILINE)
+    user_request_match = re.search(r"^user_request:\s*(.+?)\s*$", style, re.MULTILINE)
+    instrumentation_match = re.search(r"^reference_instrumentation_json:\s*(\{.*\})\s*$", style, re.MULTILINE)
+    guardrails_match = re.search(r"^style_guardrails_json:\s*(\{.*\})\s*$", style, re.MULTILINE)
+    try:
+        instrumentation = json.loads(instrumentation_match.group(1)) if instrumentation_match else {}
+    except json.JSONDecodeError:
+        instrumentation = {}
+    try:
+        guardrails = json.loads(guardrails_match.group(1)) if guardrails_match else {}
+    except json.JSONDecodeError:
+        guardrails = {}
+    return (
+        fidelity_match.group(1).strip() if fidelity_match else "similar",
+        instrumentation if isinstance(instrumentation, dict) else {},
+        guardrails if isinstance(guardrails, dict) else {},
+        user_request_match.group(1).strip() if user_request_match else style,
+    )
+
+
+def _reference_families(instrumentation: dict) -> tuple[set[str], dict[str, bool]]:
+    families: set[str] = set()
+    salient: dict[str, bool] = {}
+    for item in instrumentation.values():
+        if not isinstance(item, dict):
+            continue
+        families.update(str(family) for family in item.get("families", []) if family)
+        salience = item.get("salience")
+        if isinstance(salience, dict):
+            for family, enabled in {
+                "guitar": salience.get("guitar_led"),
+                "piano": salience.get("piano_support"),
+                "synth": salience.get("synth_supported"),
+            }.items():
+                if enabled:
+                    salient[family] = True
+    return families, salient
+
+
+def _fallback_arrangement_item(family: str) -> ArrangementInstrument | None:
+    defaults = {
+        "drums": ("drums", "drum_kit", 0, 35, 81, "rhythm foundation", True),
+        "bass": ("bass", "electric_bass", 33, 28, 55, "low-end pulse", False),
+        "guitar": ("rhythm_guitar", "electric_guitar_clean", 27, 40, 84, "source-backed guitar role", False),
+        "piano": ("piano", "acoustic_piano", 0, 36, 96, "restrained harmonic support", False),
+        "synth": ("synth", "synth_pad", 89, 48, 96, "source-supported electronic texture", False),
+    }
+    values = defaults.get(family)
+    if values is None:
+        return None
+    instrument_id, instrument, program, low, high, role, is_drum = values
+    return ArrangementInstrument(
+        id=instrument_id,
+        instrument=instrument,
+        midi_program=program,
+        midi_low=low,
+        midi_high=high,
+        role=role,
+        playing_style=f"Evidence-guided {family} role; vary phrases by section and leave space for the ensemble.",
+        is_drum=is_drum,
+    )
+
+
+def _enforce_reference_instrumentation(
+    style: str,
+    items: list[ArrangementInstrument],
+    groups: list[CompositionGroup],
+) -> tuple[list[ArrangementInstrument], list[CompositionGroup]]:
+    fidelity, instrumentation, guardrails, user_request = _composition_prompt_context(style)
+    reference_families, salient = _reference_families(instrumentation)
+    if not reference_families and not guardrails:
+        return items, groups
+    explicit = {
+        family
+        for family, aliases in {
+            "piano": ["piano", "keyboard", "keys"],
+            "synth": ["synth", "synthesizer", "pad"],
+            "guitar": ["guitar"],
+            "bass": ["bass"],
+            "drums": ["drum", "drums"],
+        }.items()
+        if any(alias in user_request.lower() for alias in aliases)
+    }
+    existing = {family for family in ["drums", "bass", "guitar", "piano", "synth"] if any(_arrangement_item_matches_family(item, family) for item in items)}
+    required = set(reference_families)
+    if fidelity == "similar":
+        required = {family for family in required if family not in {"piano", "synth"} or salient.get(family, False)}
+    required.update(family for family in guardrails.get("expected_families", []) if family in {"drums", "bass", "guitar"})
+    missing = [family for family in ["drums", "bass", "guitar", "piano", "synth"] if family in required and family not in existing]
+    updated = list(items)
+    used_ids = {item.id for item in updated}
+    added_ids: list[str] = []
+    for family in missing:
+        fallback = _fallback_arrangement_item(family)
+        if fallback is None:
+            continue
+        fallback = fallback.model_copy(update={"id": _unique_id(fallback.id, used_ids)})
+        used_ids.add(fallback.id)
+        updated.append(fallback)
+        added_ids.append(fallback.id)
+
+    forbidden = {"synth"} if "synth_default" in guardrails.get("discouraged_families", []) else set()
+    if "unsupported_synth" in guardrails.get("discouraged_families", []) and "synth" not in reference_families:
+        forbidden.add("synth")
+    if "piano_heavy_balance" in guardrails.get("discouraged_families", []) and "piano" not in reference_families:
+        forbidden.add("piano")
+    removable = {
+        item.id
+        for item in updated
+        if any(
+            _arrangement_item_matches_family(item, family)
+            and family not in explicit
+            and family not in reference_families
+            for family in forbidden
+        )
+    }
+    if removable and len(updated) > len(removable):
+        updated = [item for item in updated if item.id not in removable]
+
+    if added_ids or removable:
+        filtered_groups = [
+            group.model_copy(update={"instrument_ids": [iid for iid in group.instrument_ids if iid not in removable]})
+            for group in groups
+        ]
+        filtered_groups = [group for group in filtered_groups if group.instrument_ids]
+        if not filtered_groups and updated:
+            filtered_groups = [CompositionGroup(name="rhythm", instrument_ids=[])]
+        if filtered_groups:
+            ids = list(filtered_groups[0].instrument_ids)
+            filtered_groups[0] = filtered_groups[0].model_copy(update={"instrument_ids": ids + [iid for iid in added_ids if iid not in ids]})
+        groups = filtered_groups
+    return updated, groups
 
 
 def _canonicalize_requested_instrument_ids(
@@ -505,6 +642,7 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
     groups = _remap_groups(out.composition_groups, id_map)
     clamped_instruments, groups = _collapse_drum_components(clamped_instruments, groups)
     clamped_instruments, groups = _canonicalize_requested_instrument_ids(style, clamped_instruments, groups)
+    clamped_instruments, groups = _enforce_reference_instrumentation(style, clamped_instruments, groups)
     clamped_instruments, groups = _normalize_guitar_items(clamped_instruments, groups)
     clamped_instruments, groups = _remove_unrequested_electronic_textures(style, clamped_instruments, groups)
     num_bars = _clamp_num_bars(out.num_bars)

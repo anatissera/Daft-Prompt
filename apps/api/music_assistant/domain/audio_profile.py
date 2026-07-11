@@ -27,6 +27,7 @@ TransferMode = Literal[
     "avoid_copying",
     "clarify",
 ]
+FidelityMode = Literal["similar", "very_similar", "exact_or_as_close_as_possible"]
 EvidenceClaimType = Literal[
     "tempo",
     "key",
@@ -439,6 +440,7 @@ class CompositionBrief(BaseModel):
     song_profile_ids: list[str] = Field(default_factory=list)
     artist_style_profile_ids: list[str] = Field(default_factory=list)
     artist_style_profiles: list[ArtistStyleProfile] = Field(default_factory=list)
+    fidelity_mode: FidelityMode = "similar"
     transfer_policy: dict[str, list[str]] = Field(default_factory=dict)
     harmonic_guidance: dict[str, Any] = Field(default_factory=dict)
     rhythmic_guidance: dict[str, Any] = Field(default_factory=dict)
@@ -446,6 +448,8 @@ class CompositionBrief(BaseModel):
     form_guidance: dict[str, Any] = Field(default_factory=dict)
     style_guidance: dict[str, Any] = Field(default_factory=dict)
     instrumentation: dict[str, Any] = Field(default_factory=dict)
+    reference_instrumentation: dict[str, Any] = Field(default_factory=dict)
+    style_guardrails: dict[str, Any] = Field(default_factory=dict)
     instrument_requests: dict[str, dict[str, Any]] = Field(default_factory=dict)
     timbre_traits: dict[str, Any] = Field(default_factory=dict)
     tone_requests: list[ToneProfile] = Field(default_factory=list)

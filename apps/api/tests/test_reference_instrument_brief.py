@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from music_assistant.application.composition_brief import BuildCompositionBrief
+from music_assistant.application.compose_song import prompt_from_composition_brief
 from music_assistant.domain.audio_profile import (
     ReferenceInstrumentProfile,
     ReferenceTransferIntent,
@@ -77,3 +78,18 @@ def test_literal_intent_without_profile_adds_uncertainty_note():
 
     assert result.brief is not None
     assert "piano" in result.brief.uncertainty_notes[0].lower()
+
+
+def test_composition_prompt_includes_fidelity_and_guardrail_context():
+    knowledge = SongKnowledgeProfile(
+        profile_id="song_fixture",
+        identity=SongIdentity(title="Fixture Song"),
+        metadata={"songsterr_tab_index": {"tracks": [{"instrument": "guitar", "name": "Guitar"}]}},
+    )
+    result = BuildCompositionBrief().execute("make a very similar song", [knowledge])
+
+    assert result.brief is not None
+    prompt = prompt_from_composition_brief(result.brief)
+    assert "fidelity_mode: very_similar" in prompt
+    assert "reference_instrumentation_json:" in prompt
+    assert "style_guardrails_json:" in prompt

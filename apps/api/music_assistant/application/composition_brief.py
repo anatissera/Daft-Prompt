@@ -7,6 +7,11 @@ import re
 
 from pydantic import BaseModel
 
+from music_assistant.application.composition_constraints import (
+    build_reference_instrumentation,
+    build_style_guardrails,
+    infer_fidelity_mode,
+)
 from music_assistant.domain.audio_profile import (
     ArtistStyleProfile,
     CompositionBrief,
@@ -52,8 +57,11 @@ class BuildCompositionBrief:
             song_profile_ids=[profile.profile_id for profile in profiles],
             artist_style_profile_ids=[profile.profile_id for profile in artist_style_profiles or []],
             artist_style_profiles=artist_style_profiles or [],
+            fidelity_mode=infer_fidelity_mode(cleaned, has_reference=bool(profiles)),
             global_constraints=_global_constraints(normalized),
             style_guidance=_style_guidance(artist_style_profiles or []),
+            reference_instrumentation=build_reference_instrumentation(profiles),
+            style_guardrails=build_style_guardrails(cleaned, profiles),
         )
         if not profiles:
             return BriefBuildResult(brief=brief)
@@ -200,7 +208,11 @@ def _brief_id(message: str, profiles: list[SongKnowledgeProfile]) -> str:
 
 def _global_constraints(normalized: str) -> dict[str, str]:
     constraints: dict[str, str] = {}
-    for genre in ["cumbia", "blues", "disco", "funk", "rock", "pop", "trap", "reggaeton"]:
+    for genre in [
+        "french house", "classic rock", "baroque pop", "hip-hop", "synthwave",
+        "electronic", "cumbia", "blues", "disco", "funk", "grunge", "punk",
+        "metal", "rock", "pop", "trap", "reggaeton", "house",
+    ]:
         if genre in normalized:
             constraints["genre"] = genre
             break

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import json
 
 from music_assistant.agents.director import (
     MAX_ROSTER,
@@ -138,6 +139,40 @@ def test_roots_genre_keeps_synth_when_user_explicitly_requests_it():
     song = arrangement_to_song("folk with an explicit synth pad", out)
 
     assert len(song.roster) == 2
+
+
+def test_high_fidelity_reference_keeps_guitar_band_and_drops_unsupported_piano():
+    out = DirectorOutput(
+        genre="classic rock",
+        key="C major",
+        instruments=[
+            ArrangementInstrument(id="piano", instrument="acoustic_piano", midi_program=0, role="harmony", playing_style="Full piano bed."),
+        ],
+        composition_groups=[CompositionGroup(name="harmony", instrument_ids=["piano"])],
+    )
+    style = "\n".join([
+        "user_request: compose a very similar song",
+        "fidelity_mode: very_similar",
+        "reference_instrumentation_json: " + json.dumps({
+            "song": {
+                "families": ["bass", "drums", "guitar"],
+                "salience": {"guitar_led": True, "piano_support": False, "synth_supported": False},
+            }
+        }),
+        "style_guardrails_json: " + json.dumps({
+            "expected_families": ["bass", "drums", "guitar"],
+            "discouraged_families": ["piano_heavy_balance", "unsupported_synth"],
+        }),
+    ])
+
+    song = arrangement_to_song(style, out)
+
+    families = {"drums": False, "bass": False, "guitar": False, "piano": False}
+    for item in song.roster:
+        for family in families:
+            if family in f"{item.id} {item.instrument} {item.role}".lower() or (family == "drums" and item.is_drum):
+                families[family] = True
+    assert families == {"drums": True, "bass": True, "guitar": True, "piano": False}
 
 
 def test_roster_is_capped():

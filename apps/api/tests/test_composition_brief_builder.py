@@ -68,6 +68,29 @@ def test_builds_single_reference_brief_for_drums_request():
     assert result.brief.global_constraints["mood"] == "dark"
 
 
+def test_reference_brief_carries_fidelity_mode_instrument_salience_and_guardrails():
+    source = profile("song_something", "Something")
+    source.metadata["songsterr_tab_index"] = {
+        "tracks": [
+            {"instrument": "guitar", "name": "George Harrison guitar"},
+            {"instrument": "bass", "name": "Paul McCartney bass"},
+            {"instrument": "drums", "name": "Ringo drums"},
+        ]
+    }
+
+    similar = BuildCompositionBrief().execute("compose a similar song", [source]).brief
+    exact = BuildCompositionBrief().execute("make it exactly as close as possible", [source]).brief
+
+    assert similar is not None and exact is not None
+    assert similar.fidelity_mode == "similar"
+    assert exact.fidelity_mode == "exact_or_as_close_as_possible"
+    instrumentation = exact.reference_instrumentation["song_something"]
+    assert instrumentation["families"] == ["bass", "drums", "guitar"]
+    assert instrumentation["salience"]["guitar_led"] is True
+    assert "guitar" in exact.style_guardrails["expected_families"]
+    assert "creative_note" in exact.style_guardrails
+
+
 def test_builds_multi_reference_brief_by_dimension():
     drums = profile("song_drums", "Drum Song")
     harmony = profile("song_harmony", "Harmony Song", harmony="Dm - G - Cmaj7")
