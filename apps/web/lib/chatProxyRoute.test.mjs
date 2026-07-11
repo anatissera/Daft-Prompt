@@ -19,6 +19,12 @@ test("chat proxy forwards current song context to the backend", () => {
   assert.match(routeSource, /currentSong/);
 });
 
+test("chat proxy forwards artist style profiles to the backend", () => {
+  assert.match(routeSource, /artist_style_profiles/);
+  assert.match(routeSource, /artistStyleProfiles/);
+  assert.match(routeSource, /Array\.isArray/);
+});
+
 test("chat proxy bounds and forwards compact conversation context", () => {
   assert.match(routeSource, /conversation_context/);
   assert.match(routeSource, /conversationContext/);

@@ -1,6 +1,6 @@
 // /api/chat — same-origin proxy to the backend /chat. Intent classification
-// (including off-topic refusal) lives in the backend graph's director node, so
-// this route just forwards the turn; the browser never holds the backend URL.
+// and tool routing live in backend application use cases, so this route just
+// forwards the turn; the browser never holds the backend URL.
 
 import { NextRequest } from "next/server";
 
@@ -16,6 +16,9 @@ export async function POST(req: NextRequest) {
   const message = typeof body?.message === "string" ? body.message : "";
   const referenceId = body?.reference_id ?? null;
   const currentSong = body?.current_song ?? null;
+  const artistStyleProfiles = Array.isArray(body?.artist_style_profiles)
+    ? body.artist_style_profiles
+    : [];
   const conversationContext = typeof body?.conversation_context === "string"
     ? body.conversation_context.slice(-1600)
     : null;
@@ -29,6 +32,7 @@ export async function POST(req: NextRequest) {
         message,
         reference_id: referenceId,
         current_song: currentSong,
+        artist_style_profiles: artistStyleProfiles,
         conversation_context: conversationContext,
       }),
     });

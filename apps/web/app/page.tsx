@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
+import PipelineGraphs, { type PipelineGraphMode } from "@/components/PipelineGraphs";
 import type { ChatMessage } from "@/lib/chatTypes";
 import type { ArtistStyleProfile, ChordChartRow, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "@/lib/types";
 import {
@@ -83,6 +84,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
   const [buildIds, setBuildIds] = useState<{ frontend: string; backend: string } | null>(null);
+  const [pipelineGraphMode, setPipelineGraphMode] = useState<PipelineGraphMode | null>(null);
   const sessionTitledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -236,6 +238,7 @@ export default function Home() {
   }
 
   return (
+    <>
     <main className="app-shell">
       <aside className="app-sidebar" aria-label="Sessions">
         <div className="sidebar-brand-block">
@@ -247,6 +250,25 @@ export default function Home() {
           <span className="sidebar-new-plus" aria-hidden="true">+</span>
           New session
         </button>
+
+        <div className="sidebar-graph-controls" aria-label="Architecture diagrams">
+          <button
+            type="button"
+            aria-label="Open agent map"
+            title="Agent map"
+            onClick={() => setPipelineGraphMode("agent")}
+          >
+            AG
+          </button>
+          <button
+            type="button"
+            aria-label="Open LangGraph architecture"
+            title="LangGraph architecture"
+            onClick={() => setPipelineGraphMode("langgraph")}
+          >
+            LC
+          </button>
+        </div>
 
         <div className="sidebar-section">
           <span className="sidebar-section-title">Recent sessions</span>
@@ -296,6 +318,10 @@ export default function Home() {
         />
       </section>
     </main>
+    {pipelineGraphMode ? (
+      <PipelineGraphs mode={pipelineGraphMode} onClose={() => setPipelineGraphMode(null)} />
+    ) : null}
+    </>
   );
 }
 
