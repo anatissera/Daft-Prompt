@@ -34,7 +34,7 @@ from music_assistant.application.music_tool_models import (
 from music_assistant.application.music_tools import MusicTools
 from music_assistant.domain.audio_profile import ArtistStyleProfile, ExplanationAnswer, MelodyProfile, ReferenceProfile
 from music_assistant.domain.errors import OffTopicRequest
-from music_assistant.domain.song_state import SongState
+from music_assistant.domain.song_state import Note, SongState
 from music_assistant.domain.usage import USAGE_TRACKER, UsageTracker
 from music_assistant.ports.llm import ChatModel
 from music_assistant.ports.reference_store import ReferenceStore
@@ -483,6 +483,17 @@ class ChatMusic:
                 else f"Which generated instrument should I revise? Available instruments: {choices}."
             )
             return ChatResponse(intent="clarify", reply=clarification, clarification=clarification)
+        chord = _requested_chord(message)
+        if _is_chord_edit(message):
+            if chord is None:
+                clarification = f"What chord should the {match.instrument} use?"
+                return ChatResponse(intent="clarify", reply=clarification, clarification=clarification)
+            revised = _apply_chord_edit(song, match.id, chord)
+            return ChatResponse(
+                intent="compose",
+                reply=f"Changed only the {match.instrument} notes to {chord} chord tones; the rest of the arrangement is unchanged.",
+                compose=ChatComposeResult(song=revised, source="director", warnings=_composition_warnings(revised)),
+            )
         timbre = _requested_timbre(message)
         if _is_timbre_edit(message):
             if timbre is None:
@@ -1031,6 +1042,50 @@ _TIMBRE_CHOICES = (
 )
 
 
+_CHORD_TARGET_RE = re.compile(
+    r"\b(?:to|into|as|use|using|usar|en|a)\s+([A-G](?:#|b)?(?:\s*(?:major|minor|maj7|m7|min7|7|maj|min|m|dim|aug|sus2|sus4))?)\b",
+    re.IGNORECASE,
+)
+_CHORD_TOKEN_RE = re.compile(
+    r"\b([A-G](?:#|b)?(?:maj7|m7|min7|7|maj|min|m|dim|aug|sus2|sus4)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_chord_edit(message: str) -> bool:
+    return bool(re.search(r"\b(chord|chords|voicing|acorde|acordes)\b", message, re.IGNORECASE))
+
+
+def _requested_chord(message: str) -> str | None:
+    match = _CHORD_TARGET_RE.search(message)
+    if match:
+        return _normalize_chord_symbol(match.group(1))
+    matches = _CHORD_TOKEN_RE.findall(message)
+    return _normalize_chord_symbol(matches[-1]) if matches else None
+
+
+def _normalize_chord_symbol(value: str) -> str | None:
+    compact = re.sub(r"\s+", " ", value.strip())
+    match = re.match(
+        r"^([A-G](?:#|b)?)(?:\s*(major|minor|maj7|m7|min7|7|maj|min|m|dim|aug|sus2|sus4))?$",
+        compact,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    root = match.group(1)
+    root = root[0].upper() + root[1:]
+    quality = (match.group(2) or "").lower()
+    quality_map = {
+        "major": "",
+        "maj": "",
+        "minor": "m",
+        "min": "m",
+        "min7": "m7",
+    }
+    return f"{root}{quality_map.get(quality, quality)}"
+
+
 def _is_timbre_edit(message: str) -> bool:
     normalized = message.lower()
     return bool(
@@ -1057,6 +1112,113 @@ def _apply_timbre_edit(song: SongState, instrument_id: str, choice: _TimbreChoic
     return song.model_copy(deep=True, update={"roster": roster})
 
 
+_ROOT_TO_PC = {
+    "C": 0,
+    "C#": 1,
+    "Db": 1,
+    "D": 2,
+    "D#": 3,
+    "Eb": 3,
+    "E": 4,
+    "F": 5,
+    "F#": 6,
+    "Gb": 6,
+    "G": 7,
+    "G#": 8,
+    "Ab": 8,
+    "A": 9,
+    "A#": 10,
+    "Bb": 10,
+    "B": 11,
+}
+
+
+def _apply_chord_edit(song: SongState, instrument_id: str, chord: str) -> SongState:
+    part = song.parts.get(instrument_id)
+    if part is None:
+        return song
+    roster = next((item for item in song.roster if item.id == instrument_id), None)
+    midi_low, midi_high = roster.midi_range if roster is not None else (48, 84)
+    pitches = _chord_voicing(chord, midi_low, midi_high)
+    if not pitches:
+        return song
+
+    groups = _note_groups(part.notes)
+    if not groups:
+        groups = [(bar, 0.0, 4.0, 90) for bar in range(max(1, song.header.num_bars))]
+    notes: list[Note] = []
+    for bar, start_beat, dur, velocity in groups:
+        notes.extend(
+            Note(bar=bar, start_beat=start_beat, pitch=pitch, dur=dur, velocity=velocity)
+            for pitch in pitches
+        )
+    revised_part = part.model_copy(
+        update={
+            "notes": notes,
+            "notes_summary": f"Edited to {chord} chord tones.",
+        }
+    )
+    return song.model_copy(deep=True, update={"parts": {**song.parts, instrument_id: revised_part}})
+
+
+def _note_groups(notes: list[Note]) -> list[tuple[int, float, float, int]]:
+    by_start: dict[tuple[int, float], list[Note]] = {}
+    for note in notes:
+        if note.pitch is None:
+            continue
+        by_start.setdefault((note.bar, note.start_beat), []).append(note)
+    groups: list[tuple[int, float, float, int]] = []
+    for (bar, start), group in sorted(by_start.items()):
+        groups.append((bar, start, max(note.dur for note in group), max(note.velocity for note in group)))
+    return groups
+
+
+def _chord_voicing(chord: str, midi_low: int, midi_high: int) -> list[int]:
+    match = re.match(r"^([A-G](?:#|b)?)(.*)$", chord)
+    if not match:
+        return []
+    root_pc = _ROOT_TO_PC.get(match.group(1))
+    if root_pc is None:
+        return []
+    quality = match.group(2).lower()
+    intervals = [0, 4, 7]
+    if quality in {"m", "m7"}:
+        intervals = [0, 3, 7, 10] if quality == "m7" else [0, 3, 7]
+    elif quality == "7":
+        intervals = [0, 4, 7, 10]
+    elif quality == "maj7":
+        intervals = [0, 4, 7, 11]
+    elif quality == "dim":
+        intervals = [0, 3, 6]
+    elif quality == "aug":
+        intervals = [0, 4, 8]
+    elif quality == "sus2":
+        intervals = [0, 2, 7]
+    elif quality == "sus4":
+        intervals = [0, 5, 7]
+    low, high = sorted((midi_low, midi_high))
+    root = _nearest_pitch_class(root_pc, low, high, preferred=60)
+    pitches: list[int] = []
+    for interval in intervals:
+        pitch = root + interval
+        while pitch < low:
+            pitch += 12
+        while pitch > high:
+            pitch -= 12
+        while pitches and pitch <= pitches[-1] and pitch + 12 <= high:
+            pitch += 12
+        if low <= pitch <= high:
+            pitches.append(pitch)
+    return pitches
+
+
+def _nearest_pitch_class(pc: int, low: int, high: int, *, preferred: int) -> int:
+    candidates = [pitch for pitch in range(low, high + 1) if pitch % 12 == pc]
+    if not candidates:
+        return max(low, min(high, preferred))
+    return min(candidates, key=lambda pitch: abs(pitch - preferred))
+
+
 def _instrument_label(item) -> str:
     return item.instrument or item.id
 
@@ -1081,7 +1243,7 @@ def _target_instrument(song: SongState, message: str):
         if "guitar" in item.instrument.lower() or "guitar" in item.id.lower():
             candidates.add("guitarra")
         if "piano" in item.instrument.lower() or "piano" in item.id.lower():
-            candidates.add("piano")
+            candidates.update({"piano", "keyboard", "keys", "teclado"})
         matched = any(candidate and re.search(rf"\b{re.escape(candidate)}\b", normalized) for candidate in candidates)
         score = 1 if matched else 0
         score += _guitar_edit_specificity_score(item, normalized)

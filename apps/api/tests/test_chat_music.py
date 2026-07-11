@@ -846,6 +846,37 @@ def test_repeated_edits_accumulate_on_current_song_without_changing_unrequested_
     assert final.parts["guitar"].notes != notes_before_revision
 
 
+def test_piano_chord_edit_changes_only_target_part_notes():
+    chat, composer, _, _ = _make_chat()
+    original = _generated_song_with_drums_and_keys()
+
+    response = chat.handle(ChatRequest(message="Change the piano chord to Am.", current_song=original))
+
+    assert response.intent == "compose"
+    assert response.compose is not None
+    revised = response.compose.song
+    assert revised.header == original.header
+    assert revised.roster == original.roster
+    assert revised.parts["guitar"] == original.parts["guitar"]
+    assert revised.parts["bass"] == original.parts["bass"]
+    assert revised.parts["drums"] == original.parts["drums"]
+    assert [note.pitch for note in revised.parts["piano"].notes] == [57, 60, 64]
+    assert revised.parts["piano"].notes_summary == "Edited to Am chord tones."
+    assert composer.calls == []
+    assert composer.revision_calls == []
+
+
+def test_piano_chord_edit_without_chord_asks_for_target_chord():
+    chat, composer, _, _ = _make_chat()
+
+    response = chat.handle(ChatRequest(message="Change the piano chord.", current_song=_generated_song_with_drums_and_keys()))
+
+    assert response.intent == "clarify"
+    assert "What chord" in response.reply
+    assert composer.calls == []
+    assert composer.revision_calls == []
+
+
 def test_spanish_song_edit_routes_to_the_named_instrument():
     composer = _RecordingComposer()
     chat, _, _, _ = _make_chat(composer=composer)
