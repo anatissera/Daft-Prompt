@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+venv/
 *.egg-info/
 .pytest_cache/
 
@@ -15,10 +16,12 @@ apps/api/data/traces/
 node_modules/
 apps/web/.next/
 *.tsbuildinfo
-EOF
 .next/
 out/
 next-env.d.ts.timestamp
+
+# Vercel
+.vercel/
 
 # Env
 .env
