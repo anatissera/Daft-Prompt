@@ -4,12 +4,20 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Daft Prompt",
-  description: "Upload a track, ask musical questions, or compose a new sketch — powered by multi-agent LLMs.",
+  description: "Chat with a music agent. Attach audio for analysis or ask it to compose a sketch.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Audiowide&family=Major+Mono+Display&family=Orbitron:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body>{children}</body>
     </html>
   );

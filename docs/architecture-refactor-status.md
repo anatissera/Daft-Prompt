@@ -14,7 +14,7 @@ This status reflects the current chat-musical MVP baseline on `develop`.
   `application/answer_music_question.py`.
 - Added explicit ports for LLMs, artifact storage, audio analysis,
   transcription, and stem separation.
-- Moved FastAPI and SSE models into `interfaces/`; `llm_band.api:app` remains a
+- Moved FastAPI and SSE models into `interfaces/`; `music_assistant.api:app` remains a
   compatibility entrypoint only.
 - Added local storage plus MIR/Gemini/S3 placeholders under `infrastructure/`.
 - Added a local librosa-based analyzer for uploaded files that returns compact

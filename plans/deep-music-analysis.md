@@ -134,7 +134,7 @@ dynamics, groove, and the ensemble arrangement view.**
 
 ## Domain Contract Extensions (build on the harmonic MVP models)
 
-Add to `apps/api/llm_band/domain/audio_profile.py`, reusing the harmonic MVP's
+Add to `apps/api/music_assistant/domain/audio_profile.py`, reusing the harmonic MVP's
 bar-keyed style and `max_length` discipline:
 
 - `TimbreProfile` — spectral summary + interpretation (idea C); attach to each stem

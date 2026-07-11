@@ -1,4 +1,4 @@
-// TypeScript mirror of the backend `SongState` (apps/api/llm_band/domain/song_state.py).
+// TypeScript mirror of the backend `SongState` (apps/api/music_assistant/domain/song_state.py).
 // Keep in sync; later phases may generate this from the JSON schema in CI.
 
 export interface Section {
@@ -22,13 +22,25 @@ export interface Header {
   chord_progression: ChordSpan[];
 }
 
+export type SynthPreset =
+  | "supersaw_lead"
+  | "sub_bass"
+  | "pluck"
+  | "warm_pad"
+  | "vocal_fx"
+  | "wobble_bass";
+
 export interface RosterItem {
   id: string;
   instrument: string;
+  // Semantic patch name chosen by the director. The backend also emits the
+  // derived `midi_program` and `synth_preset` alongside, so the mixer keeps
+  // its existing routing logic unchanged.
+  patch?: string | null;
   midi_program: number;
-  midi_range: [number, number];
   role: string;
   is_drum: boolean;
+  synth_preset?: SynthPreset | null;
 }
 
 export interface Note {
@@ -78,6 +90,9 @@ export interface ComposeResponse {
     midi: string;
     musicxml: string;
   };
+  /** Per-instrument + "_overall" fraction (0-1) of sounding notes that are tones of
+   *  the active chord. Absent on older responses. */
+  harmonic_fit?: Record<string, number>;
 }
 
 export type ReferenceSourceKind = "upload" | "direct_url" | "youtube" | "metadata" | "local";

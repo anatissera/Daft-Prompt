@@ -9,11 +9,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "@tonejs/midi": "^2.0.28",
     "html-midi-player": "^1.5.0",
     "next": "^15.1.0",
     "opensheetmusicdisplay": "^1.8.8",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "spessasynth_lib": "^4.3.8",
+    "tone": "14.7.58",
+    "undici": "^6.27.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
