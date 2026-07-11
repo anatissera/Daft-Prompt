@@ -10,12 +10,13 @@ import type { AnalysisEvent, ReferenceProfile, SongState } from "@/lib/types";
 import {
   chooseChatAction,
   createAnalysisMessage,
+  createChordDiagramMessage,
   createCompositionMessage,
   createTextMessage,
 } from "@/lib/chatActionAdapter.mjs";
 import { deriveSessionTitle } from "@/lib/sessionTitle.mjs";
 
-type Intent = "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
+type Intent = "answer_reference" | "song_question" | "edit_song" | "playable_chords" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
 
 interface UsageInfo {
   input_tokens?: number;
@@ -36,12 +37,32 @@ interface ChatComposeResult {
   artifacts?: ChatArtifacts | null;
 }
 
+interface PlayableChord {
+  chord: string;
+  notes: string[];
+  midi_notes: number[];
+}
+
+interface PlayableChordSection {
+  name: string;
+  chords: PlayableChord[];
+  confidence: number;
+}
+
+interface PlayableChords {
+  instrument: "piano" | "guitar";
+  source_label: string;
+  confidence: number;
+  sections: PlayableChordSection[];
+}
+
 interface ChatResponse {
   intent: Intent;
   reply: string;
   reference_id?: string | null;
   answer?: { answer: string; confidence?: string } | null;
   compose?: ChatComposeResult | null;
+  playable_chords?: PlayableChords | null;
   clarification?: string | null;
   usage?: UsageInfo | null;
 }
@@ -288,6 +309,7 @@ export default function Home() {
             }, 400);
           } else if (ev.type === "done") {
             doneEvent = ev;
+            setError(null);
             setPipeline({ stageIdx: 3, substep: "done" });
           } else if (ev.type === "error") {
             throw new Error(ev.message || "backend error");
@@ -300,6 +322,7 @@ export default function Home() {
       const idx = nextMessageIndex();
 
       if (doneEvent && doneEvent.song && doneEvent.artifacts) {
+        setError(null);
         lastJobIdRef.current = doneEvent.job_id ?? lastJobIdRef.current;
         const composeResponse = {
           job_id: doneEvent.job_id ?? "chat",
@@ -324,8 +347,11 @@ export default function Home() {
         );
         appendMessage({ ...msg, meta });
       } else if (replyResponse) {
+        setError(null);
         const meta = formatMeta(replyResponse, performance.now() - startedAt);
-        const msg = createTextMessage("assistant", replyResponse.reply, idx);
+        const msg = replyResponse.playable_chords
+          ? createChordDiagramMessage("assistant", replyResponse.reply, replyResponse.playable_chords, idx)
+          : createTextMessage("assistant", replyResponse.reply, idx);
         appendMessage({ ...msg, meta });
       } else if (intent) {
         appendMessage(createTextMessage("assistant", "(no response)", idx));

@@ -32,6 +32,16 @@ export function createAnalysisMessage(role, text, profile, index) {
   };
 }
 
+export function createChordDiagramMessage(role, text, playableChords, index) {
+  return {
+    id: `${role}-${index}`,
+    kind: "chord_diagram",
+    role,
+    text,
+    playableChords,
+  };
+}
+
 export function createCompositionMessage(role, text, result, feed, header, source, index) {
   return {
     id: `${role}-${index}`,
