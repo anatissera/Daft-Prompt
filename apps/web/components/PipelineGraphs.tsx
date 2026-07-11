@@ -81,7 +81,7 @@ const AGENT_GRAPH: PipelineGraphSpec = {
         {
           title: "CompositionBrief",
           kind: "domain",
-          detail: "Transforms chat instructions plus song, artist, album, or genre evidence into band guidance.",
+          detail: "Transforms chat instructions plus song, artist, album, genre, and playable preservation evidence into band guidance.",
         },
         {
           title: "Director",

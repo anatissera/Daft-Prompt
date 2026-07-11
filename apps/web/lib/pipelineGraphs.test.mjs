@@ -16,6 +16,7 @@ test("pipeline graphs describe connector-backed song knowledge", () => {
 
 test("pipeline graphs describe the current composition graph and LLM schemas", () => {
   assert.match(source, /CompositionBrief/);
+  assert.match(source, /playable preservation evidence/);
   assert.match(source, /StateGraph\(BandState\)/);
   assert.match(source, /director/);
   assert.match(source, /instrument_turn/);

@@ -102,6 +102,7 @@ def _merge_targeted_revision(original: SongState, candidate: SongState, instrume
 def prompt_from_composition_brief(brief: CompositionBrief) -> str:
     data = brief.model_dump(mode="json")
     instrument_requests = _prompt_safe_instrument_requests(data["instrument_requests"])
+    playable_parts = _prompt_safe_playable_parts(data["playable_parts_to_preserve"])
     return (
         "CompositionBrief\n"
         f"user_request: {data['user_request']}\n"
@@ -115,6 +116,8 @@ def prompt_from_composition_brief(brief: CompositionBrief) -> str:
         f"instrumentation: {data['instrumentation']}\n"
         f"instrument_requests: {instrument_requests}\n"
         f"instrument_requests_json: {json.dumps(instrument_requests, separators=(',', ':'))}\n"
+        f"playable_parts_to_preserve: {playable_parts}\n"
+        f"preservation_requests: {data['preservation_requests']}\n"
         f"timbre_traits: {data['timbre_traits']}\n"
         f"forbidden_traits: {data['forbidden_traits']}\n"
         f"uncertainty_notes: {data['uncertainty_notes']}\n"
@@ -139,6 +142,51 @@ def _prompt_safe_instrument_requests(instrument_requests: dict[str, Any]) -> dic
             note_pack=note_pack,
         )
     return sanitized
+
+
+def _prompt_safe_playable_parts(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        item = {
+            "part_id": part.get("part_id"),
+            "kind": part.get("kind"),
+            "instrument_family": part.get("instrument_family"),
+            "title": part.get("title"),
+            "summary": part.get("summary"),
+            "source_name": part.get("source_name"),
+            "source_url": part.get("source_url"),
+            "confidence_label": part.get("confidence_label"),
+        }
+        tab = part.get("tab")
+        if isinstance(tab, dict):
+            item["tab"] = {
+                "instrument": tab.get("instrument"),
+                "tuning": tab.get("tuning"),
+                "capo": tab.get("capo"),
+                "measures": _prompt_safe_tab_measures(tab.get("measures") or []),
+            }
+        for key in ("chord_chart", "piano_keys", "piano_roll", "rhythm_grid", "rendering_notes"):
+            value = part.get(key)
+            if value:
+                item[key] = value[:16] if isinstance(value, list) else value
+        sanitized.append(item)
+    return sanitized
+
+
+def _prompt_safe_tab_measures(measures: list[Any]) -> list[dict[str, Any]]:
+    safe: list[dict[str, Any]] = []
+    for measure in measures[:4]:
+        if not isinstance(measure, dict):
+            continue
+        events = measure.get("events") or []
+        safe.append({
+            "measure_number": measure.get("measure_number"),
+            "start_bar": measure.get("start_bar"),
+            "events": events[:16] if isinstance(events, list) else [],
+        })
+    return safe
 
 
 def _style_prompt(style: str | CompositionBrief) -> str:

@@ -14,6 +14,7 @@ from music_assistant.domain.audio_profile import (
     ReferenceInstrumentProfile,
     ReferenceTransferIntent,
     SongKnowledgeProfile,
+    PlayablePart,
 )
 
 
@@ -101,6 +102,8 @@ class BuildCompositionBrief:
                 brief.form_guidance[profile.profile_id] = [section.name for section in profile.sections]
             if "timbre_traits" in dimensions:
                 brief.timbre_traits[profile.profile_id] = _claim_values(profile, {"timbre", "trait", "instrumentation"})
+
+        _apply_playable_preservation_requests(brief, profiles, normalized)
 
         return BriefBuildResult(brief=brief)
 
@@ -209,6 +212,72 @@ def _global_constraints(normalized: str) -> dict[str, str]:
     if tempo:
         constraints["tempo_bpm"] = tempo.group(1)
     return constraints
+
+
+def _apply_playable_preservation_requests(
+    brief: CompositionBrief,
+    profiles: list[SongKnowledgeProfile],
+    normalized: str,
+) -> None:
+    if not _requests_exact_preservation(normalized):
+        return
+    families = _requested_playable_families(normalized)
+    if not families:
+        brief.uncertainty_notes.append(
+            "Exact preservation was requested, but no instrument family was specified."
+        )
+        return
+    for profile in profiles:
+        for family in families:
+            matches = _matching_playable_parts(profile.playable_parts, family)
+            if matches:
+                for part in matches:
+                    if part not in brief.playable_parts_to_preserve:
+                        brief.playable_parts_to_preserve.append(part)
+                request = f"keep {family} exactly from {profile.identity.title}"
+                if request not in brief.preservation_requests:
+                    brief.preservation_requests.append(request)
+                policy = f"preserve:{family}"
+                brief.transfer_policy.setdefault(profile.profile_id, [])
+                if policy not in brief.transfer_policy[profile.profile_id]:
+                    brief.transfer_policy[profile.profile_id].append(policy)
+                if any(part.confidence < 0.5 for part in matches):
+                    brief.uncertainty_notes.append(
+                        f"Requested exact {family} from {profile.identity.title}, but playable evidence is low confidence."
+                    )
+            else:
+                brief.uncertainty_notes.append(
+                    f"Requested exact {family} from {profile.identity.title}, but no playable {family} evidence is available."
+                )
+
+
+def _requests_exact_preservation(normalized: str) -> bool:
+    return bool(
+        re.search(r"\b(keep|preserve|copy|same|exact|exactly|verbatim)\b", normalized)
+        or re.search(r"\b(manten[eé]r?|conserv[aá]r?|igual|exactamente)\b", normalized)
+    )
+
+
+def _requested_playable_families(normalized: str) -> list[str]:
+    families: list[str] = []
+    checks = [
+        ("drums", ["drum", "drums", "groove", "beat", "bater"]),
+        ("bass", ["bass", "bajo"]),
+        ("guitar", ["guitar", "riff", "guitarra"]),
+        ("piano", ["piano", "keys", "keyboard", "teclas"]),
+    ]
+    for family, words in checks:
+        if any(word in normalized for word in words):
+            families.append(family)
+    return families
+
+
+def _matching_playable_parts(parts: list[PlayablePart], family: str) -> list[PlayablePart]:
+    return [
+        part
+        for part in parts
+        if part.instrument_family == family or family in part.kind or family in part.title.lower()
+    ]
 
 
 def _style_guidance(style_profiles: list[ArtistStyleProfile]) -> dict[str, dict[str, list[str] | tuple[float | None, float | None]]]:

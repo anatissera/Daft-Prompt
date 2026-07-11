@@ -8,6 +8,7 @@ from music_assistant.domain.audio_profile import (
     AudioProfile,
     EvidenceClaim,
     EvidenceConflict,
+    PlayablePart,
     MelodyProfile,
     SongIdentity,
     SongKnowledgeProfile,
@@ -106,6 +107,41 @@ def test_missing_requested_trait_returns_uncertainty_note():
 
     assert result.brief is not None
     assert "drum" in result.brief.uncertainty_notes[0].lower()
+
+
+def test_exact_playable_part_request_is_preserved_in_brief():
+    source = profile("song_drums", "Drum Song")
+    source.playable_parts = [
+        PlayablePart(
+            part_id="songsterr_drums_1",
+            kind="drum_tab",
+            instrument_family="drums",
+            title="Drum tab",
+            source_name="Songsterr",
+            source_url="https://songsterr.test/drum-song",
+            confidence=0.82,
+        )
+    ]
+
+    result = BuildCompositionBrief().execute(
+        "compose a new song but keep this drum groove exactly",
+        [source],
+    )
+
+    assert result.brief is not None
+    assert result.brief.playable_parts_to_preserve[0].part_id == "songsterr_drums_1"
+    assert result.brief.preservation_requests == ["keep drums exactly from Drum Song"]
+    assert "preserve:drums" in result.brief.transfer_policy["song_drums"]
+
+
+def test_exact_playable_part_request_without_evidence_adds_uncertainty():
+    source = profile("song_sparse", "Sparse Song")
+
+    result = BuildCompositionBrief().execute("keep this bass exactly", [source])
+
+    assert result.brief is not None
+    assert result.brief.playable_parts_to_preserve == []
+    assert "no playable bass evidence" in result.brief.uncertainty_notes[0]
 
 
 def test_conflicting_references_return_clarification_for_ambiguous_request():

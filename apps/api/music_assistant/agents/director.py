@@ -143,6 +143,7 @@ If the style description contains a CompositionBrief with instrument_requests, t
 - Use the request's timbre midi_program, midi_range, and drum/percussion status when present.
 - Fold pattern, transfer_mode, fidelity, and any symbolic_seed summary into playing_style so the instrument agent can apply it.
 - For literal transfer, mention the seed as a starting motif/pattern, not raw tab text.
+If the CompositionBrief contains playable_parts_to_preserve or preservation_requests, keep those instrument families in the roster and name the preservation constraint in role or playing_style. Do not claim perfect copying; treat source-backed tabs as exact constraints only where the brief marks them for preservation.
 
 Genre compatibility is mandatory. Do not add synth leads, synth pads, electronic textures, or keyboard-like filler to grunge, punk, blues, folk, garage rock, or acoustic music unless the user explicitly requests that electronic voice. Prefer drums/bass/guitar or a still smaller idiomatic ensemble where appropriate. Do not use more instruments to make the plan look more sophisticated.
 

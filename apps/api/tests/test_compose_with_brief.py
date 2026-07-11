@@ -17,6 +17,7 @@ def test_prompt_from_composition_brief_contains_structured_transfer_fields():
         transfer_policy={"song_drums": ["rhythmic_guidance"]},
         rhythmic_guidance={"song_drums": ["four-on-the-floor funk drums"]},
         forbidden_traits=["do not copy melody"],
+        preservation_requests=["keep drums exactly from Song"],
         uncertainty_notes=["harmony missing"],
     )
 
@@ -26,6 +27,8 @@ def test_prompt_from_composition_brief_contains_structured_transfer_fields():
     assert "global_constraints" in prompt
     assert "song_drums" in prompt
     assert "four-on-the-floor funk drums" in prompt
+    assert "preservation_requests" in prompt
+    assert "keep drums exactly" in prompt
     assert "do not copy melody" in prompt
 
 
