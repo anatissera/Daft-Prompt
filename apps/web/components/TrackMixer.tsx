@@ -224,6 +224,11 @@ export default function TrackMixer({
       seqRef.current = seq;
       channelMapRef.current = channelByPartId;
       engineSongRef.current = song;
+      if (process.env.NODE_ENV !== "production") {
+        // Dev-only inspection hook: lets us assert from the console which
+        // preset each channel actually resolved to in the soundfont.
+        (window as unknown as Record<string, unknown>).__daftDebug = { synth, seq, channelByPartId };
+      }
 
       // Prepare the Tone.js layer for any `synth_preset` tracks. Shares the
       // same AudioContext as spessasynth so both engines have one clock

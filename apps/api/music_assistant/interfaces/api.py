@@ -29,7 +29,7 @@ from music_assistant.application.research_reference import ResearchReference
 from music_assistant.canned import canned_song
 from music_assistant.config import get_settings
 from music_assistant.domain.audio_profile import ReferenceProfile, ReferenceSource
-from music_assistant.domain.song_state import Part
+from music_assistant.domain.song_state import Part, SongState
 from music_assistant.graph import iter_negotiation_events, run_negotiation
 from music_assistant.band_agent import stream_compose as band_agent_stream
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
@@ -308,8 +308,60 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
         chat_music = _chat_music()
         message = req.message.strip()
-        intent = chat_music._classify(message, has_reference=profile is not None)
+        prev_song_path = (
+            ARTIFACTS.path_for(req.edit_job_id, "song.json") if req.edit_job_id else None
+        )
+        has_previous = bool(prev_song_path and prev_song_path.exists())
+        intent = chat_music._classify(
+            message, has_reference=profile is not None, has_previous=has_previous
+        )
         yield sse_data({"type": "intent", "intent": intent})
+
+        if intent == "edit_song":
+            from music_assistant.band_agent.edit_song import apply_edit, plan_edit
+
+            prev = SongState.model_validate_json(prev_song_path.read_text())
+            yield sse_data({
+                "type": "progress", "stage": "edit",
+                "message": "planning the edit over the previous song",
+            })
+            plan = plan_edit(message, prev)
+            if plan is None:
+                yield sse_data({"type": "reply", "response": {
+                    "intent": "edit_song",
+                    "reply": (
+                        "No pude traducir ese pedido a una edición concreta. "
+                        "Probá algo como 'reemplazá el piano por un rhodes' o "
+                        "'subí el pitch del bajo una octava'."
+                    ),
+                    "reference_id": None, "answer": None, "compose": None,
+                    "clarification": None, "usage": None,
+                }})
+                return
+            edited, changes = apply_edit(prev, plan)
+            yield sse_data({
+                "type": "progress", "stage": "edit",
+                "message": plan.summary or "; ".join(changes) or "applying edit",
+            })
+            job = ARTIFACTS.create_job()
+            base = str(request.base_url).rstrip("/")
+            render_artifacts(edited, job.path)
+            yield sse_data({
+                "type": "director",
+                "source": "director",
+                "header": edited.header.model_dump(mode="json"),
+                "roster": [r.model_dump(mode="json") for r in edited.roster],
+            })
+            yield sse_data(DoneEvent(
+                job_id=job.job_id,
+                source="director",
+                song=edited,
+                artifacts=Artifacts(
+                    midi=ARTIFACTS.url_for(base, job.job_id, "song.mid"),
+                    musicxml=ARTIFACTS.url_for(base, job.job_id, "song.musicxml"),
+                ),
+            ).model_dump(by_alias=True, mode="json"))
+            return
 
         if intent not in ("compose", "compose_from_reference"):
             try:

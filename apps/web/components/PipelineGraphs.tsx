@@ -169,23 +169,26 @@ const AGENT_NODES: NodeSpec[] = [
   { id: "intent", x: 190, y: 320, w: 150, h: 66, title: "INTENT", lines: ["compose vs replicate", "LLM classifier"], kind: "llm call" },
 
   // replicate branch (top)
-  { id: "bitmidi", x: 400, y: 60, w: 160, h: 66, title: "BITMIDI SEARCH", lines: ["find the exact song", "download .mid"], accent: OXBLOOD, kind: "tool · http api" },
+  { id: "bitmidi", x: 400, y: 52, w: 160, h: 80, title: "BITMIDI SEARCH", lines: ["find the exact song", "similarity guard on hits", "download .mid"], accent: OXBLOOD, kind: "tool · http api" },
   { id: "import", x: 620, y: 60, w: 150, h: 66, title: "MIDI IMPORT", lines: ["verbatim tracks", "no re-generation"], accent: OXBLOOD, kind: "tool · parser" },
 
   // research tools
   { id: "websearch", x: 400, y: 190, w: 160, h: 58, title: "WEB SEARCH", lines: ["DuckDuckGo hits"], accent: TEAL, kind: "tool · http (no MCP)" },
   { id: "excerpts", x: 400, y: 280, w: 160, h: 58, title: "PAGE EXCERPTS", lines: ["real production prose"], accent: TEAL, kind: "tool · http fetch" },
   { id: "corpus", x: 400, y: 370, w: 160, h: 66, title: "CORPUS", lines: ["Lakh exemplars", "Groove drum patterns"], accent: TEAL, kind: "tool · offline index" },
+  { id: "evidence", x: 400, y: 468, w: 160, h: 80, title: "SONG EVIDENCE", lines: ["MusicBrainz resolve", "CifraClub/HookTheory", "key + section chords"], accent: TEAL, kind: "tool · scrapers" },
+  { id: "answer", x: 20, y: 468, w: 150, h: 66, title: "ANSWER", lines: ["evidence or websearch", "+ 1 small LLM call"], accent: SILVER, kind: "q&a" },
+  { id: "edit", x: 20, y: 570, w: 150, h: 80, title: "EDIT", lines: ["plan: transpose, swap,", "remove, tempo, velocity", "applied deterministically"], accent: OXBLOOD, kind: "llm plan + pure fn" },
 
   // director
-  { id: "director", x: 640, y: 240, w: 190, h: 116, title: "DIRECTOR", lines: ["style summary", "canonical instruments", "rhythmic feel", "roster + chords + form"], kind: "llm call · minimax-m3" },
+  { id: "director", x: 640, y: 240, w: 190, h: 116, title: "DIRECTOR", lines: ["style + canon instruments", "rhythmic feel + onset grids", "registers + density budgets", "roster + chords + plan"], kind: "llm call · minimax-m3" },
 
   // fills
   { id: "fills", x: 900, y: 240, w: 190, h: 96, title: "INSTRUMENT AGENTS", lines: ["one per instrument", "× section slice", "16 parallel workers"], kind: "llm calls ×N · m2.5" },
   { id: "fallbacks", x: 900, y: 400, w: 190, h: 82, title: "FALLBACK CHAIN", lines: ["rich → minimal schema", "LLM-seeded 1-bar loop", "deterministic pattern"], accent: SILVER, kind: "llm + deterministic" },
 
   // compose + render
-  { id: "compose", x: 1160, y: 240, w: 180, h: 96, title: "COMPOSER", lines: ["patch resolution", "drum synthesis", "bass on chord roots"], kind: "deterministic" },
+  { id: "compose", x: 1160, y: 240, w: 180, h: 110, title: "COMPOSER", lines: ["grid/density/register", "enforcement (binding)", "patch reconciliation", "drums + bass roots"], kind: "deterministic" },
   { id: "render", x: 1160, y: 400, w: 180, h: 66, title: "RENDER", lines: ["song.mid + MusicXML", "artifacts + SSE done"], kind: "deterministic" },
   { id: "player", x: 900, y: 540, w: 190, h: 82, title: "PLAYER", lines: ["SF3 soundfont (sampled)", "Tone.js synths (native)", "per-agent mixer"], accent: TEAL, kind: "frontend · web audio" },
 ];
@@ -197,6 +200,12 @@ const AGENT_EDGES: EdgeSpec[] = [
   { from: "import", to: "render", fromSide: "right", toSide: "top", dashed: true },
   { from: "intent", to: "websearch", label: "compose" },
   { from: "intent", to: "corpus" },
+  { from: "intent", to: "evidence", fromSide: "bottom", toSide: "left" },
+  { from: "evidence", to: "director" },
+  { from: "intent", to: "answer", label: "question", fromSide: "bottom", toSide: "top" },
+  { from: "evidence", to: "answer", dashed: true },
+  { from: "intent", to: "edit", label: "edit last song", fromSide: "bottom", toSide: "top" },
+  { from: "edit", to: "render", dashed: true, fromSide: "bottom", toSide: "bottom" },
   { from: "websearch", to: "excerpts", dashed: true },
   { from: "websearch", to: "director" },
   { from: "excerpts", to: "director" },
@@ -217,7 +226,7 @@ export function AgentGraphView() {
       nodes={AGENT_NODES}
       edges={AGENT_EDGES}
       viewW={1380}
-      viewH={660}
+      viewH={680}
     />
   );
 }
@@ -231,10 +240,10 @@ const LC_NODES: NodeSpec[] = [
   { id: "start", x: 20, y: 90, w: 100, h: 46, title: "START", accent: SILVER, kind: "entry point" },
   { id: "do_intent", x: 170, y: 80, w: 150, h: 62, title: "do_intent", lines: ["IntentDecision", "conditional edges"], kind: "graph node · llm" },
   { id: "do_replicate", x: 380, y: 20, w: 160, h: 56, title: "do_replicate", lines: ["Bitmidi → import"], accent: OXBLOOD, kind: "graph node · tools" },
-  { id: "do_research", x: 380, y: 110, w: 160, h: 56, title: "do_research", lines: ["no LLM — pure tools"], accent: TEAL, kind: "graph node · tools" },
+  { id: "do_research", x: 380, y: 110, w: 160, h: 56, title: "do_research", lines: ["DDG + page excerpts", "+ song evidence"], accent: TEAL, kind: "graph node · tools" },
   { id: "do_skeleton", x: 600, y: 110, w: 160, h: 62, title: "do_skeleton", lines: ["BandSkeleton", "retry on parse-None"], kind: "graph node · llm" },
   { id: "do_fills", x: 820, y: 110, w: 160, h: 62, title: "do_fills", lines: ["InstrumentFill × N", "ThreadPool(16)"], kind: "graph node · llm ×N" },
-  { id: "do_compose", x: 1040, y: 110, w: 160, h: 56, title: "do_compose", lines: ["BandSpec → SongState"], kind: "graph node · pure fn" },
+  { id: "do_compose", x: 1040, y: 110, w: 160, h: 56, title: "do_compose", lines: ["BandSpec → SongState", "grid/register enforce"], kind: "graph node · pure fn" },
   { id: "end", x: 1260, y: 116, w: 90, h: 46, title: "END", accent: SILVER, kind: "terminal" },
 
   // LLM infrastructure lane
@@ -245,7 +254,7 @@ const LC_NODES: NodeSpec[] = [
 
   // streaming lane
   { id: "stream", x: 170, y: 470, w: 200, h: 62, title: 'graph.stream("values")', lines: ["progress event per node"], accent: TEAL, kind: "langgraph api" },
-  { id: "fastapi", x: 440, y: 470, w: 170, h: 62, title: "FastAPI SSE", lines: ["/chat/stream", "CancelToken per request"], accent: TEAL, kind: "backend endpoint" },
+  { id: "fastapi", x: 430, y: 466, w: 190, h: 80, title: "FastAPI SSE", lines: ["/chat/stream + intent router", "song_question + edit_song", "CancelToken per request"], accent: TEAL, kind: "backend endpoint" },
   { id: "nextproxy", x: 680, y: 470, w: 170, h: 62, title: "Next.js proxy", lines: ["same-origin SSE relay", "no undici timeouts"], accent: TEAL, kind: "frontend route" },
   { id: "ui", x: 920, y: 470, w: 150, h: 56, title: "UI", lines: ["pipeline stepper", "song deck"], accent: SILVER, kind: "react" },
 ];

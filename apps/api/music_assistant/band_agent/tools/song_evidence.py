@@ -52,11 +52,28 @@ _DIRECTIVE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Question scaffolding: "which chords does <song> have?", "¿qué acordes
+# tiene <song>?", "what key is <song> in?". Strip the interrogative head
+# (up to the auxiliary/topic verb) and the dangling tail verb so the song
+# reference survives entity resolution.
+_QUESTION_HEAD_RE = re.compile(
+    r"^\s*[¿]?\s*(?:which|what|who|how(?:\s+many)?|qu[eé]|cu[aá]l(?:es)?|"
+    r"qui[eé]n(?:es)?)\b[^?]{0,40}?"
+    r"\b(?:does|do|is|are|has|have|tiene[ns]?|usa[n]?|lleva[n]?|est[aá]n?\s+en|"
+    r"son\s+de|es\s+de)\b\s*",
+    re.IGNORECASE,
+)
+_QUESTION_TAIL_RE = re.compile(
+    r"\s*\b(?:got|have|has|in|use[sd]?|written\s+in)\s*\??\s*$|\s*\?\s*$",
+    re.IGNORECASE,
+)
+
 
 def _candidate_queries(style: str):
     from music_assistant.ports.song_source_connector import ResolvedSongQuery
 
-    cleaned = _DIRECTIVE_RE.sub("", style).strip().strip('"“”')
+    dequestioned = _QUESTION_TAIL_RE.sub("", _QUESTION_HEAD_RE.sub("", style)).strip()
+    cleaned = _DIRECTIVE_RE.sub("", dequestioned or style).strip().strip('"“”')
     seen: set[tuple[str, str | None]] = set()
     out = []
     for raw in (cleaned, style.strip()):

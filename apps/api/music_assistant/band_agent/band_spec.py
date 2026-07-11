@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from music_assistant.domain.patch import Patch
 
@@ -38,17 +38,35 @@ class ChordSpanPlan(BaseModel):
 
 
 class NotePlan(BaseModel):
-    """One note or rest. Field bounds intentionally loose so a chatty LLM can't
-    fail a whole fill on one out-of-range value. `compose_band` clamps `dur`
-    to a minimum audible length so a 0-duration note becomes a short click
-    rather than silently dropping the fill via a 64-validation-error cascade
-    (seen with MiniMax M3, which loves emitting dur:0)."""
+    """One note or rest. Out-of-range values are COERCED into range instead
+    of failing validation: one stray `velocity: 0` from a chatty LLM used to
+    reject the entire 100-note fill and burn a 40s retry (observed with both
+    MiniMax M3 and M2.5). `compose_band` additionally floors `dur` so a
+    0-duration note becomes a short click rather than silence."""
 
     bar: int = Field(default=0, ge=0)
     start_beat: float = Field(default=0.0, ge=0.0)
-    pitch: Optional[int] = Field(default=None, ge=0, le=127)
+    pitch: Optional[int] = Field(default=None)
     dur: float = Field(default=1.0, ge=0.0)
-    velocity: int = Field(default=96, ge=1, le=127)
+    velocity: int = Field(default=96)
+
+    @field_validator("pitch", mode="before")
+    @classmethod
+    def _clamp_pitch(cls, v: object) -> object:
+        if v is None:
+            return None
+        try:
+            return max(0, min(127, int(v)))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+
+    @field_validator("velocity", mode="before")
+    @classmethod
+    def _clamp_velocity(cls, v: object) -> int:
+        try:
+            return max(1, min(127, int(v)))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 96
 
 
 class InstrumentPlan(BaseModel):
@@ -66,6 +84,8 @@ class InstrumentPlan(BaseModel):
     playing_style: str = ""
     onset_grid: str = ""
     max_notes_per_bar: int = 0
+    pitch_low: int = 0
+    pitch_high: int = 127
     notes: list[NotePlan] = Field(default_factory=list)
 
 
@@ -125,6 +145,13 @@ class InstrumentDecl(BaseModel):
     # Hard density budget per bar; 0 = unlimited. Deterministically
     # enforced after fills — "sparse" as a number instead of an adjective.
     max_notes_per_bar: int = Field(default=0, ge=0, le=64)
+    # The instrument's physical register, committed by the director
+    # ("bass: 28-52, not 0-127"). Fills that wander out get octave-folded
+    # back in — a bass sample two octaves above its range reads as a weird
+    # piano, which is exactly how register drift was perceived. (0, 127)
+    # means uncommitted; a per-family physical default applies then.
+    pitch_low: int = Field(default=0, ge=0, le=127)
+    pitch_high: int = Field(default=127, ge=0, le=127)
 
 
 class BandSkeleton(BaseModel):
@@ -190,6 +217,16 @@ def spec_from_skeleton(
     of the song is intact). Drums always get an empty list on the LLM side
     because they're synthesised deterministically downstream.
     """
+    # Dedupe roster ids: two items with the same id would share one fill and
+    # collide in the parts dict downstream.
+    seen: dict[str, int] = {}
+    deduped = []
+    for decl in skeleton.instruments:
+        base = decl.id or decl.instrument or "agent"
+        n = seen.get(base, 0)
+        seen[base] = n + 1
+        deduped.append(decl if n == 0 and decl.id else decl.model_copy(update={"id": f"{base}_{n + 1}" if n else base}))
+    skeleton = skeleton.model_copy(update={"instruments": deduped})
     return BandSpec(
         genre=skeleton.genre,
         rhythmic_feel=skeleton.rhythmic_feel,
@@ -211,6 +248,8 @@ def spec_from_skeleton(
                 playing_style=decl.playing_style,
                 onset_grid=decl.onset_grid,
                 max_notes_per_bar=decl.max_notes_per_bar,
+                pitch_low=decl.pitch_low,
+                pitch_high=decl.pitch_high,
                 notes=fills.get(decl.id, []),
             )
             for decl in skeleton.instruments

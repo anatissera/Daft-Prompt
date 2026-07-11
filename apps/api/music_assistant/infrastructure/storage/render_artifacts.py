@@ -19,3 +19,8 @@ def render_artifacts(song: SongState, job_dir: Path) -> None:
     song.errors = [issue.message for issue in errors_only(validate_song(song))]
     render_midi(song, str(job_dir / "song.mid"))
     render_musicxml(song, str(job_dir / "song.musicxml"))
+    # Persist the full SongState so later chat turns can EDIT this song
+    # ("transpose it up", "swap the piano for a rhodes") — the edit flow
+    # loads this by job_id, applies the operations, and re-renders into a
+    # fresh job.
+    (job_dir / "song.json").write_text(song.model_dump_json())

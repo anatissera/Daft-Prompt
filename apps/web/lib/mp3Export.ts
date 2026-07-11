@@ -3,7 +3,6 @@ import { buildMidiWithChannels, loadSoundBank, workletUrl } from "@/lib/spessasy
 
 const SAMPLE_RATE = 44100;
 const MP3_KBPS = 128;
-const MP3_FRAME = 1152; // lamejs encodes 1152 samples per MP3 frame.
 const TAIL_SECONDS = 2; // reverb tail after last note.
 
 async function renderSongToAudioBuffer(
@@ -46,33 +45,34 @@ async function renderSongToAudioBuffer(
   return offCtx.startRendering();
 }
 
-function floatToInt16(input: Float32Array): Int16Array {
-  const out = new Int16Array(input.length);
-  for (let i = 0; i < input.length; i++) {
-    const v = Math.max(-1, Math.min(1, input[i]));
-    out[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
-  }
-  return out;
-}
-
 async function audioBufferToMp3Blob(buf: AudioBuffer): Promise<Blob> {
-  const lame = await import("@breezystack/lamejs");
+  // Encoding happens in a Web Worker: lamejs is pure JS and a full song
+  // used to freeze the page for seconds when run on the main thread.
+  // Channel data is copied once (the AudioBuffer views aren't transferable)
+  // and moved into the worker; the MP3 bytes are transferred back.
   const channels = Math.min(2, buf.numberOfChannels);
-  const encoder = new lame.Mp3Encoder(channels, buf.sampleRate, MP3_KBPS);
-  const left = floatToInt16(buf.getChannelData(0));
-  const right = channels > 1 ? floatToInt16(buf.getChannelData(1)) : left;
+  const left = new Float32Array(buf.getChannelData(0));
+  const right = channels > 1 ? new Float32Array(buf.getChannelData(1)) : null;
 
-  const chunks: Uint8Array[] = [];
-  for (let i = 0; i < left.length; i += MP3_FRAME) {
-    const l = left.subarray(i, i + MP3_FRAME);
-    const r = right.subarray(i, i + MP3_FRAME);
-    const frame = encoder.encodeBuffer(l, r);
-    if (frame.length > 0) chunks.push(frame);
+  const worker = new Worker(new URL("./mp3Encoder.worker.ts", import.meta.url));
+  try {
+    const bytes = await new Promise<Uint8Array>((resolve, reject) => {
+      worker.onmessage = (e: MessageEvent<{ bytes?: Uint8Array; error?: string }>) => {
+        if (e.data.error) reject(new Error(e.data.error));
+        else resolve(e.data.bytes as Uint8Array);
+      };
+      worker.onerror = (e) => reject(new Error(e.message || "MP3 encoder worker failed"));
+      const transfers: Transferable[] = [left.buffer];
+      if (right) transfers.push(right.buffer);
+      worker.postMessage(
+        { left, right, sampleRate: buf.sampleRate, kbps: MP3_KBPS },
+        transfers,
+      );
+    });
+    return new Blob([bytes.buffer as ArrayBuffer], { type: "audio/mpeg" });
+  } finally {
+    worker.terminate();
   }
-  const tail = encoder.flush();
-  if (tail.length > 0) chunks.push(tail);
-  // Blob() accepts BlobPart[] — Uint8Array is one of them.
-  return new Blob(chunks as unknown as BlobPart[], { type: "audio/mpeg" });
 }
 
 export async function renderSongToMp3Blob(
