@@ -12,12 +12,14 @@ from music_assistant.domain.audio_profile import (
     EvidenceClaim,
     EvidenceConflict,
     MissingData,
+    PlayablePart,
     ReferenceProfile,
     ReferenceSource,
     ResearchEvidence,
     SongIdentity,
     SongKnowledgeProfile,
     SongSectionProfile,
+    ToneProfile,
 )
 from music_assistant.ports.song_researcher import ResearchPage
 from music_assistant.ports.song_source_connector import ConnectorResult, ResolvedSongQuery
@@ -81,6 +83,8 @@ class EvidenceFuser:
         results: list[ConnectorResult],
     ) -> SongKnowledgeProfile:
         claims = [claim for result in results for claim in result.claims]
+        playable_parts = _unique_playable_parts([part for result in results for part in result.playable_parts])
+        tone_profiles = _unique_tone_profiles([tone for result in results for tone in result.tone_profiles])
         sections = _build_sections(claims)
         conflicts = _build_conflicts(claims)
         summary = _confidence_summary(claims, conflicts)
@@ -103,9 +107,12 @@ class EvidenceFuser:
             ),
             evidence_claims=claims,
             sections=sections,
+            playable_parts=playable_parts,
+            tone_profiles=tone_profiles,
             conflicts=conflicts,
             missing_data=missing,
             confidence_summary=summary,
+            source_names=_source_names(results),
         )
 
 
@@ -240,6 +247,40 @@ def _missing_data(claims: list[EvidenceClaim], sections: list[SongSectionProfile
             )
         )
     return missing
+
+
+def _unique_playable_parts(parts: list[PlayablePart]) -> list[PlayablePart]:
+    seen: set[str] = set()
+    unique: list[PlayablePart] = []
+    for part in parts:
+        key = part.part_id
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(part)
+    return unique
+
+
+def _unique_tone_profiles(profiles: list[ToneProfile]) -> list[ToneProfile]:
+    seen: set[str] = set()
+    unique: list[ToneProfile] = []
+    for profile in profiles:
+        key = profile.tone_id
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(profile)
+    return unique
+
+
+def _source_names(results: list[ConnectorResult]) -> list[str]:
+    names: list[str] = []
+    for result in results:
+        if not (result.claims or result.playable_parts or result.tone_profiles or result.failures):
+            continue
+        if result.source_name not in names:
+            names.append(result.source_name)
+    return names
 
 
 def _aggregate_label(claims: list[EvidenceClaim]) -> str:

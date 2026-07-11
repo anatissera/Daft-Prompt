@@ -12,11 +12,16 @@ from music_assistant.domain.audio_profile import (
     AnalysisNote,
     AudioProfile,
     EvidenceClaim,
+    InstrumentTab,
+    PlayablePart,
     ReferenceProfile,
     ReferenceSource,
     ResearchEvidence,
     SongIdentity,
     SongKnowledgeProfile,
+    TabEventProfile,
+    TabMeasureProfile,
+    ToneProfile,
 )
 from music_assistant.infrastructure.web_research.connectors import (
     CifraClubConnector,
@@ -442,6 +447,8 @@ def _connector_result_from_songsterr_bundle(
     bundle: SongsterrTabBundle,
 ) -> ConnectorResult:
     claims: list[EvidenceClaim] = []
+    playable_parts: list[PlayablePart] = []
+    tone_profiles: list[ToneProfile] = []
     source_url = bundle.source_url
     if bundle.tempo_bpm is not None:
         claims.append(
@@ -480,13 +487,17 @@ def _connector_result_from_songsterr_bundle(
             )
         )
     for track in bundle.tracks:
+        family = _domain_instrument_family(track.instrument_family)
+        if family is None:
+            continue
+        track_claim_id = f"songsterr_track_{track.part_id}"
         summary = (
             f"{track.instrument_family.title()} tab loaded from Songsterr: "
             f"{track.name} ({len(track.measures)} measures, {track.note_count} note events)"
         )
         claims.append(
             _songsterr_bundle_claim(
-                f"songsterr_track_{track.part_id}",
+                track_claim_id,
                 "tab",
                 summary,
                 source_url,
@@ -494,6 +505,8 @@ def _connector_result_from_songsterr_bundle(
                 summary,
             )
         )
+        playable_parts.append(_playable_part_from_songsterr_track(track, family, track_claim_id, bundle))
+        tone_profiles.append(_tone_profile_from_songsterr_track(track, family, track_claim_id, source_url))
         if track.instrument_family in {"bass", "drums"}:
             groove = _track_groove_summary(track)
             claims.append(
@@ -517,7 +530,14 @@ def _connector_result_from_songsterr_bundle(
                 warning,
             )
         )
-    return ConnectorResult(source_name="Songsterr", query=resolved.model_copy(update={"source_url": source_url}), fetch_status="fetched", claims=claims)
+    return ConnectorResult(
+        source_name="Songsterr",
+        query=resolved.model_copy(update={"source_url": source_url}),
+        fetch_status="fetched",
+        claims=claims,
+        playable_parts=playable_parts,
+        tone_profiles=tone_profiles,
+    )
 
 
 def _songsterr_bundle_claim(
@@ -551,6 +571,128 @@ def _sections_from_bundle(bundle: SongsterrTabBundle) -> list[str]:
             if measure.marker and measure.marker not in sections:
                 sections.append(measure.marker)
     return sections
+
+
+def _playable_part_from_songsterr_track(track, family: str, claim_id: str, bundle: SongsterrTabBundle) -> PlayablePart:
+    source_url = track.source_url or bundle.source_url
+    measure_cap = 8
+    tab = InstrumentTab(
+        instrument=track.instrument,
+        instrument_family=family,  # type: ignore[arg-type]
+        track_name=track.name,
+        tuning=track.tuning,
+        measures=[
+            TabMeasureProfile(
+                index=measure.index,
+                marker=measure.marker,
+                time_signature=measure.signature,
+                events=[
+                    TabEventProfile(
+                        beat_index=float(event.beat_index),
+                        duration=event.duration,
+                        string=int(event.string) if event.string is not None else None,
+                        fret=event.fret,
+                        pitch=event.pitch,
+                        label=_tab_event_label(event),
+                        rest=event.rest,
+                        tie=event.tie,
+                        ghost=event.ghost,
+                    )
+                    for event in measure.events[:32]
+                ],
+            )
+            for measure in track.measures[:measure_cap]
+        ],
+        source_name="Songsterr",
+        source_url=source_url,
+        confidence=0.82,
+    )
+    hidden_measures = max(0, len(track.measures) - measure_cap)
+    notes = ["Full Songsterr payload is stored separately for detailed tab excerpts."]
+    if hidden_measures:
+        notes.append(f"Profile preview omits {hidden_measures} additional measures.")
+    return PlayablePart(
+        part_id=f"songsterr_{family}_{track.part_id}",
+        kind=_playable_kind_for_family(family),
+        instrument_family=family,  # type: ignore[arg-type]
+        title=f"{family.title()} tab: {track.name}",
+        summary=(
+            f"Songsterr {family} track with {len(track.measures)} measures "
+            f"and {track.note_count} note events."
+        ),
+        source_name="Songsterr",
+        source_url=source_url,
+        evidence_claim_ids=[claim_id],
+        tab=tab,
+        confidence=0.82,
+        rendering_notes=notes,
+    )
+
+
+def _tone_profile_from_songsterr_track(track, family: str, claim_id: str, source_url: str) -> ToneProfile:
+    patch_family = _track_patch_family(track, family)
+    return ToneProfile(
+        tone_id=f"songsterr_tone_{family}_{track.part_id}",
+        instrument=track.instrument or track.name or family,
+        family=family,  # type: ignore[arg-type]
+        description=f"Songsterr track label suggests {track.name or track.instrument or family}.",
+        patch_family=patch_family,
+        source_claim_ids=[claim_id],
+        source_name="Songsterr",
+        source_url=track.source_url or source_url,
+        confidence=0.52,
+    )
+
+
+def _tab_event_label(event) -> str:
+    if event.rest:
+        return "rest"
+    if event.fret is not None and event.string is not None:
+        return f"s{int(event.string)} f{event.fret}"
+    if event.pitch is not None:
+        return f"midi {event.pitch}"
+    return ""
+
+
+def _domain_instrument_family(value: str) -> str | None:
+    normalized = value.strip().lower()
+    aliases = {
+        "drum": "drums",
+        "drums": "drums",
+        "bass": "bass",
+        "guitar": "guitar",
+        "piano": "piano",
+        "keyboard": "piano",
+        "keys": "piano",
+    }
+    return aliases.get(normalized)
+
+
+def _playable_kind_for_family(family: str) -> str:
+    if family == "drums":
+        return "drum_tab"
+    if family == "bass":
+        return "bass_tab"
+    if family == "piano":
+        return "piano_keys"
+    return "guitar_tab"
+
+
+def _track_patch_family(track, family: str) -> str:
+    label = f"{track.name} {track.instrument}".lower()
+    if "synth" in label:
+        return "synth"
+    if family == "drums":
+        return "drum kit"
+    if family == "bass":
+        return "electric bass"
+    if family == "piano":
+        return "piano/keys"
+    if "acoustic" in label:
+        return "acoustic guitar"
+    if "clean" in label:
+        return "clean electric guitar"
+    return "electric guitar"
 
 
 def _songsterr_tab_index(bundle: SongsterrTabBundle) -> dict:

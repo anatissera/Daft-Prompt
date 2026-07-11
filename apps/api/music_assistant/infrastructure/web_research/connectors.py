@@ -6,7 +6,7 @@ import html
 import re
 from urllib.parse import quote_plus
 
-from music_assistant.domain.audio_profile import EvidenceClaim
+from music_assistant.domain.audio_profile import EvidenceClaim, PlayablePart
 from music_assistant.infrastructure.web_research.fetch import FallbackPageFetcher, HttpxPageFetcher, UrlLibPageFetcher
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_source_connector import (
@@ -153,10 +153,12 @@ class SongsterrConnector:
             return failure
 
         claims = _songsterr_claims(html_text, self.source_name, url)
+        playable_parts = _playable_parts_from_songsterr_claims(claims, self.source_name, url)
         metadata = _page_title(html_text)
         if metadata:
             claims.append(_claim("metadata", f"Songsterr page title: {metadata}", self.source_name, url, 0.5, metadata))
-        return _result_or_empty(self.source_name, query, claims, url, html_text)
+        result = _result_or_empty(self.source_name, query, claims, url, html_text)
+        return result.model_copy(update={"playable_parts": playable_parts}) if result.claims else result
 
 
 def _fetch_html(
@@ -427,6 +429,62 @@ def _songsterr_tab_label(instrument: str) -> str:
         "guitar": "Guitar",
     }
     return labels.get(instrument, "Generic")
+
+
+def _playable_parts_from_songsterr_claims(
+    claims: list[EvidenceClaim],
+    source_name: str,
+    url: str,
+) -> list[PlayablePart]:
+    parts: list[PlayablePart] = []
+    for claim in claims:
+        if claim.claim_type != "tab":
+            continue
+        kind = _playable_kind_from_text(claim.value)
+        if kind is None:
+            continue
+        family = _playable_family_from_kind(kind)
+        parts.append(
+            PlayablePart(
+                part_id=f"{claim.claim_id}_playable",
+                kind=kind,
+                instrument_family=family,
+                title=claim.value,
+                summary="Songsterr indicates this playable view is available; full notes load through the tab bundle path when available.",
+                source_name=source_name,
+                source_url=url,
+                evidence_claim_ids=[claim.claim_id],
+                confidence=claim.confidence,
+            )
+        )
+    return parts
+
+
+def _playable_kind_from_text(value: str):
+    normalized = value.lower()
+    if "bass" in normalized:
+        return "bass_tab"
+    if "drum" in normalized:
+        return "drum_tab"
+    if "piano" in normalized or "keyboard" in normalized or "keys" in normalized:
+        return "piano_keys"
+    if "guitar" in normalized:
+        return "guitar_tab"
+    if "chord" in normalized:
+        return "chord_chart"
+    return None
+
+
+def _playable_family_from_kind(kind: str):
+    if kind == "bass_tab":
+        return "bass"
+    if kind == "drum_tab":
+        return "drums"
+    if kind == "piano_keys":
+        return "piano"
+    if kind == "guitar_tab":
+        return "guitar"
+    return None
 
 
 def _detect_instruments(text: str) -> list[str]:

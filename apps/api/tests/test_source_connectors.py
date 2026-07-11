@@ -167,6 +167,7 @@ def test_songsterr_connector_extracts_instrument_tracks_and_tab_availability():
     assert any(claim.claim_type == "tab" and "Guitar tab available" in claim.value for claim in result.claims)
     assert any(claim.claim_type == "instrumentation" and "bass" in claim.value.lower() for claim in result.claims)
     assert any(claim.claim_type == "instrumentation" and "drums" in claim.value.lower() for claim in result.claims)
+    assert {"guitar_tab", "bass_tab", "drum_tab"} <= {part.kind for part in result.playable_parts}
     assert all(claim.source_name == "Songsterr" for claim in result.claims)
 
 
@@ -192,6 +193,7 @@ def test_songsterr_connector_extracts_search_result_tabs_without_global_filter_f
     assert any(claim.claim_type == "tab" and "Generic tab available" in claim.value for claim in result.claims)
     assert any(claim.claim_type == "tab" and "Bass tab available" in claim.value for claim in result.claims)
     assert any(claim.claim_type == "tab" and "Drum tab available" in claim.value for claim in result.claims)
+    assert {"bass_tab", "drum_tab"} <= {part.kind for part in result.playable_parts}
 
 
 def test_songsterr_connector_does_not_use_global_filters_as_instrument_evidence():
