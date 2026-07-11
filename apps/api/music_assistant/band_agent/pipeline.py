@@ -61,6 +61,7 @@ from .tools import (
     search_web,
 )
 from .tools.fallback_fill import llm_seeded_fill
+from .tools.song_evidence import gather_song_evidence
 from .tools.style_research import fetch_style_excerpts
 
 
@@ -69,6 +70,7 @@ class _AgentState(TypedDict, total=False):
     intent: IntentDecision
     research: list[dict[str, Any]]
     excerpts: list[dict[str, Any]]
+    song_evidence: dict[str, Any]
     corpus: dict[str, Any]
     skeleton: BandSkeleton
     fills: dict[str, list[NotePlan]]
@@ -98,8 +100,12 @@ def _research_node(state: _AgentState) -> _AgentState:
     # about instrumentation. NOTE: not a `with` block — the context manager's
     # __exit__ joins all workers, which silently turned the 8s result timeout
     # into "wait for the slowest page anyway".
-    pool = ThreadPoolExecutor(max_workers=1)
+    pool = ThreadPoolExecutor(max_workers=2)
     excerpts_fut = pool.submit(fetch_style_excerpts, research)
+    # Known-song evidence (MusicBrainz + tab/chord scrapers): only bites when
+    # the prompt names a real song; genre prompts fail the match threshold
+    # after one cheap API call.
+    evidence_fut = pool.submit(gather_song_evidence, style)
     pool.shutdown(wait=False)
     corpus = retrieve_corpus(style)
     inferred_genre: str | None = None
@@ -125,6 +131,10 @@ def _research_node(state: _AgentState) -> _AgentState:
         excerpts = excerpts_fut.result(timeout=8.0)
     except Exception:
         excerpts = []
+    try:
+        song_evidence = evidence_fut.result(timeout=14.0) or {}
+    except Exception:
+        song_evidence = {}
     events = state.get("events", []) + [
         {
             "type": "progress",
@@ -133,10 +143,21 @@ def _research_node(state: _AgentState) -> _AgentState:
                 f"found {len(research)} web hits, read {len(excerpts)} pages; "
                 f"{len(corpus.get('examples', []))} corpus exemplars"
                 + (f" (via inferred genre: {inferred_genre})" if inferred_genre else "")
+                + (
+                    f"; song evidence: {song_evidence.get('song')} "
+                    f"({len(song_evidence.get('claims', []))} claims)"
+                    if song_evidence else ""
+                )
             ),
         }
     ]
-    return {"research": research, "excerpts": excerpts, "corpus": corpus, "events": events}
+    return {
+        "research": research,
+        "excerpts": excerpts,
+        "song_evidence": song_evidence,
+        "corpus": corpus,
+        "events": events,
+    }
 
 
 def _skeleton_node(state: _AgentState) -> _AgentState:
@@ -149,6 +170,7 @@ def _skeleton_node(state: _AgentState) -> _AgentState:
                 {"results": state.get("research", [])},
                 state.get("corpus", {}),
                 excerpts=state.get("excerpts") or None,
+                song_evidence=state.get("song_evidence") or None,
             )
         ),
     ]

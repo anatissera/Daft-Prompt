@@ -30,7 +30,14 @@ class LocalArtifactStore:
         return path
 
     def url_for(self, base_url: str, job_id: str, filename: str) -> str:
-        return f"{base_url.rstrip('/')}/artifacts/{job_id}/{filename}"
+        # Relative URL, ignoring the backend-visible base. The backend only
+        # ever sees requests from the Next server-side proxy, so an absolute
+        # base would be "http://localhost:8000/…" — which breaks for any
+        # browser NOT on this machine (e.g. Tailscale access). Relative URLs
+        # resolve against the frontend origin and a Next rewrite proxies
+        # /artifacts/* to the backend.
+        del base_url
+        return f"/artifacts/{job_id}/{filename}"
 
 
 def _safe_segment(value: str) -> bool:
