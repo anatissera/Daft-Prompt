@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
@@ -107,14 +108,76 @@ class MusicTools:
         self.reference_store.save(profile)
         evidence_count = len(profile.knowledge.evidence_claims) if profile.knowledge else 0
         instrument_summary = _instrument_profile_summary(profile, self.songsterr_tab_store)
+        requested_info = _canonical_requested_info(payload.requested_info, payload.original_query or payload.query)
+        requested_answer, answered_request, requested_evidence = self._answer_requested_info(
+            profile,
+            requested_info,
+            payload.original_query or payload.query,
+        )
+        research_summary = " ".join(
+            part for part in [profile.summary or "", _research_song_answer(profile, instrument_summary)] if part
+        )
+        answer = " ".join(part for part in [requested_answer, research_summary] if part)
         return ResearchSongToolOutput(
             reference_id=profile.reference_id,
-            answer=_research_song_answer(profile, instrument_summary),
+            answer=answer,
             summary=profile.summary or "",
             evidence_count=evidence_count,
-            evidence=_profile_evidence_summary(profile),
+            evidence=[*requested_evidence, *_profile_evidence_summary(profile)],
             instrument_profile_summary=instrument_summary,
+            requested_info=requested_info,
+            answered_request=answered_request,
         )
+
+    def _answer_requested_info(
+        self,
+        profile: ReferenceProfile,
+        requested_info: list[str],
+        original_query: str,
+    ) -> tuple[str, bool, list[str]]:
+        """Answer the routed question immediately after saving fresh evidence.
+
+        Research is still useful as a secondary context summary, but it should
+        never be the only response when the router already knows the requested
+        fact. The same profile query tools used for follow-up questions keep the
+        first response deterministic and source-backed.
+        """
+        if profile.knowledge is None or not requested_info:
+            return "", False, []
+
+        answers: list[str] = []
+        evidence: list[str] = []
+        for item in requested_info:
+            if item == "chords":
+                result = self.profile_queries.chords(profile.knowledge, _section_from_request(original_query))
+            elif item in {"key", "tempo", "key_tempo"}:
+                result = self.profile_queries.key_bpm(profile.knowledge)
+            elif item in {"instruments", "instrumentation", "tone"}:
+                result = self.profile_queries.instrumentation(profile.knowledge)
+            elif item in {"sections", "structure", "form"}:
+                result = self.profile_queries.sections(profile.knowledge)
+            else:
+                continue
+            if result.answer and result.answer not in answers:
+                answers.append(result.answer)
+            evidence.extend(result.evidence)
+
+        if any(item.endswith("_tab") or item in {"tab", "playable_part", "tabs"} for item in requested_info):
+            instrument = _instrument_from_request(original_query)
+            tab = self.get_tab_excerpt(
+                TabExcerptToolInput(
+                    reference_id=profile.reference_id,
+                    instrument=instrument,
+                    section_name=_section_from_request(original_query),
+                )
+            )
+            if tab.answer:
+                answers.append(tab.answer)
+            evidence.extend(tab.evidence)
+
+        if not answers:
+            return "", False, evidence
+        return " ".join(answers), True, evidence
 
     def search_artist_or_band_profile(self, payload: ArtistStyleToolInput) -> ArtistStyleToolOutput:
         if self.artist_style_profile_builder is None:
@@ -573,6 +636,46 @@ def _research_song_answer(profile: ReferenceProfile, instrument_summary: list[di
     if instruments:
         bits.append("Loaded Songsterr instruments: " + ", ".join(instruments) + ".")
     return " ".join(bits) or "Research ready from source-backed evidence."
+
+
+def _canonical_requested_info(requested_info: list[str], query: str) -> list[str]:
+    values = [str(item).strip().lower().replace("-", "_") for item in requested_info if str(item).strip()]
+    if values:
+        return list(dict.fromkeys(values))
+    normalized = query.lower()
+    inferred: list[str] = []
+    if re.search(r"\b(chord|chords|progression|harmony|acorde|acordes|progresi[oó]n|armon[ií]a)\b", normalized):
+        inferred.append("chords")
+    if re.search(r"\b(key|tonality|tonal|tempo|bpm|scale|tonalidad|tono|escala)\b", normalized):
+        inferred.append("key_tempo")
+    if re.search(r"\b(tab|tabs|tablature|tablatura|riff|part)\b", normalized):
+        inferred.append(f"{_instrument_from_request(query)}_tab")
+    if re.search(r"\b(section|sections|structure|form|chorus|verse|bridge|secci[oó]n|estructura|forma)\b", normalized):
+        inferred.append("sections")
+    if re.search(r"\b(instrument|instruments|instrumentation|tone|timbre|sound)\b", normalized):
+        inferred.append("instrumentation")
+    return list(dict.fromkeys(inferred))
+
+
+def _section_from_request(query: str) -> str | None:
+    normalized = query.lower()
+    match = re.search(r"\b(chorus|verse|pre[- ]?chorus|bridge|intro|interlude|solo|outro)\s*(\d+)?\b", normalized)
+    if not match:
+        return None
+    return " ".join(part for part in [match.group(1).replace(" ", "-"), match.group(2)] if part)
+
+
+def _instrument_from_request(query: str) -> str:
+    normalized = query.lower()
+    for aliases, instrument in [
+        (("bass", "bajo"), "bass"),
+        (("drum", "drums", "batería", "bateria"), "drums"),
+        (("piano", "keyboard", "keys", "teclado"), "piano"),
+        (("guitar", "guitarra"), "guitar"),
+    ]:
+        if any(alias in normalized for alias in aliases):
+            return instrument
+    return "guitar"
 
 
 def _artist_style_tool_answer(profile: ArtistStyleProfile) -> str:

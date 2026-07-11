@@ -179,6 +179,21 @@ def test_research_song_tool_persists_profile_and_returns_compact_output():
     assert output.evidence_count == 1
 
 
+def test_research_song_answers_requested_chords_in_the_same_response():
+    output = _tools().research_song(
+        ResearchSongToolInput(
+            query="Space Cowboy by Jamiroquai",
+            requested_info=["chords"],
+            original_query="What chords does Space Cowboy by Jamiroquai have?",
+        )
+    )
+
+    assert output.answered_request is True
+    assert output.requested_info == ["chords"]
+    assert "Ebm7" in output.answer
+    assert output.answer.index("Ebm7") < output.answer.index("Identified")
+
+
 def test_research_song_explains_how_to_leave_offline_mode_without_calling_provider():
     researcher = FakeResearcher()
     tools = MusicTools(

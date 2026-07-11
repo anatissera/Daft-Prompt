@@ -27,6 +27,7 @@ from music_assistant.application.music_tool_models import (
     ChatAgentDecision as ChatToolDecision,
     CompositionRequestToolInput,
     CompositionToolOutput,
+    ResearchSongToolInput,
     TabExcerptEvent,
     TabExcerptMeasure,
     TabExcerptToolInput,
@@ -424,14 +425,38 @@ class ChatMusic:
                     clarification="Configure song research connectors or ask for a composition from text.",
                 )
             query = _RESEARCH_PREFIX_RE.sub("", message).strip() or message
-            researched = self.song_researcher.research(query)
-            self.reference_store.save(researched)
+            tools = MusicTools(
+                reference_store=self.reference_store,
+                answer_music_question=self.answer_music_question,
+                song_researcher=self.song_researcher,
+                songsterr_tab_store=self.songsterr_tab_store,
+                enable_web_research=self.enable_web_research,
+            )
+            researched = tools.research_song(
+                ResearchSongToolInput(
+                    query=query,
+                    requested_info=_requested_info_from_message(message),
+                    original_query=message,
+                )
+            )
+            if researched.error:
+                return ChatResponse(
+                    intent="clarify",
+                    reply=researched.answer,
+                    clarification=researched.answer,
+                    error={"code": researched.error, "message": researched.answer},
+                )
+            profile = self.reference_store.get(researched.reference_id) if researched.reference_id else None
             return ChatResponse(
                 intent="answer_reference",
-                reply=_research_ready_reply(researched),
+                reply=researched.answer,
                 reference_id=researched.reference_id,
-                reference_label=_reference_label(researched),
-                diagnostics=_response_diagnostics(researched, route="deterministic_research", responder="research_summary"),
+                reference_label=_reference_label(profile) if profile else None,
+                diagnostics={
+                    **_response_diagnostics(profile, route="deterministic_research", responder="requested_query"),
+                    "requested_info": researched.requested_info,
+                    "answered_request": researched.answered_request,
+                },
             )
 
         if intent == "answer_reference":
@@ -826,6 +851,22 @@ def _composition_warnings(song: SongState) -> list[str]:
 
 def _is_chord_question(message: str) -> bool:
     return bool(re.search(r"\b(chord|chords|progression|harmony|harmonic|acorde|acordes|progresi[oó]n|armon[ií]a)\b", message, re.IGNORECASE))
+
+
+def _requested_info_from_message(message: str) -> list[str]:
+    normalized = message.lower()
+    requested: list[str] = []
+    if _is_chord_question(message):
+        requested.append("chords")
+    if re.search(r"\b(key|tonality|tonal|tempo|bpm|scale|tonalidad|tono|escala)\b", normalized):
+        requested.append("key_tempo")
+    if _is_tab_request(message):
+        requested.append("tab")
+    if re.search(r"\b(section|sections|structure|form|chorus|verse|bridge|secci[oó]n|estructura|forma)\b", normalized):
+        requested.append("sections")
+    if re.search(r"\b(instrument|instruments|instrumentation|tone|timbre|sound)\b", normalized):
+        requested.append("instrumentation")
+    return requested
 
 
 

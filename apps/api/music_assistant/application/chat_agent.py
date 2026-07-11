@@ -125,6 +125,7 @@ class ChatAgent:
                 TabExcerptToolInput(
                     reference_id=_required_reference(reference_id),
                     instrument=decision.instrument or "guitar",
+                    section_name=decision.section_name,
                     start_measure=decision.start_measure or 0,
                     measure_count=decision.measure_count or 4,
                 )

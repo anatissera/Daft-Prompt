@@ -101,6 +101,7 @@ class InstrumentSummaryToolInput(SongReferenceToolInput):
 
 class TabExcerptToolInput(SongReferenceToolInput):
     instrument: str = Field(min_length=1)
+    section_name: Optional[str] = None
     start_measure: int = Field(default=0, ge=0)
     measure_count: int = Field(default=4, ge=1, le=8)
 
@@ -125,6 +126,8 @@ class ResearchSongToolOutput(ToolOutput):
     tool: str = "research_song"
     evidence_count: int = 0
     instrument_profile_summary: list[dict] = Field(default_factory=list)
+    requested_info: list[str] = Field(default_factory=list)
+    answered_request: bool = False
 
 
 class ArtistStyleToolOutput(ToolOutput):
