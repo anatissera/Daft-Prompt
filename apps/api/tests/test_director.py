@@ -153,6 +153,93 @@ def test_midi_range_is_normalized():
     assert song.roster[0].midi_range == (40, 60)
 
 
+def test_semantic_patch_resolves_roster_timbre():
+    out = _full_output()
+    out.instruments[2] = ArrangementInstrument(
+        id="guitar",
+        instrument="electric_guitar",
+        patch="distortion_guitar",
+        midi_program=0,
+        midi_low=40,
+        midi_high=84,
+        role="riff",
+        playing_style="Power chords.",
+    )
+    out.composition_groups[1] = CompositionGroup(name="harmony", instrument_ids=["guitar"], max_negotiation_rounds=0)
+
+    song = arrangement_to_song("heavy rock", out)
+
+    guitar = next(item for item in song.roster if item.id == "guitar")
+    assert guitar.patch == "distortion_guitar"
+    assert guitar.midi_program == 30
+    assert guitar.synth_preset is None
+
+
+def test_native_synth_patch_keeps_gm_fallback_until_frontend_synth_layer_uses_preset():
+    out = _full_output()
+    out.instruments[2] = ArrangementInstrument(
+        id="pad",
+        instrument="warm_pad",
+        patch="warm_pad",
+        midi_program=0,
+        midi_low=48,
+        midi_high=84,
+        role="sustained synth texture",
+        playing_style="Slow attack chords.",
+    )
+    out.composition_groups[1] = CompositionGroup(name="texture", instrument_ids=["pad"], max_negotiation_rounds=0)
+
+    song = arrangement_to_song("synthwave pad texture", out)
+
+    pad = next(item for item in song.roster if item.id == "pad")
+    assert pad.patch == "warm_pad"
+    assert pad.midi_program == 89
+    assert pad.synth_preset == "warm_pad"
+
+
+def test_patch_family_mismatch_is_reconciled_before_roster_materialization():
+    out = _full_output()
+    out.instruments[2] = ArrangementInstrument(
+        id="guitar",
+        instrument="guitar",
+        patch="electric_grand_piano",
+        midi_program=2,
+        midi_low=40,
+        midi_high=84,
+        role="riff",
+        playing_style="Power chords.",
+    )
+    out.composition_groups[1] = CompositionGroup(name="harmony", instrument_ids=["guitar"], max_negotiation_rounds=0)
+
+    song = arrangement_to_song("heavy rock", out)
+
+    guitar = next(item for item in song.roster if item.id == "guitar")
+    assert guitar.patch == "clean_electric_guitar"
+    assert guitar.midi_program == 27
+
+
+def test_roots_genre_drops_unrequested_electronic_patch_without_midi_program_hint():
+    out = DirectorOutput(
+        genre="grunge",
+        key="E minor",
+        instruments=[
+            ArrangementInstrument(id="drums", instrument="drum_kit", role="backbeat", playing_style="Heavy backbeat.", is_drum=True),
+            ArrangementInstrument(id="bass", instrument="electric_bass", midi_program=33, role="low end", playing_style="Lock to the kick."),
+            ArrangementInstrument(id="guitar", instrument="distortion_guitar", patch="distortion_guitar", role="riff", playing_style="Power-chord riff."),
+            ArrangementInstrument(id="pad", instrument="ambient texture", patch="warm_pad", role="texture", playing_style="Sustained pad."),
+        ],
+        composition_groups=[
+            CompositionGroup(name="rhythm", instrument_ids=["drums", "bass"]),
+            CompositionGroup(name="layers", instrument_ids=["guitar", "pad"]),
+        ],
+    )
+
+    song = arrangement_to_song("raw grunge rock", out)
+
+    assert {item.id for item in song.roster} == {"drums", "bass", "rhythm_guitar"}
+    assert all("pad" not in group.instrument_ids for group in song.composition_groups)
+
+
 def test_director_clamps_bar_count_and_sections():
     out = _output(3)
     out.num_bars = 160

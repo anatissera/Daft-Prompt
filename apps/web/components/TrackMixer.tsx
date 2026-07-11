@@ -272,7 +272,7 @@ function buildRows(song: SongState): TrackRow[] {
   return Object.entries(song.parts).map(([partId]) => {
     const roster = rosterById.get(partId) ?? {
       id: partId, instrument: partId, is_drum: false,
-      midi_program: 0, midi_range: [0, 127] as [number, number], role: "",
+      midi_program: 0, midi_range: [0, 127] as [number, number], role: "", playing_style: "",
     };
     return { id: partId, roster, events: events[partId] ?? [] };
   });

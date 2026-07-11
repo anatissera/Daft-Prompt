@@ -5,12 +5,137 @@ export interface Section {
   name: string;
   start_bar: number;
   end_bar: number;
+  energy: "low" | "medium" | "high";
 }
 
 export interface ChordSpan {
   bar: number;
   chord: string;
 }
+
+export interface CompositionGroup {
+  name: string;
+  instrument_ids: string[];
+  max_negotiation_rounds: number;
+}
+
+export type Patch =
+  | "acoustic_guitar_nylon"
+  | "acoustic_guitar_steel"
+  | "jazz_electric_guitar"
+  | "clean_electric_guitar"
+  | "muted_electric_guitar"
+  | "overdriven_guitar"
+  | "distortion_guitar"
+  | "guitar_harmonics"
+  | "acoustic_bass"
+  | "electric_bass"
+  | "pick_bass"
+  | "fretless_bass"
+  | "slap_bass"
+  | "gm_synth_bass"
+  | "gm_synth_bass_2"
+  | "acoustic_grand_piano"
+  | "bright_acoustic_piano"
+  | "electric_grand_piano"
+  | "honky_tonk_piano"
+  | "electric_piano_rhodes"
+  | "electric_piano_dx"
+  | "harpsichord"
+  | "clavinet"
+  | "celesta"
+  | "glockenspiel"
+  | "music_box"
+  | "vibraphone"
+  | "marimba"
+  | "xylophone"
+  | "tubular_bells"
+  | "dulcimer"
+  | "hammond_organ"
+  | "percussive_organ"
+  | "rock_organ"
+  | "church_organ"
+  | "reed_organ"
+  | "accordion"
+  | "harmonica"
+  | "tango_accordion"
+  | "violin"
+  | "viola"
+  | "cello"
+  | "contrabass"
+  | "tremolo_strings"
+  | "pizzicato_strings"
+  | "orchestral_harp"
+  | "timpani"
+  | "string_ensemble"
+  | "gm_synth_strings"
+  | "choir_aahs"
+  | "voice_oohs"
+  | "orchestra_hit"
+  | "trumpet"
+  | "trombone"
+  | "tuba"
+  | "muted_trumpet"
+  | "french_horn"
+  | "brass_section"
+  | "soprano_sax"
+  | "alto_sax"
+  | "tenor_sax"
+  | "baritone_sax"
+  | "oboe"
+  | "english_horn"
+  | "bassoon"
+  | "clarinet"
+  | "piccolo"
+  | "flute"
+  | "recorder"
+  | "pan_flute"
+  | "blown_bottle"
+  | "shakuhachi"
+  | "whistle"
+  | "ocarina"
+  | "gm_square_lead"
+  | "gm_sawtooth_lead"
+  | "gm_calliope_lead"
+  | "gm_chiff_lead"
+  | "gm_charang_lead"
+  | "gm_voice_lead"
+  | "gm_fifths_lead"
+  | "gm_bass_lead"
+  | "gm_new_age_pad"
+  | "gm_warm_pad"
+  | "gm_polysynth_pad"
+  | "gm_choir_pad"
+  | "gm_bowed_pad"
+  | "gm_metallic_pad"
+  | "gm_halo_pad"
+  | "gm_sweep_pad"
+  | "gm_fx_crystal"
+  | "gm_fx_atmosphere"
+  | "gm_fx_echoes"
+  | "sitar"
+  | "banjo"
+  | "shamisen"
+  | "koto"
+  | "kalimba"
+  | "bagpipe"
+  | "fiddle"
+  | "shanai"
+  | "tinkle_bell"
+  | "agogo"
+  | "steel_drums"
+  | "woodblock"
+  | "taiko_drum"
+  | "melodic_tom"
+  | "synth_drum"
+  | "supersaw_lead"
+  | "sub_bass"
+  | "pluck"
+  | "warm_pad"
+  | "vocal_fx"
+  | "wobble_bass";
+
+export type SynthPreset = "supersaw_lead" | "sub_bass" | "pluck" | "warm_pad" | "vocal_fx" | "wobble_bass";
 
 export interface Header {
   genre: string;
@@ -25,10 +150,13 @@ export interface Header {
 export interface RosterItem {
   id: string;
   instrument: string;
+  patch?: Patch | null;
   midi_program: number;
   midi_range: [number, number];
   role: string;
+  playing_style: string;
   is_drum: boolean;
+  synth_preset?: SynthPreset | null;
 }
 
 export interface Note {
@@ -65,6 +193,7 @@ export interface SongState {
   roster: RosterItem[];
   parts: Record<string, Part>;
   negotiation_requests: NegotiationRequest[];
+  composition_groups: CompositionGroup[];
   round: number;
   converged: boolean;
   errors: string[];

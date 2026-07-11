@@ -15,6 +15,14 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from ..domain.errors import OffTopicRequest
+from ..domain.patch import (
+    PATCH_SPEC,
+    Patch,
+    UnknownPatchError,
+    is_native_synth_patch,
+    reconcile_patch,
+    resolve_patch,
+)
 from ..domain.song_state import (
     ChordSpan,
     CompositionGroup,
@@ -39,6 +47,14 @@ MAX_BARS = 32
 class ArrangementInstrument(BaseModel):
     id: str = Field(description="short unique id, e.g. 'bass', 'lead_synth'")
     instrument: str = Field(description="human name, e.g. 'electric_bass'")
+    patch: Optional[Patch] = Field(
+        None,
+        description=(
+            "Optional semantic timbre name from the closed Patch vocabulary. "
+            "When provided, the backend resolves it to midi_program and an optional synth preset. "
+            "Leave null only when unsure; midi_program remains the fallback."
+        ),
+    )
     midi_program: int = Field(0, ge=0, le=127, description="General MIDI program")
     midi_low: int = Field(0, ge=0, le=127)
     midi_high: int = Field(127, ge=0, le=127)
@@ -111,6 +127,7 @@ Otherwise set off_topic=false and, given a style description, produce a complete
 3. CHORD PROGRESSION: one ChordSpan per bar covering every bar (0..num_bars-1). Use chord names like "Dm7", "G7", "Cm9". Chords must fit the key and genre idiom.
 
 4. INSTRUMENTATION: First choose the smallest ensemble capable of an authentic arrangement, then return {MIN_ROSTER}-{MAX_ROSTER} instruments. A solo or duo is valid. Silence and omitted layers are valid; never add an instrument merely because an agent is available. For each instrument:
+   - When possible, set `patch` to a semantic timbre from the closed Patch vocabulary. This avoids GM-number mistakes. If `patch` is set, it is the source of truth for playback; keep `midi_program` compatible as a fallback.
    - A General MIDI program number and a sensible MIDI pitch range for that instrument in that register (e.g. bass: 28-55, not 0-127).
    - Its musical role. All percussion must be a single drum-kit roster item with is_drum=true — do NOT create separate entries for kick, snare, hi-hat, cymbals, or toms; those are MIDI pitches inside the one kit.
    - A concise stylistic justification in its role or playing_style: explain why this genre/request needs that voice. Every instrument must have a distinct purpose.
@@ -406,6 +423,7 @@ def _remove_unrequested_electronic_textures(
         item.id
         for item in items
         if 80 <= item.midi_program <= 103
+        or _is_electronic_patch(item.patch)
         or _EXPLICIT_ELECTRONIC_RE.search(f"{item.id} {item.instrument} {item.role}")
     }
     kept = [item for item in items if item.id not in removable]
@@ -416,6 +434,18 @@ def _remove_unrequested_electronic_textures(
         for group in groups
     ]
     return kept, [group for group in filtered_groups if group.instrument_ids]
+
+
+def _is_electronic_patch(patch: Patch | None) -> bool:
+    if patch is None:
+        return False
+    value = str(patch)
+    if is_native_synth_patch(value):
+        return True
+    spec = PATCH_SPEC.get(value)
+    if not spec:
+        return False
+    return value.startswith("gm_") and any(token in value for token in ("lead", "pad", "synth", "fx"))
 
 
 def _clamp_num_bars(value: int) -> int:
@@ -491,15 +521,7 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
         ),
     )
     roster = [
-        RosterItem(
-            id=i.id,
-            instrument=i.instrument,
-            midi_program=i.midi_program,
-            midi_range=(min(i.midi_low, i.midi_high), max(i.midi_low, i.midi_high)),
-            role=i.role,
-            playing_style=i.playing_style,
-            is_drum=i.is_drum,
-        )
+        _roster_item_from_arrangement(i)
         for i in clamped_instruments
     ]
     return SongState(
@@ -508,6 +530,30 @@ def arrangement_to_song(style: str, out: DirectorOutput) -> SongState:
         roster=roster,
         parts={},
         composition_groups=groups,
+    )
+
+
+def _roster_item_from_arrangement(item: ArrangementInstrument) -> RosterItem:
+    patch = reconcile_patch(item.instrument, str(item.patch)) if item.patch else None
+    midi_program = item.midi_program
+    synth_preset = None
+    if patch:
+        try:
+            midi_program, synth_preset = resolve_patch(patch)
+        except UnknownPatchError:
+            patch = None
+            synth_preset = None
+            midi_program = item.midi_program
+    return RosterItem(
+        id=item.id,
+        instrument=item.instrument,
+        patch=patch,
+        midi_program=midi_program,
+        midi_range=(min(item.midi_low, item.midi_high), max(item.midi_low, item.midi_high)),
+        role=item.role,
+        playing_style=item.playing_style,
+        is_drum=item.is_drum,
+        synth_preset=synth_preset,
     )
 
 

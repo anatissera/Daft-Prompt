@@ -6,6 +6,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from .patch import Patch, SynthPreset
+
 
 class Section(BaseModel):
     name: str
@@ -40,11 +42,13 @@ class Header(BaseModel):
 class RosterItem(BaseModel):
     id: str
     instrument: str
+    patch: Optional[Patch] = None
     midi_program: int = 0
     midi_range: tuple[int, int] = (0, 127)
     role: str = ""
     playing_style: str = ""
     is_drum: bool = False
+    synth_preset: Optional[SynthPreset] = None
 
 
 class Note(BaseModel):
