@@ -140,7 +140,7 @@ export interface TabExcerpt {
 export interface ChordChartRow { label: string; chords: string[]; confidence: number; }
 
 export interface ChatResponse {
-  intent: "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
+  intent: "answer_reference" | "compose" | "compose_from_reference" | "artist_style" | "clarify" | "off_topic";
   reply: string;
   reference_id?: string | null;
   reference_label?: string | null;

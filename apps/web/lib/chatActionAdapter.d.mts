@@ -1,5 +1,5 @@
 import type { ChatMessage, FeedEvent } from "./chatTypes";
-import type { ChordChartRow, ComposeResponse, Header, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "./types";
+import type { ArtistStyleProfile, ChordChartRow, ComposeResponse, Header, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "./types";
 
 export type ChatAction =
   | { type: "analyze"; messageText: string }
@@ -59,9 +59,11 @@ export function buildChatRequestPayload(input: {
   activeReferenceId?: string | null;
   currentSong?: SongState | null;
   conversationContext?: string;
+  artistStyleProfiles?: ArtistStyleProfile[];
 }): {
   message: string;
   reference_id: string | null;
   current_song?: SongState;
   conversation_context?: string;
+  artist_style_profiles?: ArtistStyleProfile[];
 };

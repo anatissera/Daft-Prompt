@@ -7,12 +7,14 @@ from typing import Optional
 import pytest
 
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
+from music_assistant.application.artist_style_profile import ArtistStyleProfileResult
 from music_assistant.application.chat_agent import ChatAgentResult
 from music_assistant.application.chat_music import ChatMusic, ChatRequest
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
 from music_assistant.application.music_tool_models import TabExcerptEvent, TabExcerptMeasure, TabExcerptToolOutput
 from music_assistant.canned import canned_song
 from music_assistant.domain.audio_profile import (
+    ArtistStyleProfile,
     AudioProfile,
     ChordEstimate,
     ExplanationAnswer,
@@ -55,12 +57,12 @@ def _make_profile(reference_id: str = "ref_demo") -> ReferenceProfile:
 
 class _RecordingComposer:
     def __init__(self) -> None:
-        self.calls: list[str] = []
+        self.calls: list[object] = []
         self.revision_calls: list[tuple[str, str]] = []
 
-    def compose(self, style: str) -> tuple[SongState, str]:
+    def compose(self, style) -> tuple[SongState, str]:
         self.calls.append(style)
-        return canned_song(style), "canned"
+        return canned_song(getattr(style, "user_request", style)), "canned"
 
     def revise_instrument(self, song: SongState, instruction: str, instrument_id: str) -> tuple[SongState, str]:
         self.revision_calls.append((instruction, instrument_id))
@@ -93,6 +95,7 @@ def _make_chat(
     explainer: Optional[_CountingExplainer] = None,
     chat_model=None,
     song_researcher=None,
+    artist_style_profile_builder=None,
     enable_web_research: bool = True,
     songsterr_tab_store=None,
 ) -> tuple[ChatMusic, _RecordingComposer, _CountingExplainer, InMemoryReferenceStore]:
@@ -106,6 +109,7 @@ def _make_chat(
         chat_model=chat_model,
         song_researcher=song_researcher,
         songsterr_tab_store=songsterr_tab_store,
+        artist_style_profile_builder=artist_style_profile_builder,
         enable_web_research=enable_web_research,
     )
     return chat, composer, explainer, store
@@ -121,6 +125,23 @@ class _ComposerUnavailable:
         raise ComposeConfigurationError()
 
 
+class _ArtistStyleBuilder:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.profile = ArtistStyleProfile(
+            profile_id="artist_fixture_band",
+            artist_name="Fixture Band",
+            genre_tags=["alt pop"],
+            common_progressions=["i - VI - III - VII"],
+            typical_instruments=["drums", "bass", "piano"],
+            confidence=0.7,
+        )
+
+    def execute(self, request):
+        self.calls.append(str(request))
+        return ArtistStyleProfileResult(profile=self.profile)
+
+
 def test_compose_intent_when_no_reference_and_no_question_topic():
     chat, composer, explainer, _ = _make_chat()
 
@@ -131,6 +152,49 @@ def test_compose_intent_when_no_reference_and_no_question_topic():
     assert response.compose.source == "canned"
     assert composer.calls == ["compose a sad piano sketch"]
     assert explainer.calls == []
+
+
+def test_artist_style_profile_request_returns_profile_context():
+    builder = _ArtistStyleBuilder()
+    chat, composer, _, _ = _make_chat(artist_style_profile_builder=builder)
+
+    response = chat.handle(ChatRequest(message="style profile for Fixture Band"))
+
+    assert response.intent == "artist_style"
+    assert response.artist_style_profiles[0].artist_name == "Fixture Band"
+    assert response.compose is None
+    assert composer.calls == []
+
+
+def test_artist_similarity_composition_builds_profile_and_passes_brief():
+    builder = _ArtistStyleBuilder()
+    chat, composer, _, _ = _make_chat(artist_style_profile_builder=builder)
+
+    response = chat.handle(ChatRequest(message="compose something similar to Fixture Band with a funk bassline"))
+
+    assert response.intent == "compose"
+    assert response.compose is not None
+    assert response.artist_style_profiles[0].profile_id == "artist_fixture_band"
+    assert builder.calls == ["Fixture Band"]
+    brief = composer.calls[0]
+    assert getattr(brief, "artist_style_profile_ids") == ["artist_fixture_band"]
+
+
+def test_artist_style_followup_reuses_profile_from_chat_context():
+    builder = _ArtistStyleBuilder()
+    chat, composer, _, _ = _make_chat()
+
+    response = chat.handle(
+        ChatRequest(
+            message="compose more like them, but slower",
+            artist_style_profiles=[builder.profile],
+        )
+    )
+
+    assert response.intent == "compose"
+    assert response.artist_style_profiles[0].artist_name == "Fixture Band"
+    brief = composer.calls[0]
+    assert getattr(brief, "artist_style_profile_ids") == ["artist_fixture_band"]
 
 
 def test_no_provider_getting_started_question_returns_useful_local_guidance():

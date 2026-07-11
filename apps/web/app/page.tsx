@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
-import type { AnalysisEvent, ChordChartRow, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "@/lib/types";
+import type { AnalysisEvent, ArtistStyleProfile, ChordChartRow, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "@/lib/types";
 import { getAnalysisReadyMessage } from "@/lib/referenceProfileView.mjs";
 import {
   createAnalysisProgress,
@@ -26,7 +26,7 @@ import {
 import { deriveSessionTitle } from "@/lib/sessionTitle.mjs";
 import { classifyChatWorkflow, workflowBusyLabel, type ChatWorkflow } from "@/lib/workflowProgress.mjs";
 
-type Intent = "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
+type Intent = "answer_reference" | "compose" | "compose_from_reference" | "artist_style" | "clarify" | "off_topic";
 
 interface UsageInfo {
   input_tokens?: number;
@@ -62,6 +62,7 @@ interface ChatResponse {
   chord_chart?: ChordChartRow[];
   melody_preview?: MelodyProfile | null;
   compose?: ChatComposeResult | null;
+  artist_style_profiles?: ArtistStyleProfile[];
   clarification?: string | null;
   usage?: UsageInfo | null;
   error?: { message?: string; code?: string; provider?: string | null; model?: string | null } | null;
@@ -87,6 +88,7 @@ export default function Home() {
   const [referenceProfile, setReferenceProfile] = useState<ReferenceProfile | null>(null);
   const [activeReference, setActiveReference] = useState<{ referenceId: string; label: string } | null>(null);
   const [currentSong, setCurrentSong] = useState<SongState | null>(null);
+  const [artistStyleProfiles, setArtistStyleProfiles] = useState<ArtistStyleProfile[]>([]);
   const [activeWork, setActiveWork] = useState<string | null>(null);
   const [activeWorkflow, setActiveWorkflow] = useState<ChatWorkflow | null>(null);
   const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
@@ -183,6 +185,7 @@ export default function Home() {
           activeReferenceId: activeReference?.referenceId ?? referenceProfile?.reference_id ?? null,
           currentSong,
           conversationContext: buildConversationContext(messages),
+          artistStyleProfiles,
         })),
       });
       if (!res.ok) throw new Error(await readApiError(res));
@@ -196,6 +199,7 @@ export default function Home() {
       maybeTitleSession(message);
       const rememberedReference = referenceMemoryFromChatResponse(data, message);
       if (rememberedReference) setActiveReference(rememberedReference);
+      if (data.artist_style_profiles?.length) setArtistStyleProfiles(data.artist_style_profiles);
       if (data.tab_excerpt) {
         appendMessage({ ...createTabMessage("assistant", data.reply, data.tab_excerpt, idx), meta });
       } else if (data.melody_preview) {

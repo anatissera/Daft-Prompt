@@ -16,6 +16,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 from music_assistant.application.answer_music_question import AnswerMusicQuestion, MusicQuestionExplainer
+from music_assistant.application.artist_style_profile import BuildArtistStyleProfile
 from music_assistant.application.chat_agent import ChatAgent
 from music_assistant.application.composition_brief import BuildCompositionBrief
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
@@ -46,6 +47,7 @@ Intent = Literal[
     "research_song",
     "compose",
     "compose_from_reference",
+    "artist_style",
     "clarify",
     "off_topic",
 ]
@@ -135,6 +137,28 @@ _REFERENCE_GUIDE_RE = re.compile(
     r"|como\s+(esta|ésta|la)\s+(referencia|canci[oó]n|tema)|basad[oa]\s+en\s+(esta|la)\s+(referencia|canci[oó]n|tema)|usando\s+(esta|la)\s+(referencia|canci[oó]n|tema)|con\s+la\s+misma\s+(energ[ií]a|onda|vibra|estilo)|en\s+este\s+estilo)\b",
     re.IGNORECASE,
 )
+_ARTIST_STYLE_FOLLOWUP_RE = re.compile(
+    r"\b(like\s+them|like\s+that\s+(artist|band)|their\s+style|more\s+like\s+them|"
+    r"como\s+ellos|como\s+esa\s+banda|m[aá]s\s+como\s+ellos)\b",
+    re.IGNORECASE,
+)
+_ARTIST_STYLE_PATTERNS = [
+    re.compile(
+        r"\b(?:similar\s+to|in\s+the\s+style\s+of|more\s+like|like)\s+(.+?)"
+        r"(?=\s+(?:with|but|while|without|and)\b|[,.!?]|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:style\s+profile\s+for|profile\s+the\s+style\s+of|profile|sound\s+of)\s+(.+?)"
+        r"(?=[,.!?]|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:estilo\s+de|parecido\s+a|como)\s+(.+?)"
+        r"(?=\s+(?:con|pero|sin|y)\b|[,.!?]|$)",
+        re.IGNORECASE,
+    ),
+]
 
 
 class ChatMusic:
@@ -147,6 +171,7 @@ class ChatMusic:
         chat_model: ChatModel | None = None,
         song_researcher: SongResearcher | None = None,
         songsterr_tab_store: SongsterrTabStore | None = None,
+        artist_style_profile_builder: BuildArtistStyleProfile | None = None,
         enable_web_research: bool = True,
     ) -> None:
         self.compose_song = compose_song
@@ -155,6 +180,7 @@ class ChatMusic:
         self.chat_model = chat_model
         self.song_researcher = song_researcher
         self.songsterr_tab_store = songsterr_tab_store
+        self.artist_style_profile_builder = artist_style_profile_builder
         self.enable_web_research = enable_web_research
 
     def handle(self, request: ChatRequest) -> ChatResponse:
@@ -190,6 +216,27 @@ class ChatMusic:
         profiles = _profiles_from_request(request, self.reference_store)
         if profile is None and profiles:
             profile = profiles[0]
+
+        if request.artist_style_profiles and _wants_existing_artist_style(message):
+            return self._compose_from_artist_style(message, request.artist_style_profiles[-1])
+
+        artist_target = _artist_style_target(message)
+        if artist_target is not None:
+            if self.artist_style_profile_builder is None:
+                return ChatResponse(
+                    intent="clarify",
+                    reply="Artist style profiling is not configured on this server yet.",
+                    clarification="Configure artist style profiling or ask for a direct composition.",
+                )
+            result = self.artist_style_profile_builder.execute(artist_target)
+            if _COMPOSE_RE.search(message):
+                return self._compose_from_artist_style(message, result.profile)
+            return ChatResponse(
+                intent="artist_style",
+                reply=_artist_style_reply(result.profile),
+                artist_style_profiles=[result.profile],
+                diagnostics={"route": "deterministic_artist_style", "artist": result.profile.artist_name},
+            )
 
         if profile is not None and _is_tab_request(message):
             tools = MusicTools(
@@ -409,6 +456,23 @@ class ChatMusic:
             compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
         )
 
+    def _compose_from_artist_style(self, message: str, profile: ArtistStyleProfile) -> ChatResponse:
+        built = BuildCompositionBrief().execute(message, [], artist_style_profiles=[profile])
+        assert built.brief is not None
+        try:
+            song, source = self.compose_song.compose(built.brief)
+        except OffTopicRequest as refusal:
+            return _off_topic_response(refusal)
+        except ComposeConfigurationError as exc:
+            return _compose_unavailable_response(exc.code, user_message=message)
+        return ChatResponse(
+            intent="compose",
+            reply=_compose_reply(song, source, spanish=is_spanish(message)),
+            compose=ChatComposeResult(song=song, source=source, warnings=_composition_warnings(song)),
+            artist_style_profiles=[profile],
+            diagnostics={"route": "deterministic_artist_style_compose", "artist": profile.artist_name},
+        )
+
     def _revise_current_song(self, message: str, song: SongState) -> ChatResponse:
         match = _target_instrument(song, message)
         if match is None:
@@ -562,6 +626,50 @@ def _getting_started_response(message: str) -> ChatResponse:
         "Configure an optional LLM provider for AI generation; meanwhile try: “compose an 8-bar funk groove.”"
     )
     return ChatResponse(intent="clarify", reply=reply, clarification=reply)
+
+
+def _wants_existing_artist_style(message: str) -> bool:
+    return bool(_COMPOSE_RE.search(message) and _ARTIST_STYLE_FOLLOWUP_RE.search(message))
+
+
+def _artist_style_target(message: str) -> str | None:
+    lowered = message.lower()
+    if any(phrase in lowered for phrase in ["like this", "like the reference", "like this reference", "like this song"]):
+        return None
+    if not any(token in lowered for token in ["similar", "style", "like", "parecido", "estilo", "como", "profile", "sound of"]):
+        return None
+    for pattern in _ARTIST_STYLE_PATTERNS:
+        match = pattern.search(message)
+        if not match:
+            continue
+        target = _clean_artist_target(match.group(1))
+        if target:
+            return target
+    return None
+
+
+def _clean_artist_target(value: str) -> str:
+    cleaned = re.sub(r"^\s*(the\s+)?(artist|band|group|banda)\s+", "", value, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned.strip(" \t\r\n\"'")).strip()
+    stopwords = {"this", "that", "them", "reference", "song", "track", "style"}
+    if not cleaned or cleaned.lower() in stopwords:
+        return ""
+    return cleaned[:80]
+
+
+def _artist_style_reply(profile: ArtistStyleProfile) -> str:
+    songs = ", ".join(song.title for song in profile.representative_songs[:3]) or "no representative songs yet"
+    traits = []
+    if profile.genre_tags:
+        traits.append("genres: " + ", ".join(profile.genre_tags[:3]))
+    if profile.typical_instruments:
+        traits.append("instruments: " + ", ".join(profile.typical_instruments[:5]))
+    if profile.common_progressions:
+        traits.append("harmony: " + "; ".join(profile.common_progressions[:2]))
+    if profile.production_tone_traits:
+        traits.append("production: " + "; ".join(profile.production_tone_traits[:2]))
+    body = " ".join(traits) if traits else "Evidence is still thin, so I would treat this as low confidence."
+    return f"I built a {profile.confidence_label}-confidence style profile for {profile.artist_name} from {songs}. {body}"
 
 
 def _compose_unavailable_response(

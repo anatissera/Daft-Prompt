@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from music_assistant.application.analyze_reference import AnalyzeReference, enrich_profile_with_transcription
 from music_assistant.application.answer_music_question import AnswerMusicQuestion, LLMGroundedMusicQuestionExplainer
+from music_assistant.application.artist_style_profile import BuildArtistStyleProfile
 from music_assistant.application.chat_music import ChatMusic
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
 from music_assistant.application.language import is_spanish
@@ -40,6 +41,7 @@ from music_assistant.infrastructure.storage.in_memory_reference_store import InM
 from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
+from music_assistant.infrastructure.web_research.artist_catalog import SeededArtistCatalog
 from music_assistant.infrastructure.web_research.researcher import ConnectorSongResearcher, DefaultSongResearcher
 from music_assistant.infrastructure.web_research.search import BroadMusicWebSearch
 from music_assistant.infrastructure.llm import LLMAllProvidersFailed, LLMError, make_llm
@@ -421,6 +423,10 @@ def _chat_music() -> ChatMusic:
         chat_model=chat_model,
         song_researcher=_song_researcher(),
         songsterr_tab_store=SONGSTERR_TAB_STORE,
+        artist_style_profile_builder=BuildArtistStyleProfile(
+            song_researcher=_song_researcher(),
+            artist_catalog=SeededArtistCatalog(),
+        ),
         enable_web_research=bool(getattr(get_settings(), "enable_web_research", False)),
     )
 

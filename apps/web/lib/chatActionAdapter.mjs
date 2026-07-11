@@ -97,9 +97,11 @@ export function buildChatRequestPayload({
   activeReferenceId = null,
   currentSong = null,
   conversationContext = "",
+  artistStyleProfiles = [],
 }) {
   const payload = { message, reference_id: activeReferenceId ?? null };
   if (currentSong) payload.current_song = currentSong;
   if (conversationContext) payload.conversation_context = conversationContext;
+  if (artistStyleProfiles.length) payload.artist_style_profiles = artistStyleProfiles;
   return payload;
 }

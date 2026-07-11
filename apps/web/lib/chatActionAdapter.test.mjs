@@ -86,20 +86,23 @@ test("referenceMemoryFromChatResponse remembers researched references", () => {
   assert.equal(referenceMemoryFromChatResponse({ reply: "No reference" }, "Hello"), null);
 });
 
-test("buildChatRequestPayload includes active reference and current song when available", () => {
+test("buildChatRequestPayload includes active reference, style profile, and current song when available", () => {
   const currentSong = { request: "compose rock", parts: {} };
+  const artistStyleProfile = { profile_id: "artist_fixture", artist_name: "Fixture Band" };
   assert.deepEqual(
     buildChatRequestPayload({
       message: "What instruments are loaded for this song?",
       activeReferenceId: "ref_song",
       currentSong,
       conversationContext: "User: Make it darker",
+      artistStyleProfiles: [artistStyleProfile],
     }),
     {
       message: "What instruments are loaded for this song?",
       reference_id: "ref_song",
       current_song: currentSong,
       conversation_context: "User: Make it darker",
+      artist_style_profiles: [artistStyleProfile],
     },
   );
 });
