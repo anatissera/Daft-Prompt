@@ -1,27 +1,19 @@
 "use client";
 
-import type { FormEvent, RefObject } from "react";
+import type { FormEvent } from "react";
 import { shouldSubmitChatKey } from "@/lib/chatComposerKeys.mjs";
 
 interface ChatComposerProps {
   busy: boolean;
-  audioAttachmentEnabled: boolean;
   prompt: string;
-  selectedFileName: string | null;
-  fileInputRef: RefObject<HTMLInputElement | null>;
   onPromptChange: (prompt: string) => void;
-  onFileChange: (file: File | null) => void;
   onSubmit: (event: FormEvent) => void;
 }
 
 export default function ChatComposer({
   busy,
-  audioAttachmentEnabled,
   prompt,
-  selectedFileName,
-  fileInputRef,
   onPromptChange,
-  onFileChange,
   onSubmit,
 }: ChatComposerProps) {
   return (
@@ -37,27 +29,11 @@ export default function ChatComposer({
             event.preventDefault();
             event.currentTarget.form?.requestSubmit();
           }}
-          placeholder="Describe the track you want the studio to compose…"
+          placeholder="Ask about a song, request tabs, or describe a track to compose..."
           className="chat-input"
           rows={1}
         />
         <div className="composer-actions">
-          {audioAttachmentEnabled ? (
-            <>
-              <input
-                ref={fileInputRef}
-                id="audio-file"
-                type="file"
-                accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif"
-                className="sr-only"
-                onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
-              />
-              <label htmlFor="audio-file" className="attach-button">
-                <span className="attach-icon" aria-hidden="true">♪</span> Attach audio
-              </label>
-              {selectedFileName ? <span className="selected-file">{selectedFileName}</span> : null}
-            </>
-          ) : null}
           <button type="submit" disabled={busy} className="send-button">
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
             {busy ? "WORKING…" : <>SEND <span aria-hidden="true">▸</span></>}

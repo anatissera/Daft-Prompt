@@ -563,14 +563,14 @@ def test_explicit_web_search_uses_research_without_llm_when_enabled():
     assert store.get("ref_researched") is not None
 
 
-def test_ambiguous_named_song_analysis_without_llm_asks_for_audio_or_search():
+def test_ambiguous_named_song_analysis_without_llm_points_to_public_evidence():
     chat, _, _, _ = _make_chat()
 
     response = chat.handle(ChatRequest(message="Analyze Around the World by Daft Punk"))
 
     assert response.intent == "clarify"
-    assert "Subí un audio" in response.reply
-    assert "search" in response.reply
+    assert "evidencia pública" in response.reply
+    assert "Songsterr" in response.reply
 
 
 def test_compose_configuration_error_returns_clear_chat_error():

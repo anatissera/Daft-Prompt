@@ -9,10 +9,10 @@ import {
 interface ReferenceContextProps {
   profile: ReferenceProfile | null;
   analyzing: boolean;
-  selectedFileName: string | null;
+  evidenceLabel: string | null;
 }
 
-export default function ReferenceContext({ profile, analyzing, selectedFileName }: ReferenceContextProps) {
+export default function ReferenceContext({ profile, analyzing, evidenceLabel }: ReferenceContextProps) {
   if (analyzing) {
     return (
       <aside className="context-panel" aria-live="polite">
@@ -20,9 +20,9 @@ export default function ReferenceContext({ profile, analyzing, selectedFileName 
         <div className="analysis-status">
           <span className="spinner" aria-hidden="true" />
           <div>
-            <p className="context-heading">Analyzing local audio...</p>
+            <p className="context-heading">Building evidence profile...</p>
             <p className="context-muted">
-              {selectedFileName ? `${selectedFileName} accepted. Extracting tempo, key, energy, and probable chords.` : "Extracting audio profile."}
+              {evidenceLabel ? `${evidenceLabel} queued for evidence lookup.` : "Collecting source-backed song evidence."}
             </p>
           </div>
         </div>
@@ -35,7 +35,7 @@ export default function ReferenceContext({ profile, analyzing, selectedFileName 
       <aside className="context-panel context-panel-empty">
         <p className="section-title">Reference analysis</p>
         <p className="context-heading">No reference yet</p>
-        <p className="context-muted">Attach a local audio file and ask for analysis to see the musical profile here.</p>
+        <p className="context-muted">Ask about a song, artist, album, or genre to build a source-backed musical profile here.</p>
       </aside>
     );
   }
@@ -50,7 +50,7 @@ export default function ReferenceContext({ profile, analyzing, selectedFileName 
       <div className="reference-header">
         <div>
           <h2 className="context-heading">{profile.source.label}</h2>
-          <p className="context-muted">{profile.summary || "Local audio profile ready."}</p>
+          <p className="context-muted">{profile.summary || "Evidence profile ready."}</p>
         </div>
         <span className="reference-kind">{profile.source.kind}</span>
       </div>

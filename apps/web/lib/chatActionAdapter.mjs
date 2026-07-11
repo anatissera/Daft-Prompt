@@ -1,16 +1,15 @@
-// Minimal client-side routing: attachment → analyze, otherwise → chat (backend
-// runs its own intent classification on /chat).
+// Minimal client-side routing: always send user text to the backend chat
+// router. Song knowledge is gathered through public evidence connectors.
 
-export function chooseChatAction({ prompt, hasSelectedFile }) {
-  const messageText = normalizeMessageText(prompt, hasSelectedFile);
-  if (hasSelectedFile) return { type: "analyze", messageText };
+export function chooseChatAction({ prompt }) {
+  const messageText = normalizeMessageText(prompt);
   return { type: "chat", messageText };
 }
 
-export function normalizeMessageText(prompt, hasSelectedFile = false) {
+export function normalizeMessageText(prompt) {
   const trimmed = prompt.trim();
   if (trimmed) return trimmed;
-  return hasSelectedFile ? "Analyze this audio." : "Hello.";
+  return "Hello.";
 }
 
 export function createTextMessage(role, text, index) {

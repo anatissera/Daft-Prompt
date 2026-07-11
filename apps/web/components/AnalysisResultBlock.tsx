@@ -28,7 +28,7 @@ export default function AnalysisResultBlock({ profile }: { profile: ReferencePro
         <div>
           <p className="section-title">Reference analysis</p>
           <h2 className="result-title">{profile.source.label}</h2>
-          <p className="context-muted">{profile.summary || "Local audio profile ready."}</p>
+          <p className="context-muted">{profile.summary || "Evidence profile ready."}</p>
         </div>
         <span className="reference-kind">{profile.source.kind}</span>
       </div>

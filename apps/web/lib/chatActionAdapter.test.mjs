@@ -13,10 +13,10 @@ import {
   referenceMemoryFromChatResponse,
 } from "./chatActionAdapter.mjs";
 
-test("chooseChatAction analyzes when a local file is attached", () => {
+test("chooseChatAction keeps stale attachment state on the chat path", () => {
   assert.deepEqual(
     chooseChatAction({ prompt: "what key is this in?", hasSelectedFile: true }),
-    { type: "analyze", messageText: "what key is this in?" },
+    { type: "chat", messageText: "what key is this in?" },
   );
 });
 
@@ -29,7 +29,7 @@ test("chooseChatAction defaults to chat for plain prompts", () => {
 
 test("normalizeMessageText fills in a default for empty prompts", () => {
   assert.equal(normalizeText(""), "Hello.");
-  assert.equal(normalizeText("", true), "Analyze this audio.");
+  assert.equal(normalizeText("", true), "Hello.");
 });
 
 function normalizeText(prompt, hasFile = false) {

@@ -3,25 +3,19 @@
 from __future__ import annotations
 
 import json
-import uuid
 import re
 import time
 from functools import lru_cache
-from importlib.util import find_spec
 from dotenv import load_dotenv
 
 load_dotenv()
-from inspect import signature
 from pathlib import Path
-from queue import Empty, Queue
-from threading import Thread
 from typing import Iterator
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
-from music_assistant.application.analyze_reference import AnalyzeReference, enrich_profile_with_transcription
 from music_assistant.application.answer_music_question import AnswerMusicQuestion, LLMGroundedMusicQuestionExplainer
 from music_assistant.application.artist_style_profile import BuildArtistStyleProfile
 from music_assistant.application.chat_music import ChatMusic
@@ -31,12 +25,9 @@ from music_assistant.application.reference_instruments import ReferenceInstrumen
 from music_assistant.application.research_reference import ResearchReference
 from music_assistant.canned import canned_song
 from music_assistant.config import get_settings
-from music_assistant.domain.audio_profile import ReferenceProfile, ReferenceSource
+from music_assistant.domain.audio_profile import ReferenceProfile
 from music_assistant.domain.song_state import Part
 from music_assistant.graph import iter_negotiation_events, revise_instrument_part, run_negotiation
-from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
-from music_assistant.infrastructure.mir.demucs_separator import DemucsSeparator
-from music_assistant.infrastructure.mir.basic_pitch_transcriber import BasicPitchTranscriber
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from music_assistant.infrastructure.storage.in_memory_songsterr_tab_store import InMemorySongsterrTabStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
@@ -61,13 +52,9 @@ from music_assistant.interfaces.api_models import (
 )
 
 OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
-REFERENCE_UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
 REFERENCE_STORE = InMemoryReferenceStore()
 SONGSTERR_TAB_STORE = InMemorySongsterrTabStore()
-SUPPORTED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
-UPLOAD_CHUNK_SIZE = 1024 * 1024
-ANALYSIS_KEEPALIVE_SECONDS = 15.0
 
 app = FastAPI(title="Multi-agent Band API", version="0.1.0")
 
@@ -91,33 +78,25 @@ def _build_commit() -> str:
         return "development-worktree"
 
 
+def _unsupported_local_audio_analysis() -> HTTPException:
+    return HTTPException(
+        status_code=410,
+        detail=(
+            "User-uploaded local audio analysis is not a supported Daft Prompt path. "
+            "Ask about a song, artist, album, or genre so Daft Prompt can use public evidence "
+            "connectors such as Songsterr, tab/chord pages, and metadata sources."
+        ),
+    )
+
+
 @app.post("/references/analyze", response_model=ReferenceProfile)
-async def analyze_reference_upload(file: UploadFile | None = File(None)) -> ReferenceProfile:
-    _require_audio_analysis()
-    source = await _store_reference_upload(file)
-    try:
-        profile = AnalyzeReference(_reference_analyzer(), transcriber=_reference_transcriber()).execute(source)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"could not analyze uploaded audio: {exc}",
-        ) from exc
-    REFERENCE_STORE.save(profile)
-    return profile
+async def analyze_reference_upload() -> ReferenceProfile:
+    raise _unsupported_local_audio_analysis()
 
 
 @app.post("/references/analyze/stream")
-async def analyze_reference_upload_stream(file: UploadFile | None = File(None)) -> StreamingResponse:
-    _require_audio_analysis()
-    source = await _store_reference_upload(file)
-
-    def sse() -> Iterator[str]:
-        for event in _reference_analysis_stream_events(source):
-            yield sse_data(event)
-
-    return StreamingResponse(sse(), media_type="text/event-stream")
+async def analyze_reference_upload_stream() -> StreamingResponse:
+    raise _unsupported_local_audio_analysis()
 
 
 @app.post("/references/research", response_model=ReferenceProfile)
@@ -204,167 +183,6 @@ def _song_researcher() -> ConnectorSongResearcher:
     )
 
 
-async def _store_reference_upload(file: UploadFile | None) -> ReferenceSource:
-    if file is None:
-        raise HTTPException(status_code=400, detail="missing audio file")
-
-    filename = Path(file.filename or "").name
-    if not filename:
-        raise HTTPException(status_code=400, detail="empty filename")
-
-    suffix = Path(filename).suffix.lower()
-    if suffix not in SUPPORTED_REFERENCE_EXTENSIONS:
-        raise HTTPException(
-            status_code=415,
-            detail=f"unsupported audio file extension: {suffix or 'none'}",
-        )
-
-    reference_id = f"ref_{uuid.uuid4().hex[:12]}"
-    upload_root = _reference_upload_root()
-    upload_dir = upload_root / reference_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    audio_path = upload_dir / filename
-
-    total_bytes = 0
-    try:
-        with audio_path.open("wb") as handle:
-            while chunk := await file.read(UPLOAD_CHUNK_SIZE):
-                total_bytes += len(chunk)
-                if total_bytes > _reference_upload_max_bytes():
-                    audio_path.unlink(missing_ok=True)
-                    raise HTTPException(
-                        status_code=413,
-                        detail="uploaded audio file is too large",
-                    )
-                handle.write(chunk)
-    finally:
-        await file.close()
-
-    if total_bytes == 0:
-        audio_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail="uploaded audio file is empty")
-
-    source = ReferenceSource(
-        reference_id=reference_id,
-        kind="upload",
-        label=filename,
-        uri=str(audio_path),
-        authorized=True,
-    )
-    return source
-
-
-def _reference_analysis_stream_events(source: ReferenceSource) -> Iterator[dict]:
-    events: Queue[dict | None] = Queue()
-
-    def progress(
-        stage: str,
-        message: str,
-        *,
-        status: str = "started",
-        elapsed_seconds: float | None = None,
-        cache_hit: bool | None = None,
-    ) -> None:
-        events.put(
-            AnalysisProgressEvent(
-                type=stage,
-                message=message,
-                status=status,
-                elapsed_seconds=elapsed_seconds,
-                cache_hit=cache_hit,
-            ).model_dump(mode="json")
-        )
-
-    def worker() -> None:
-        analyzer = _reference_analyzer()
-        try:
-            # Same enrichment as the blocking endpoint (AnalyzeReference): the
-            # streamed profile must also carry the SongKnowledgeProfile with
-            # audio evidence claims, or chat Q&A falls back to legacy answers.
-            profile = enrich_profile_with_transcription(
-                _analyze_with_progress(analyzer, source, progress), source, _reference_transcriber()
-            )
-            REFERENCE_STORE.save(profile)
-            events.put(AnalysisDoneEvent(profile=profile).model_dump(mode="json"))
-        except Exception as exc:
-            events.put(
-                AnalysisErrorEvent(
-                    message=f"could not analyze uploaded audio: {exc}",
-                ).model_dump(mode="json")
-            )
-        finally:
-            events.put(None)
-
-    yield AnalysisProgressEvent(type="accepted", message="File accepted. Starting analysis.").model_dump(mode="json")
-    thread = Thread(target=worker, daemon=True)
-    thread.start()
-    while True:
-        try:
-            event = events.get(timeout=ANALYSIS_KEEPALIVE_SECONDS)
-        except Empty:
-            yield AnalysisProgressEvent(
-                type="analysis_keepalive",
-                message="Still analyzing. This can take a few minutes for longer songs.",
-            ).model_dump(mode="json")
-            continue
-        if event is None:
-            break
-        yield event
-
-
-def _analyze_with_progress(analyzer, source: ReferenceSource, progress) -> ReferenceProfile:
-    analyze = analyzer.analyze
-    if "progress" in signature(analyze).parameters:
-        return analyze(source, progress=progress)
-    return analyze(source)
-
-
-def _reference_analyzer() -> DeepHarmonicAnalyzer:
-    settings = get_settings()
-    upload_root = _reference_upload_root()
-    configured_cache_root = getattr(settings, "reference_stem_cache_dir", None)
-    separator = DemucsSeparator(
-        output_root=upload_root,
-        cache_enabled=bool(
-            getattr(settings, "reference_stem_cache_enabled", False)
-        ),
-        cache_root=(
-            Path(configured_cache_root).expanduser()
-            if configured_cache_root
-            else upload_root / ".stem-cache"
-        ),
-    )
-    return DeepHarmonicAnalyzer(output_root=upload_root, separator=separator)
-
-
-def _require_audio_analysis() -> None:
-    setup = (
-        "Start with `docker compose -f docker-compose.yml -f docker-compose.audio.yml up --build` "
-        "to enable uploads, Demucs, and MIR analysis."
-    )
-    if not bool(getattr(get_settings(), "enable_audio_analysis", False)):
-        raise HTTPException(
-            status_code=503,
-            detail=f"Local audio analysis is optional and is not enabled in this runtime. {setup}",
-        )
-    required_modules = ("librosa", "soundfile", "demucs", "torch", "torchaudio")
-    missing = [name for name in required_modules if find_spec(name) is None]
-    if missing:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                f"Local audio analysis is enabled but its optional runtime is incomplete ({', '.join(missing)}). "
-                f"{setup}"
-            ),
-        )
-
-
-def _reference_transcriber() -> BasicPitchTranscriber | None:
-    if not bool(getattr(get_settings(), "enable_melody_transcription", False)):
-        return None
-    return BasicPitchTranscriber()
-
-
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, request: Request, background_tasks: BackgroundTasks) -> ChatResponse:
     if req.reference_id and REFERENCE_STORE.get(req.reference_id) is None:
@@ -436,15 +254,6 @@ def _chat_model():
         return make_llm("chat")
     except RuntimeError:
         return None
-
-
-def _reference_upload_root() -> Path:
-    configured = getattr(get_settings(), "reference_upload_dir", None)
-    return Path(configured).expanduser() if configured else REFERENCE_UPLOADS
-
-
-def _reference_upload_max_bytes() -> int:
-    return int(getattr(get_settings(), "reference_upload_max_bytes", 50 * 1024 * 1024))
 
 
 @app.post("/compose", response_model=ComposeResponse)

@@ -371,18 +371,18 @@ class ChatMusic:
                 return ChatResponse(
                     intent="clarify",
                     reply=(
-                        "Subí un audio para analizarlo localmente. Si querés buscar datos web "
-                        "sobre esa canción, escribí search/research con el título y artista."
+                        "Pedime buscar esa canción con título y artista. Daft Prompt usa evidencia pública "
+                        "como Songsterr, páginas de acordes/tabs y metadatos, no análisis de audio local."
                     ),
-                    clarification="Subí audio local o pedí search/research explícitamente.",
+                    clarification="Pedí una búsqueda con título y artista para construir un perfil con fuentes.",
                 )
             return ChatResponse(
                 intent="clarify",
                 reply=(
-                    "I can analyze an attached file, answer about a reference you already shared, "
+                    "I can answer source-backed song questions, work from a researched reference, "
                     "or compose a new sketch. What would you like?"
                 ),
-                clarification="Tell me whether to analyze, answer about the current reference, or compose.",
+                clarification="Tell me whether to research a song, answer about the current reference, or compose.",
             )
 
         if intent == "research_song":
@@ -393,9 +393,9 @@ class ChatMusic:
                     intent="clarify",
                     reply=(
                         "Web research is not configured on this server, so I cannot look that up. "
-                        "You can still upload the audio file for analysis."
+                        "Enable song research connectors such as Songsterr or ask me to compose from a text brief."
                     ),
-                    clarification="Configure song research or attach an audio file instead.",
+                    clarification="Configure song research connectors or ask for a composition from text.",
                 )
             query = _RESEARCH_PREFIX_RE.sub("", message).strip() or message
             researched = self.song_researcher.research(query)

@@ -169,8 +169,7 @@ def _decision_messages(request: Any, *, web_research_enabled: bool) -> list[dict
     conversation_context = getattr(request, "conversation_context", "") or "No earlier turns in this session."
     research_instruction = (
         "Use research_song before answering about an unresearched named song. "
-        "If the user asks to analyze a named song without an attached/local audio file, "
-        "use research_song with a clean title and artist query. "
+        "If the user asks to analyze a named song, use research_song with a clean title and artist query. "
         if web_research_enabled
         else "Web research is disabled for this session. Do not choose research_song or imply that a named song was looked up; "
         "briefly explain that ENABLE_WEB_RESEARCH=true enables song lookup. "
@@ -184,8 +183,8 @@ def _decision_messages(request: Any, *, web_research_enabled: bool) -> list[dict
                 "artist, album, style, genre, or era. Do not classify an artist from keywords inside its name: "
                 "for example, Daft Punk is an artist, not the punk genre. For a song, always populate "
                 "research_scope='song', song_title, song_artist, and song_featured_artists separately; preserve featured-artist credits. "
-                "Use query only for non-song scopes. If they ask to analyze "
-                "this audio/file but no reference is listed, clarify that they need to attach audio. "
+                "Use query only for non-song scopes. If they ask to analyze an audio/file upload, clarify that "
+                "Daft Prompt uses public evidence connectors instead of local audio analysis. "
                 "Use get_chords/get_sections/get_instruments/get_instrument_summary/get_tab_excerpt "
                 "for existing profiles. Use request_composition for composition and keep composition "
                 "delegated to the composer/orchestrator. If the user says this song, this reference, "

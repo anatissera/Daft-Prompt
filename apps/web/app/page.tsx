@@ -4,18 +4,11 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
 import ChatThread from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
-import type { AnalysisEvent, ArtistStyleProfile, ChordChartRow, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "@/lib/types";
-import { getAnalysisReadyMessage } from "@/lib/referenceProfileView.mjs";
-import {
-  createAnalysisProgress,
-  updateAnalysisProgress,
-  type AnalysisStageState,
-} from "@/lib/analysisProgress.mjs";
+import type { ArtistStyleProfile, ChordChartRow, MelodyProfile, ReferenceProfile, SongState, TabExcerpt } from "@/lib/types";
 import {
   buildChatRequestPayload,
   buildConversationContext,
   chooseChatAction,
-  createAnalysisMessage,
   createCompositionMessage,
   createChordMessage,
   createMelodyMessage,
@@ -69,19 +62,13 @@ interface ChatResponse {
   diagnostics?: Record<string, unknown>;
 }
 
-const localAudioAnalysisEnabled = process.env.NEXT_PUBLIC_ENABLE_LOCAL_AUDIO_ANALYSIS === "true";
-
 export default function Home() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messageIndexRef = useRef(1);
   const [prompt, setPrompt] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     createTextMessage(
       "assistant",
-      localAudioAnalysisEnabled
-        ? "Daft Prompt — multi-agent music studio. Ask me to compose a sketch (\"slow blues in F minor\"), upload audio to analyze, or ask about a loaded reference."
-        : "Daft Prompt — multi-agent music studio. Ask me to compose a sketch (\"slow blues in F minor\"), explore music theory, or research a song when web research is enabled.",
+      "Daft Prompt — multi-agent music studio. Ask me about a song, request playable tabs or keys, build an artist style profile, or compose a MIDI sketch.",
       0,
     ),
   ]);
@@ -93,7 +80,6 @@ export default function Home() {
   const [activeWorkflow, setActiveWorkflow] = useState<ChatWorkflow | null>(null);
   const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
   const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
-  const [analysisProgress, setAnalysisProgress] = useState<AnalysisStageState[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
   const [buildIds, setBuildIds] = useState<{ frontend: string; backend: string } | null>(null);
@@ -153,19 +139,12 @@ export default function Home() {
 
     const action = chooseChatAction({
       prompt,
-      hasSelectedFile: selectedFile !== null,
     });
-    const attachedText = selectedFile ? `${action.messageText} Attached: ${selectedFile.name}` : action.messageText;
 
-    appendMessage(createTextMessage("user", attachedText, nextMessageIndex()));
+    appendMessage(createTextMessage("user", action.messageText, nextMessageIndex()));
     setPrompt("");
     setError(null);
 
-    if (action.type === "analyze") {
-      if (!selectedFile) return;
-      await analyzeReference(selectedFile);
-      return;
-    }
     await chat(action.messageText);
   }
 
@@ -238,62 +217,6 @@ export default function Home() {
     }
   }
 
-  async function analyzeReference(file: File) {
-    startWork("Analyzing audio (tempo, key, energy, sections, chords)…");
-    setAnalysisProgress(createAnalysisProgress());
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setReferenceProfile(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/references/analyze", { method: "POST", body: formData, signal: controller.signal });
-      if (!res.ok) throw new Error(await readApiError(res));
-      if (!res.body) throw new Error("backend did not return an analysis stream");
-
-      let profile: ReferenceProfile | null = null;
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const chunks = buffer.split("\n\n");
-        buffer = chunks.pop() ?? "";
-        for (const chunk of chunks) {
-          const line = chunk.split("\n").find((entry) => entry.startsWith("data:"));
-          if (!line) continue;
-          const event = JSON.parse(line.slice(5).trim()) as AnalysisEvent;
-          if (event.type === "done") {
-            profile = event.profile;
-          } else if (event.type === "error") {
-            throw new Error(event.message);
-          } else {
-            setActiveWork(event.message);
-            setAnalysisProgress((current) => (
-              current ? updateAnalysisProgress(current, event) : current
-            ));
-          }
-        }
-      }
-      if (!profile) throw new Error("analysis stream ended without a profile");
-      setReferenceProfile(profile);
-      setActiveReference({ referenceId: profile.reference_id, label: profile.source.label });
-      appendMessage(createAnalysisMessage("assistant", getAnalysisReadyMessage(profile), profile, nextMessageIndex()));
-      setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      const m = normalizeAnalysisError(err);
-      setError(m);
-      appendMessage(createTextMessage("assistant", `I could not analyze that file: ${m}`, nextMessageIndex()));
-    } finally {
-      setAnalysisProgress(null);
-      if (!controller.signal.aborted) stopWork();
-    }
-  }
-
   function appendMessage(m: ChatMessage) { setMessages((prev) => [...prev, m]); }
 
   function nextMessageIndex() {
@@ -361,18 +284,14 @@ export default function Home() {
           </div>
           <span className="app-topbar-meta">TWILIGHT · OUTPUT MIDI</span>
         </header>
-        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} analysisProgress={analysisProgress} workflow={activeWorkflow} />
+        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} workflow={activeWorkflow} />
         {error ? (
           <p className="error-banner" role="alert">{error}</p>
         ) : null}
         <ChatComposer
           busy={busy}
-          audioAttachmentEnabled={localAudioAnalysisEnabled}
           prompt={prompt}
-          selectedFileName={selectedFile?.name ?? null}
-          fileInputRef={fileInputRef}
           onPromptChange={setPrompt}
-          onFileChange={setSelectedFile}
           onSubmit={submit}
         />
       </section>
@@ -407,21 +326,4 @@ function formatMeta(data: ChatResponse, elapsedMs: number): string {
   const approxTokens = Math.max(1, Math.round(data.reply.length / 4));
   const tps = approxTokens / Math.max(seconds, 0.01);
   return `${seconds.toFixed(1)}s · ~${approxTokens} tok · ~${tps.toFixed(1)} tok/s (estimate)`;
-}
-
-function normalizeAnalysisError(err: unknown) {
-  const message = err instanceof Error ? err.message : "unknown analysis error";
-  const normalized = message.toLowerCase();
-  if (
-    normalized.includes("load failed") ||
-    normalized.includes("body timeout") ||
-    normalized.includes("terminated") ||
-    normalized.includes("networkerror")
-  ) {
-    return (
-      "analysis timed out while the backend was still working. "
-      + "Long songs can take several minutes during stem separation; try again after this update or use a shorter excerpt."
-    );
-  }
-  return message;
 }

@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Daft Prompt",
-  description: "Chat with a music agent. Attach audio for analysis or ask it to compose a sketch.",
+  description: "Chat with a music agent that researches public song evidence, renders playable parts, and composes MIDI sketches.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

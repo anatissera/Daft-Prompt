@@ -26,8 +26,8 @@ from ..domain.song_state import (
 from ..skills.progression import suggest_chord_progression, suggest_form
 
 _DEFAULT_REFUSAL = (
-    "I only handle music tasks: compose a short sketch, analyze an audio file you upload, "
-    "or answer questions about a reference you already shared. Try \"compose a slow blues\"."
+    "I only handle music tasks: compose a short sketch, answer source-backed song questions, "
+    "or work from a reference profile already researched. Try \"compose a slow blues\"."
 )
 
 MIN_ROSTER = 1
@@ -100,7 +100,7 @@ class DirectorOutput(BaseModel):
     )
 
 
-_SYSTEM = f"""You are the musical director of an ensemble. You ONLY handle music-composition tasks. If the request is not asking you to compose a music sketch (e.g. chit-chat, trivia, coding, weather, recommendations, or writing lyrics/text only), set off_topic=true and put a short friendly message in `refusal` (in the user's language) saying you only handle music tasks and listing what you can do: compose a sketch, analyze an uploaded audio file, or answer questions about a reference already shared. In that case leave the arrangement fields empty.
+_SYSTEM = f"""You are the musical director of an ensemble. You ONLY handle music-composition tasks. If the request is not asking you to compose a music sketch (e.g. chit-chat, trivia, coding, weather, recommendations, or writing lyrics/text only), set off_topic=true and put a short friendly message in `refusal` (in the user's language) saying you only handle music tasks and listing what you can do: compose a sketch, answer source-backed song questions, or work from a reference profile already researched. In that case leave the arrangement fields empty.
 
 Otherwise set off_topic=false and, given a style description, produce a complete arrangement plan with the following required outputs:
 
