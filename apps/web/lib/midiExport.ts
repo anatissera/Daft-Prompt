@@ -4,9 +4,14 @@ import { buildTrackEvents } from "@/lib/trackMixerLogic.mjs";
 import { resolveIsDrum, resolveProgram } from "@/lib/gmInstruments";
 
 /** Serialize the song to a MIDI byte array, keeping only the parts whose
- *  ids are in `audible` (post Mute/Solo). Trivially equal to the backend's
- *  full file when nothing is muted/soloed. */
-export function buildFilteredMidi(song: SongState, audible: Set<string>): Uint8Array {
+ *  ids are in `audible` (post Mute/Solo), with each part's velocities
+ *  scaled by its knob volume in `gains` (0..1, default 1). Trivially equal
+ *  to the backend's full file when nothing is muted/soloed/attenuated. */
+export function buildFilteredMidi(
+  song: SongState,
+  audible: Set<string>,
+  gains?: Record<string, number>,
+): Uint8Array {
   const events = buildTrackEvents(song);
   const midi = new Midi();
   midi.header.setTempo(song.header.tempo_bpm);
@@ -20,6 +25,7 @@ export function buildFilteredMidi(song: SongState, audible: Set<string>): Uint8A
 
   for (const [partId] of Object.entries(song.parts)) {
     if (!audible.has(partId)) continue;
+    const gain = Math.max(0, Math.min(1, gains?.[partId] ?? 1));
     const roster = rosterById.get(partId);
     const track = midi.addTrack();
     track.name = roster?.instrument ?? partId;
@@ -33,7 +39,7 @@ export function buildFilteredMidi(song: SongState, audible: Set<string>): Uint8A
         midi: ev.pitch,
         time: ev.startSeconds,
         duration: Math.max(0.05, ev.durationSeconds),
-        velocity: Math.max(0, Math.min(1, ev.velocity)),
+        velocity: Math.max(0, Math.min(1, ev.velocity * gain)),
       });
     }
   }
@@ -41,8 +47,12 @@ export function buildFilteredMidi(song: SongState, audible: Set<string>): Uint8A
   return midi.toArray();
 }
 
-export function triggerMidiDownload(song: SongState, audible: Set<string>): void {
-  const bytes = buildFilteredMidi(song, audible);
+export function triggerMidiDownload(
+  song: SongState,
+  audible: Set<string>,
+  gains?: Record<string, number>,
+): void {
+  const bytes = buildFilteredMidi(song, audible, gains);
   // Re-wrap to satisfy the strict BlobPart type (Uint8Array<ArrayBufferLike>
   // isn't assignable to BlobPart directly in TS 5.7).
   const blob = new Blob([new Uint8Array(bytes).buffer as ArrayBuffer], { type: "audio/midi" });

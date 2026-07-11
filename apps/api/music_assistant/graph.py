@@ -243,7 +243,14 @@ def _build_negotiation_graph(llm=None, max_rounds: Optional[int] = None):
 
     def _director_node(state: BandState) -> dict:
         from .agents.director import run_director
-        song = run_director(state["request"], llm=llm)
+        from .infrastructure.tracing import open_run
+
+        trace = open_run(state["request"])
+        log.info("compose run_id=%s style=%r trace_dir=%s", trace.run_id, state["request"], trace.directory)
+        try:
+            song = run_director(state["request"], llm=llm, trace=trace)
+        finally:
+            trace.write_meta(node="director")
         first_group = song.composition_groups[0] if song.composition_groups else None
         return {
             "header": song.header,

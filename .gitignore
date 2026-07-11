@@ -8,6 +8,7 @@ __pycache__/
 # Backend generated artifacts
 apps/api/outputs/
 apps/api/uploads/
+apps/api/data/traces/
 .superpowers/
 
 # Node / Next.js

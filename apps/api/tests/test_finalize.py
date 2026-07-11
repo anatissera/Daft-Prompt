@@ -13,10 +13,10 @@ from music_assistant.domain.song_state import (
 from music_assistant.music.finalize import enforce_bass_downbeats
 
 
-def _song(bass_notes, *, instrument="electric_bass", role="bass", midi_range=(28, 55),
+def _song(bass_notes, *, instrument="electric_bass", role="bass",
           chords=None, key="C major"):
     roster = [RosterItem(id="bass", instrument=instrument, role=role,
-                         midi_range=midi_range, is_drum=False)]
+                         is_drum=False)]
     return SongState(
         request="t",
         header=Header(genre="t", key=key, tempo_bpm=100, num_bars=4,
@@ -52,7 +52,7 @@ def test_leaves_downbeat_chord_tones_alone():
 
 def test_does_not_touch_non_bass_instruments():
     roster = [RosterItem(id="lead", instrument="synth", role="melody",
-                         midi_range=(0, 127), is_drum=False)]
+                         is_drum=False)]
     song = SongState(
         request="t",
         header=Header(genre="t", key="C major", tempo_bpm=100, num_bars=4,
@@ -68,7 +68,7 @@ def test_does_not_touch_non_bass_instruments():
 def test_snapped_pitch_stays_in_range():
     # tight bass range that excludes the in-octave chord tones near the note forces the
     # snap to pick an in-range chord tone.
-    song = _song([Note(bar=0, start_beat=0.0, pitch=38, dur=1)], midi_range=(33, 45))
+    song = _song([Note(bar=0, start_beat=0.0, pitch=38, dur=1)])
     enforce_bass_downbeats(song)
     p = song.parts["bass"].notes[0].pitch
     assert 33 <= p <= 45

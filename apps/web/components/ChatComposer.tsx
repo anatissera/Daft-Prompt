@@ -10,6 +10,8 @@ interface ChatComposerProps {
   onPromptChange: (prompt: string) => void;
   onFileChange: (file: File | null) => void;
   onSubmit: (event: FormEvent) => void;
+  queuedPrompts?: string[];
+  onCancelQueued?: (index: number) => void;
 }
 
 export default function ChatComposer({
@@ -20,16 +22,48 @@ export default function ChatComposer({
   onPromptChange,
   onFileChange,
   onSubmit,
+  queuedPrompts = [],
+  onCancelQueued,
 }: ChatComposerProps) {
+  const canSubmit = prompt.trim().length > 0 || selectedFileName !== null;
   return (
     <form onSubmit={onSubmit} className="chat-composer">
+      {queuedPrompts.length > 0 ? (
+        <div className="chat-composer-queue" aria-label="Queued prompts">
+          <span className="chat-composer-queue-label">QUEUED · {queuedPrompts.length}</span>
+          {queuedPrompts.map((q, i) => (
+            <span key={i} className="chat-composer-queue-item" title={q}>
+              {q.length > 60 ? `${q.slice(0, 60)}…` : q}
+              {onCancelQueued ? (
+                <button
+                  type="button"
+                  className="chat-composer-queue-cancel"
+                  onClick={() => onCancelQueued(i)}
+                  aria-label="Remove from queue"
+                >×</button>
+              ) : null}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <div className="chat-composer-pill">
         <label htmlFor="prompt-input" className="sr-only">Message</label>
         <textarea
           id="prompt-input"
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
-          placeholder="Describe the track you want the studio to compose…"
+          onKeyDown={(event) => {
+            // Enter submits (or queues when the studio is busy). Shift+Enter
+            // still inserts a newline. IME composition is ignored so people
+            // typing accented chars / kana don't send half-composed text.
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder={busy
+            ? "Studio is busy — Enter to queue this prompt for after…"
+            : "Describe the track you want the studio to compose… (Enter to send, Shift+Enter for newline)"}
           className="chat-input"
           rows={1}
         />
@@ -46,9 +80,9 @@ export default function ChatComposer({
             <span className="attach-icon" aria-hidden="true">♪</span> Attach audio
           </label>
           {selectedFileName ? <span className="selected-file">{selectedFileName}</span> : null}
-          <button type="submit" disabled={busy} className="send-button">
+          <button type="submit" disabled={!canSubmit} className="send-button">
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
-            {busy ? "WORKING…" : <>SEND <span aria-hidden="true">▸</span></>}
+            {busy ? <>QUEUE <span aria-hidden="true">▸</span></> : <>SEND <span aria-hidden="true">▸</span></>}
           </button>
         </div>
       </div>
