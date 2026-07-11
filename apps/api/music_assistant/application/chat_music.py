@@ -298,17 +298,12 @@ class ChatMusic:
         return ChatResponse(intent="song_question", reply="\n".join(lines))
 
     def _answer_from_websearch(self, message: str) -> ChatResponse:
-        """General music Q&A: DDG search + page excerpts + one small LLM call
-        to synthesize an answer grounded in what the pages actually say."""
-        from pydantic import BaseModel as _BM
+        """General music Q&A — delegates to band_agent (which owns the LLM
+        access; application/ must not import infrastructure/)."""
+        from music_assistant.band_agent.tools.web_answer import answer_from_websearch
 
-        from music_assistant.band_agent.tools import search_web
-        from music_assistant.band_agent.tools.style_research import fetch_style_excerpts
-        from music_assistant.infrastructure.llm import make_llm
-
-        hits = search_web(message, decorate=False)
-        excerpts = fetch_style_excerpts(hits) if hits else []
-        if not hits:
+        answer = answer_from_websearch(message)
+        if not answer:
             return ChatResponse(
                 intent="song_question",
                 reply=(
@@ -317,44 +312,6 @@ class ChatMusic:
                     "o la canción."
                 ),
             )
-
-        class _WebAnswer(_BM):
-            answer: str
-
-        context = {
-            "question": message,
-            "results": [{"title": h.get("title"), "site": h.get("site")} for h in hits[:6]],
-            "excerpts": excerpts,
-        }
-        prompt = (
-            "You answer music questions using ONLY the web evidence below. "
-            "Reply in the user's language, in 1-4 sentences. If the evidence "
-            "is thin or conflicting, say so explicitly instead of guessing. "
-            "Do not invent facts, dates, credits or genres. Return ONLY the "
-            "structured object via the tool — no prose outside it.\n\n"
-            f"{json.dumps(context, ensure_ascii=False)}"
-        )
-        answer = ""
-        try:
-            llm = make_llm(role="director").with_structured_output(_WebAnswer)
-            # The parse occasionally returns None on minimax-m3 (same flake
-            # the skeleton retries around); a second attempt is cheap.
-            for _ in range(2):
-                result = llm.invoke(prompt)
-                if isinstance(result, _WebAnswer) and result.answer.strip():
-                    answer = result.answer.strip()
-                    break
-        except Exception:
-            answer = ""
-        if not answer:
-            titles = "; ".join(h.get("title", "") for h in hits[:3])
-            answer = (
-                "No pude sintetizar una respuesta confiable, pero esto es lo "
-                f"que encontré: {titles}"
-            )
-        sources = sorted({h.get("site", "") for h in hits[:4] if h.get("site")})
-        if sources:
-            answer += f"\n(fuentes: {', '.join(sources)})"
         return ChatResponse(intent="song_question", reply=answer)
 
     def _classify(
