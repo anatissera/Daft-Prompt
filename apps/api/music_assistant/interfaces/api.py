@@ -10,7 +10,7 @@ from inspect import signature
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
-from typing import Iterator
+from typing import AsyncIterator, Iterator, Optional
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,14 +18,20 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from music_assistant.application.analyze_reference import AnalyzeReference
 from music_assistant.application.answer_music_question import AnswerMusicQuestion
-from music_assistant.application.chat_music import ChatMusic
+from music_assistant.application.chat_music import ChatMusic, _style_with_reference
+from music_assistant.domain.cancellation import (
+    CancelToken,
+    CancelledCompose,
+    set_cancel_token,
+)
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
 from music_assistant.application.research_reference import ResearchReference
 from music_assistant.canned import canned_song
 from music_assistant.config import get_settings
 from music_assistant.domain.audio_profile import ReferenceProfile, ReferenceSource
-from music_assistant.domain.song_state import Part
+from music_assistant.domain.song_state import Part, SongState
 from music_assistant.graph import iter_negotiation_events, run_negotiation
+from music_assistant.band_agent import stream_compose as band_agent_stream
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
@@ -264,6 +270,218 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
     return response
 
 
+@app.post("/chat/stream")
+async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
+    """Streaming variant of /chat. Emits SSE events so the UI can drive a real
+    pipeline visualisation from actual backend milestones instead of a fake
+    time-based one:
+
+      - ``intent``       — classifier result (``compose``, ``answer_reference``, …)
+      - ``director``     — director produced a header + roster
+      - ``agent_pass``   — one instrument turn completed
+      - ``convergence``  — arbiter finalised the arrangement
+      - ``done``         — artifacts rendered (with URLs)
+      - ``reply``        — for non-compose intents, the full ChatResponse
+      - ``error``        — LLM or config failure
+    """
+    # Scope a CancelToken for this request so any LLM call inside the sync
+    # generator (which runs in a threadpool) can be aborted mid-flight when
+    # the browser hits Stop and the SSE connection drops.
+    token = CancelToken()
+    set_cancel_token(token)
+
+    def sse_body() -> Iterator[str]:
+        profile = None
+        if req.reference_id:
+            profile = REFERENCE_STORE.get(req.reference_id)
+            if profile is None:
+                yield sse_data(
+                    ErrorEvent(
+                        code="reference_not_found",
+                        message=f"reference_id not found: {req.reference_id}",
+                        provider=None,
+                        model=None,
+                        partial=False,
+                    ).model_dump(mode="json")
+                )
+                return
+
+        chat_music = _chat_music()
+        message = req.message.strip()
+        prev_song_path = (
+            ARTIFACTS.path_for(req.edit_job_id, "song.json") if req.edit_job_id else None
+        )
+        has_previous = bool(prev_song_path and prev_song_path.exists())
+        intent = chat_music._classify(
+            message, has_reference=profile is not None, has_previous=has_previous
+        )
+        yield sse_data({"type": "intent", "intent": intent})
+
+        if intent == "edit_song":
+            from music_assistant.band_agent.edit_song import (
+                apply_additions,
+                apply_edit,
+                plan_edit,
+            )
+
+            prev = SongState.model_validate_json(prev_song_path.read_text())
+            yield sse_data({
+                "type": "progress", "stage": "edit",
+                "message": "planning the edit over the previous song",
+            })
+            plan = plan_edit(message, prev)
+            if plan is None:
+                yield sse_data({"type": "reply", "response": {
+                    "intent": "edit_song",
+                    "reply": (
+                        "No pude traducir ese pedido a una edición concreta. "
+                        "Probá algo como 'reemplazá el piano por un rhodes' o "
+                        "'subí el pitch del bajo una octava'."
+                    ),
+                    "reference_id": None, "answer": None, "compose": None,
+                    "clarification": None, "usage": None,
+                }})
+                return
+            edited, changes = apply_edit(prev, plan)
+            yield sse_data({
+                "type": "progress", "stage": "edit",
+                "message": plan.summary or "; ".join(changes) or "applying edit",
+            })
+            edited, add_changes = apply_additions(edited, plan)
+            if add_changes:
+                yield sse_data({
+                    "type": "progress", "stage": "edit",
+                    "message": "; ".join(add_changes),
+                })
+            job = ARTIFACTS.create_job()
+            base = str(request.base_url).rstrip("/")
+            render_artifacts(edited, job.path)
+            yield sse_data({
+                "type": "director",
+                "source": "director",
+                "header": edited.header.model_dump(mode="json"),
+                "roster": [r.model_dump(mode="json") for r in edited.roster],
+            })
+            yield sse_data(DoneEvent(
+                job_id=job.job_id,
+                source="director",
+                song=edited,
+                artifacts=Artifacts(
+                    midi=ARTIFACTS.url_for(base, job.job_id, "song.mid"),
+                    musicxml=ARTIFACTS.url_for(base, job.job_id, "song.musicxml"),
+                ),
+            ).model_dump(by_alias=True, mode="json"))
+            return
+
+        if intent not in ("compose", "compose_from_reference"):
+            try:
+                response = chat_music.handle(req)
+            except ComposeConfigurationError as exc:
+                yield sse_data(_compose_configuration_error_event(exc))
+                return
+            except LLMError as exc:
+                yield sse_data(_llm_error_event(exc, partial=False))
+                return
+            yield sse_data({"type": "reply", "response": response.model_dump(mode="json")})
+            return
+
+        if intent == "compose_from_reference":
+            assert profile is not None
+            style = _style_with_reference(message, profile)
+        else:
+            style = message or "demo"
+
+        job = ARTIFACTS.create_job()
+        base = str(request.base_url).rstrip("/")
+        compose_req = ComposeRequest(style=style)
+        try:
+            for event in _compose_stream_events(compose_req, job.job_id, job.path, base):
+                yield sse_data(event)
+        except CancelledCompose:
+            yield sse_data({
+                "type": "error",
+                "code": "cancelled",
+                "message": "compose cancelled by client",
+                "provider": None,
+                "model": None,
+                "partial": True,
+            })
+
+    return StreamingResponse(
+        _sse_with_cancel(request, sse_body(), token),
+        media_type="text/event-stream",
+    )
+
+
+async def _sse_with_cancel(
+    request: Request,
+    body: Iterator[str],
+    token: CancelToken,
+) -> AsyncIterator[str]:
+    """Bridge sync SSE generator → async iterator, polling the client socket
+    in parallel. When the browser disconnects the CancelToken fires, which
+    tears down any in-flight LLM socket via the httpx clients we registered.
+    """
+    import asyncio
+
+    queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def pump() -> None:
+        try:
+            for chunk in body:
+                loop.call_soon_threadsafe(queue.put_nowait, chunk)
+                if token.cancelled:
+                    break
+        except Exception as exc:
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                sse_data({
+                    "type": "error",
+                    "code": "compose_crashed",
+                    "message": str(exc),
+                    "provider": None,
+                    "model": None,
+                    "partial": True,
+                }),
+            )
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    producer = asyncio.create_task(asyncio.to_thread(pump))
+
+    async def watch_disconnect() -> None:
+        try:
+            while not producer.done():
+                if await request.is_disconnected():
+                    token.cancel()
+                    return
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            return
+
+    watcher = asyncio.create_task(watch_disconnect())
+
+    try:
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield chunk
+    finally:
+        token.cancel()  # idempotent — belt-and-suspenders for the finally path
+        watcher.cancel()
+        try:
+            await watcher
+        except Exception:
+            pass
+        try:
+            await producer
+        except Exception:
+            pass
+        set_cancel_token(None)
+
+
 def _chat_music() -> ChatMusic:
     return ChatMusic(
         compose_song=_compose_song(),
@@ -305,12 +523,22 @@ def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
 
 
 def _compose_song() -> ComposeSong:
+    # Non-stream path (`/compose`) still uses the legacy negotiator so a POST
+    # that expects a full ComposeResponse keeps working. All streaming clients
+    # (the UI's `/chat/stream`) go through the from-scratch band agent below.
     return ComposeSong(
         llm_configured=lambda: get_settings().llm_configured,
         negotiator=run_negotiation,
-        event_streamer=iter_negotiation_events,
+        event_streamer=_band_agent_event_streamer,
         canned=canned_song,
     )
+
+
+def _band_agent_event_streamer(style: str) -> Iterator[tuple[dict, Optional[Part]]]:
+    """Adapter: bridge `band_agent.stream_compose` (yields `(event, SongState)`)
+    to the `ComposeSong.event_streamer` signature. The wrapper's contract is
+    "any snapshot object", so passing SongState through is fine."""
+    yield from band_agent_stream(style)
 
 
 def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base: str) -> Iterator[dict]:
@@ -339,6 +567,8 @@ def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base
                 by_alias=True, mode="json"
             )
             return
+    except CancelledCompose:
+        raise
     except ComposeConfigurationError as exc:
         yield _compose_configuration_error_event(exc)
         return

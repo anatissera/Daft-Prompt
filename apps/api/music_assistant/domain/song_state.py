@@ -35,16 +35,29 @@ class Header(BaseModel):
     num_bars: int
     sections: list[Section] = Field(default_factory=list)
     chord_progression: list[ChordSpan] = Field(default_factory=list)
+    # Director's commitment to the rhythmic idiom of the requested style.
+    # Free-text 3-6 sentences that the per-instrument agent reads before
+    # composing notes. Empty for older Songs (backwards-compatible default).
+    rhythmic_feel: str = ""
+
+
+from .patch import Patch, SynthPreset  # re-exported for backward compat
 
 
 class RosterItem(BaseModel):
     id: str
     instrument: str
+    # `patch` is the single source of truth for timbre — chosen semantically
+    # by the director from the closed vocabulary in `domain.patch`. The
+    # numeric `midi_program` and `synth_preset` fields below are DERIVED from
+    # `patch` at `arrangement_to_song` time. They stay on the roster so the
+    # frontend and MIDI writer don't need the mapping table.
+    patch: Optional[Patch] = None
     midi_program: int = 0
-    midi_range: tuple[int, int] = (0, 127)
     role: str = ""
     playing_style: str = ""
     is_drum: bool = False
+    synth_preset: Optional[SynthPreset] = None
 
 
 class Note(BaseModel):

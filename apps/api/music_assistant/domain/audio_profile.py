@@ -10,6 +10,64 @@ from pydantic import BaseModel, Field, computed_field
 ConfidenceLabel = Literal["low", "medium", "high"]
 
 
+
+# ---------------------------------------------------------------------------
+# Web-evidence types (ported from Franco's product-direction branch) — the
+# connectors express everything they scrape as typed claims with a source,
+# a confidence, and the snippet they came from, so downstream consumers can
+# weigh conflicting sources instead of trusting whichever page loaded first.
+# ---------------------------------------------------------------------------
+
+EvidenceClaimType = Literal[
+    "tempo",
+    "key",
+    "meter",
+    "chord_progression",
+    "section",
+    "lyrics",
+    "tab",
+    "credit",
+    "metadata",
+    "instrumentation",
+    "groove",
+    "timbre",
+    "trait",
+    "audio_estimate",
+    "other",
+]
+
+ExtractionMethod = Literal[
+    "site_parser",
+    "browser_rendered_page",
+    "api",
+    "audio_analyzer",
+    "manual_fixture",
+    "inference",
+]
+
+
+class TimeRange(BaseModel):
+    start_seconds: Optional[float] = Field(default=None, ge=0.0)
+    end_seconds: Optional[float] = Field(default=None, ge=0.0)
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    source: Optional[str] = None
+
+
+class EvidenceClaim(BaseModel):
+    claim_id: str
+    claim_type: EvidenceClaimType
+    value: str
+    normalized_value: Optional[str] = None
+    section_name: Optional[str] = None
+    time_range: Optional[TimeRange] = None
+    source_name: str = Field(min_length=1)
+    source_url: str = Field(min_length=1)
+    extraction_method: ExtractionMethod
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    snippet: str = Field(default="", max_length=280)
+    notes: list[str] = Field(default_factory=list)
+
+
 class ReferenceSource(BaseModel):
     reference_id: str
     kind: Literal["upload", "direct_url", "youtube", "metadata", "local"]
