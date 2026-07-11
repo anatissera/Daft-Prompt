@@ -6,7 +6,7 @@ from music_assistant.domain.audio_profile import ReferenceProfile
 from music_assistant.infrastructure.web_research.fetch import UrlLibPageFetcher
 from music_assistant.infrastructure.web_research.fusion import EvidenceFuser
 from music_assistant.infrastructure.web_research.parsers import GenericSongPageParser
-from music_assistant.infrastructure.web_research.search import SeededWebSearch
+from music_assistant.infrastructure.web_research.search import DuckDuckGoSearch
 from music_assistant.ports.page_fetcher import PageFetcher
 from music_assistant.ports.song_researcher import SongResearcher
 from music_assistant.ports.web_search import WebSearch
@@ -21,7 +21,7 @@ class DefaultSongResearcher(SongResearcher):
         parser: GenericSongPageParser | None = None,
         fuser: EvidenceFuser | None = None,
     ) -> None:
-        self.search = search or SeededWebSearch()
+        self.search = search or DuckDuckGoSearch()
         self.fetcher = fetcher or UrlLibPageFetcher()
         self.parser = parser or GenericSongPageParser()
         self.fuser = fuser or EvidenceFuser()

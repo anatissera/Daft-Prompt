@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chooseChatAction, createTextMessage, createAnalysisMessage, createCompositionMessage } from "./chatActionAdapter.mjs";
+import {
+  chooseChatAction,
+  createTextMessage,
+  createAnalysisMessage,
+  createChordDiagramMessage,
+  createCompositionMessage,
+} from "./chatActionAdapter.mjs";
 
 test("chooseChatAction analyzes when a local file is attached", () => {
   assert.deepEqual(
@@ -36,7 +42,22 @@ test("message helpers create stable enriched chat messages", () => {
   assert.equal(analysis.kind, "analysis");
   assert.equal(analysis.profile.reference_id, "ref_1");
 
-  const composition = createCompositionMessage("assistant", "Generated", { job_id: "job_1" }, [], null, "director", 2);
+  const chords = createChordDiagramMessage("assistant", "Chords", {
+    instrument: "piano",
+    source_label: "Clocks by Coldplay",
+    confidence: 0.8,
+    sections: [
+      {
+        name: "intro",
+        confidence: 0.8,
+        chords: [{ chord: "Eb", notes: ["Eb", "G", "Bb"], midi_notes: [63, 67, 70] }],
+      },
+    ],
+  }, 2);
+  assert.equal(chords.kind, "chord_diagram");
+  assert.equal(chords.playableChords.sections[0].chords[0].chord, "Eb");
+
+  const composition = createCompositionMessage("assistant", "Generated", { job_id: "job_1" }, [], null, "director", 3);
   assert.equal(composition.kind, "composition");
   assert.equal(composition.result.job_id, "job_1");
 });

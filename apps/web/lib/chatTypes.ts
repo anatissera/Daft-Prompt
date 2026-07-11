@@ -15,6 +15,30 @@ export interface TextChatMessage extends BaseChatMessage {
   kind: "text";
 }
 
+export interface PlayableChord {
+  chord: string;
+  notes: string[];
+  midi_notes: number[];
+}
+
+export interface PlayableChordSection {
+  name: string;
+  chords: PlayableChord[];
+  confidence: number;
+}
+
+export interface PlayableChords {
+  instrument: "piano" | "guitar";
+  source_label: string;
+  confidence: number;
+  sections: PlayableChordSection[];
+}
+
+export interface ChordDiagramChatMessage extends BaseChatMessage {
+  kind: "chord_diagram";
+  playableChords: PlayableChords;
+}
+
 export interface AnalysisChatMessage extends BaseChatMessage {
   kind: "analysis";
   profile: ReferenceProfile;
@@ -28,4 +52,4 @@ export interface CompositionChatMessage extends BaseChatMessage {
   source: ComposeResponse["source"] | null;
 }
 
-export type ChatMessage = TextChatMessage | AnalysisChatMessage | CompositionChatMessage;
+export type ChatMessage = TextChatMessage | ChordDiagramChatMessage | AnalysisChatMessage | CompositionChatMessage;

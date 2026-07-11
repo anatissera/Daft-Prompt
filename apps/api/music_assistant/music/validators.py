@@ -17,7 +17,20 @@ from typing import Literal, Optional
 from pydantic import BaseModel
 
 from .theory import active_chord_at, beats_per_bar, chord_pitch_classes, in_key
+from .theory_tools import detect_overlaps
 from ..domain.song_state import SongState
+
+
+_MONOPHONIC_KEYWORDS = ("bass", "lead", "solo", "melody", "vocal")
+
+
+def _is_monophonic_by_convention(role: str, instrument: str) -> bool:
+    """Heuristic: instruments whose role/name mentions bass/lead/solo/melody/vocal
+    are assumed monophonic. Piano/guitar/pad/strings are not. False positives
+    only surface as `error`s in the repair loop, which is safe: the LLM can
+    respond by de-overlapping the two notes."""
+    haystack = f"{role} {instrument}".lower()
+    return any(word in haystack for word in _MONOPHONIC_KEYWORDS)
 
 _EPS = 1e-6
 
@@ -28,6 +41,54 @@ class ValidationIssue(BaseModel):
     code: str
     message: str
     bar: Optional[int] = None
+
+
+def check_style_progression(song: SongState) -> list[ValidationIssue]:
+    """Soft stylistic check: the produced chord progression is compared against
+    the modal progression of the corpus for the same genre. When the two share
+    zero root pitch classes, emit a single song-level warning — the arrangement
+    may still be valid, but it drifts from the canonical shape of the style.
+
+    Returns [] when there is no corpus, no progression, or the corpus has no
+    matching genre (so this check never fails hard)."""
+    prog = song.header.chord_progression
+    if not prog:
+        return []
+    try:
+        from ..corpus.retrieve import retrieve_style_examples
+        examples = retrieve_style_examples(song.header.genre, energy="medium", n=5)
+    except Exception:
+        return []
+    canonical_roots: set[str] = set()
+    for ex in examples:
+        for symbol in ex.progression:
+            root = _root_letter(symbol)
+            if root:
+                canonical_roots.add(root)
+    if not canonical_roots:
+        return []
+    produced_roots = {_root_letter(cs.chord) for cs in prog}
+    produced_roots.discard("")
+    overlap = produced_roots & canonical_roots
+    if not overlap and produced_roots:
+        return [ValidationIssue(
+            instrument_id="_song", severity="warning", code="unusual_progression_for_genre",
+            message=(
+                f"progression roots {sorted(produced_roots)} share no root with the corpus "
+                f"canonical set {sorted(canonical_roots)} for {song.header.genre!r}"
+            ),
+        )]
+    return []
+
+
+def _root_letter(symbol: str) -> str:
+    s = (symbol or "").strip()
+    if not s or s == "N.C.":
+        return ""
+    # 'A', 'Bb', 'C#', ...
+    if len(s) >= 2 and s[1] in ("b", "#", "-"):
+        return s[:2].replace("-", "b")
+    return s[:1]
 
 
 def validate_song(song: SongState) -> list[ValidationIssue]:
@@ -65,7 +126,12 @@ def validate_song(song: SongState) -> list[ValidationIssue]:
                         f"(a non-empty list of notes with real pitches)"))
             continue
 
-        lo, hi = roster.midi_range
+        if not roster.is_drum and _is_monophonic_by_convention(roster.role, roster.instrument):
+            for bar, msg in detect_overlaps(part, song.header):
+                issues.append(ValidationIssue(
+                    instrument_id=part_id, severity="error", code="note_overlap", bar=bar,
+                    message=f"{roster.instrument} is monophonic; {msg}"))
+
         for n in part.notes:
             # bar index
             if n.bar < 0 or n.bar >= num_bars:
@@ -108,11 +174,10 @@ def validate_song(song: SongState) -> list[ValidationIssue]:
             if roster.is_drum:
                 continue  # drums: skip range + key checks
 
-            # instrument range
-            if not (lo <= n.pitch <= hi):
-                issues.append(ValidationIssue(
-                    instrument_id=part_id, severity="error", code="pitch_out_of_range", bar=n.bar,
-                    message=f"pitch {n.pitch} outside {roster.instrument} range [{lo}, {hi}]"))
+            # instrument range: no per-roster clamp anymore — the instrument
+            # agent picks its own register from playing_style + role instead of
+            # the director declaring midi_low/midi_high. Absolute MIDI [0, 127]
+            # is still enforced above.
 
             # harmony membership (warning only). Chord-aware: a note that is a tone of
             # the bar's active chord is fine even when it's outside the key (e.g. the
@@ -129,6 +194,7 @@ def validate_song(song: SongState) -> list[ValidationIssue]:
                     instrument_id=part_id, severity="warning", code="out_of_key", bar=n.bar,
                     message=f"pitch {n.pitch} fits neither {where} (chromaticism?)"))
 
+    issues.extend(check_style_progression(song))
     return issues
 
 

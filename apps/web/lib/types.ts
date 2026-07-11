@@ -22,13 +22,25 @@ export interface Header {
   chord_progression: ChordSpan[];
 }
 
+export type SynthPreset =
+  | "supersaw_lead"
+  | "sub_bass"
+  | "pluck"
+  | "warm_pad"
+  | "vocal_fx"
+  | "wobble_bass";
+
 export interface RosterItem {
   id: string;
   instrument: string;
+  // Semantic patch name chosen by the director. The backend also emits the
+  // derived `midi_program` and `synth_preset` alongside, so the mixer keeps
+  // its existing routing logic unchanged.
+  patch?: string | null;
   midi_program: number;
-  midi_range: [number, number];
   role: string;
   is_drum: boolean;
+  synth_preset?: SynthPreset | null;
 }
 
 export interface Note {

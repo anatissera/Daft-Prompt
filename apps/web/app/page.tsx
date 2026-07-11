@@ -2,18 +2,21 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import ChatComposer from "@/components/ChatComposer";
-import ChatThread from "@/components/ChatThread";
+import { DaftHelmetIcon } from "@/components/icons";
+import { AgentGraphView } from "@/components/PipelineGraphs";
+import ChatThread, { type PipelineState, type PipelineStageIdx } from "@/components/ChatThread";
 import type { ChatMessage } from "@/lib/chatTypes";
 import type { AnalysisEvent, ReferenceProfile, SongState } from "@/lib/types";
 import {
   chooseChatAction,
   createAnalysisMessage,
+  createChordDiagramMessage,
   createCompositionMessage,
   createTextMessage,
 } from "@/lib/chatActionAdapter.mjs";
 import { deriveSessionTitle } from "@/lib/sessionTitle.mjs";
 
-type Intent = "answer_reference" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
+type Intent = "answer_reference" | "song_question" | "edit_song" | "playable_chords" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
 
 interface UsageInfo {
   input_tokens?: number;
@@ -34,21 +37,60 @@ interface ChatComposeResult {
   artifacts?: ChatArtifacts | null;
 }
 
+interface PlayableChord {
+  chord: string;
+  notes: string[];
+  midi_notes: number[];
+}
+
+interface PlayableChordSection {
+  name: string;
+  chords: PlayableChord[];
+  confidence: number;
+}
+
+interface PlayableChords {
+  instrument: "piano" | "guitar";
+  source_label: string;
+  confidence: number;
+  sections: PlayableChordSection[];
+}
+
 interface ChatResponse {
   intent: Intent;
   reply: string;
   reference_id?: string | null;
   answer?: { answer: string; confidence?: string } | null;
   compose?: ChatComposeResult | null;
+  playable_chords?: PlayableChords | null;
   clarification?: string | null;
   usage?: UsageInfo | null;
 }
+
+interface ChatDoneEvent {
+  type: "done";
+  job_id?: string;
+  source?: string;
+  song?: SongState & { header?: SongState["header"]; roster?: unknown[] };
+  artifacts?: ChatArtifacts | null;
+}
+
+type ChatStreamEvent =
+  | { type: "intent"; intent: Intent }
+  | { type: "reply"; response: ChatResponse }
+  | { type: "director"; source: string; header?: SongState["header"]; roster?: unknown[] }
+  | { type: "agent_pass"; round: number; instrument_id: string; notes_summary?: string }
+  | { type: "convergence"; round: number; converged: boolean }
+  | ChatDoneEvent
+  | { type: "error"; code: string; message: string; provider: string | null; model: string | null; partial: boolean };
 
 export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messageIndexRef = useRef(1);
   const [prompt, setPrompt] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // Main-panel view: chat, or the unified architecture graph (helmet button).
+  const [view, setView] = useState<"chat" | "agents">("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([
     createTextMessage(
       "assistant",
@@ -61,9 +103,14 @@ export default function Home() {
   const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
   const [busyElapsedMs, setBusyElapsedMs] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineState | null>(null);
+  const [promptQueue, setPromptQueue] = useState<string[]>([]);
   const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
   const sessionTitledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Last composed job — lets the backend EDIT it on a later turn
+  // ("swap the piano for a rhodes"). Reset with the session.
+  const lastJobIdRef = useRef<string | null>(null);
 
   function maybeTitleSession(firstUserMessage: string) {
     if (sessionTitledRef.current) return;
@@ -83,15 +130,50 @@ export default function Home() {
     return () => clearInterval(id);
   }, [busyStartedAt]);
 
+  // Composes run for minutes over a live SSE stream. On phones the screen
+  // times out mid-generation, the OS suspends the browser's network, the
+  // stream dies AND the backend cancels the job on disconnect. A screen
+  // wake lock while busy keeps the device awake for the duration; released
+  // (and auto-released by the OS) as soon as work ends. Requires a secure
+  // context — the tailscale-serve HTTPS endpoint qualifies.
+  const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
+
+  async function acquireWakeLock() {
+    try {
+      const wl = (navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> } }).wakeLock;
+      if (wl) wakeLockRef.current = await wl.request("screen");
+    } catch { /* unsupported or denied — degrade silently */ }
+  }
+
+  function releaseWakeLock() {
+    wakeLockRef.current?.release().catch(() => { /* noop */ });
+    wakeLockRef.current = null;
+  }
+
+  // The OS drops wake locks when the tab is hidden; re-acquire when the
+  // user returns while a compose is still running.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && busyStartedAt !== null && !wakeLockRef.current) {
+        void acquireWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [busyStartedAt]);
+
   function startWork(label: string) {
     setActiveWork(label);
     setBusyStartedAt(performance.now());
+    void acquireWakeLock();
   }
 
   function stopWork() {
     setActiveWork(null);
     setBusyStartedAt(null);
+    setPipeline(null);
     abortRef.current = null;
+    releaseWakeLock();
   }
 
   function cancelWork() {
@@ -102,7 +184,19 @@ export default function Home() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    const text = prompt.trim();
+    if (!text && !selectedFile) return;
+
+    // If the studio is already working, queue the raw text (compose intent
+    // only — file uploads never queue because attachments can't be
+    // deferred). Enqueued prompts stack visibly above the composer and
+    // drain automatically as previous jobs finish.
+    if (busy) {
+      if (!text) return;
+      setPromptQueue((prev) => [...prev, text]);
+      setPrompt("");
+      return;
+    }
 
     const action = chooseChatAction({
       prompt,
@@ -122,47 +216,144 @@ export default function Home() {
     await chat(action.messageText);
   }
 
+  // Drain the queue whenever the studio goes idle. We pull the first entry,
+  // append it as a user message, and fire chat() — this loop keeps running
+  // until the queue empties because every chat() completion re-triggers the
+  // effect via activeWork transitioning back to null.
+  useEffect(() => {
+    if (busy) return;
+    if (promptQueue.length === 0) return;
+    const [next, ...rest] = promptQueue;
+    setPromptQueue(rest);
+    appendMessage(createTextMessage("user", next, nextMessageIndex()));
+    setError(null);
+    void chat(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, promptQueue]);
+
   async function chat(message: string) {
     startWork("Thinking…");
     const controller = new AbortController();
     abortRef.current = controller;
     const startedAt = performance.now();
+
+    // Real-time compose state accumulated from SSE events. When the backend
+    // classifies the turn as a non-compose intent it emits a single `reply`
+    // event and we skip the pipeline entirely.
+    let intent: Intent | null = null;
+    let replyResponse: ChatResponse | null = null;
+    let doneEvent: (ChatDoneEvent) | null = null;
+    let composeAgentEvents = 0;
+
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "content-type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
           message,
           reference_id: referenceProfile?.reference_id ?? null,
+          edit_job_id: lastJobIdRef.current,
         }),
       });
       if (!res.ok) throw new Error(await readApiError(res));
-      const data = (await res.json()) as ChatResponse;
-      const meta = formatMeta(data, performance.now() - startedAt);
-      const idx = nextMessageIndex();
-      // Title the session from the first user message (client-side, no LLM).
+      if (!res.body) throw new Error("backend did not return a stream");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      readLoop: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() ?? "";
+        for (const chunk of chunks) {
+          const line = chunk.split("\n").find((entry) => entry.startsWith("data:"));
+          if (!line) continue;
+          const ev = JSON.parse(line.slice(5).trim()) as ChatStreamEvent;
+
+          if (ev.type === "intent") {
+            intent = ev.intent;
+            if (ev.intent === "compose" || ev.intent === "compose_from_reference") {
+              setPipeline({ stageIdx: 0, substep: null });
+            }
+          } else if (ev.type === "reply") {
+            replyResponse = ev.response;
+          } else if (ev.type === "director") {
+            const header = ev.header;
+            setActiveWork(
+              header
+                ? `Composing ${header.genre || "sketch"} · ${Math.round(header.tempo_bpm ?? 0)} BPM · ${header.key || "?"}`
+                : "Composing…",
+            );
+            setPipeline({ stageIdx: 1, substep: "roster picked, instruments starting…" });
+          } else if (ev.type === "agent_pass") {
+            composeAgentEvents += 1;
+            setPipeline({
+              stageIdx: 1,
+              substep: `${ev.instrument_id || "instrument"} composing (round ${ev.round ?? 1})…`,
+            });
+          } else if (ev.type === "convergence") {
+            setPipeline({ stageIdx: 2, substep: "arbiter validating harmonic fit…" });
+            // Arbiter finishes synchronously before render_artifacts runs; nudge
+            // the visual to the rendering step so the UI doesn't sit on arbiter
+            // for the full render span (which is silent from the backend side).
+            setTimeout(() => {
+              setPipeline((prev) =>
+                prev && prev.stageIdx === 2
+                  ? { stageIdx: 3, substep: "writing MIDI + score…" }
+                  : prev,
+              );
+            }, 400);
+          } else if (ev.type === "done") {
+            doneEvent = ev;
+            setError(null);
+            setPipeline({ stageIdx: 3, substep: "done" });
+          } else if (ev.type === "error") {
+            throw new Error(ev.message || "backend error");
+          }
+        }
+        if (controller.signal.aborted) break readLoop;
+      }
+
       maybeTitleSession(message);
-      if (data.compose && data.compose.artifacts) {
+      const idx = nextMessageIndex();
+
+      if (doneEvent && doneEvent.song && doneEvent.artifacts) {
+        setError(null);
+        lastJobIdRef.current = doneEvent.job_id ?? lastJobIdRef.current;
         const composeResponse = {
-          job_id: "chat",
-          source: data.compose.source as "director" | "canned",
-          song: data.compose.song,
-          artifacts: data.compose.artifacts,
+          job_id: doneEvent.job_id ?? "chat",
+          source: (doneEvent.source ?? "director") as "director" | "canned",
+          song: doneEvent.song,
+          artifacts: doneEvent.artifacts,
         };
+        const header = doneEvent.song?.header;
+        const reply = header
+          ? `Generated a ${header.genre || "sketch"} at ${Math.round(header.tempo_bpm ?? 0)} BPM in ${header.key || "?"} (${doneEvent.song?.roster?.length ?? 0} instruments, ${composeAgentEvents} agent passes).`
+          : "Sketch ready.";
+        const elapsed = performance.now() - startedAt;
+        const meta = `${(elapsed / 1000).toFixed(1)}s · ${composeAgentEvents} agent passes`;
         const msg = createCompositionMessage(
           "assistant",
-          data.reply,
+          reply,
           composeResponse,
           [],
-          data.compose.song.header,
+          header,
           composeResponse.source,
           idx,
         );
         appendMessage({ ...msg, meta });
-      } else {
-        const msg = createTextMessage("assistant", data.reply, idx);
+      } else if (replyResponse) {
+        setError(null);
+        const meta = formatMeta(replyResponse, performance.now() - startedAt);
+        const msg = replyResponse.playable_chords
+          ? createChordDiagramMessage("assistant", replyResponse.reply, replyResponse.playable_chords, idx)
+          : createTextMessage("assistant", replyResponse.reply, idx);
         appendMessage({ ...msg, meta });
+      } else if (intent) {
+        appendMessage(createTextMessage("assistant", "(no response)", idx));
       }
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -237,6 +428,8 @@ export default function Home() {
     setError(null);
     setSessionTitle("Untitled session");
     sessionTitledRef.current = false;
+    lastJobIdRef.current = null;
+    setView("chat");
   }
 
   return (
@@ -247,15 +440,32 @@ export default function Home() {
           <span className="sidebar-tagline">MULTI-AGENT STUDIO</span>
         </div>
 
-        <button type="button" className="sidebar-new" onClick={resetConversation}>
-          <span className="sidebar-new-plus" aria-hidden="true">+</span>
-          New session
-        </button>
+        <div className="sidebar-actions">
+          <button
+            type="button"
+            className="sidebar-square"
+            onClick={resetConversation}
+            title="New session"
+            aria-label="New session"
+          >
+            <span className="sidebar-new-plus" aria-hidden="true">+</span>
+          </button>
+          <button
+            type="button"
+            className={`sidebar-square sidebar-square-icon${view === "agents" ? " sidebar-square-active" : ""}`}
+            onClick={() => setView((v) => (v === "agents" ? "chat" : "agents"))}
+            title="Agent map"
+            aria-label="Agent map"
+            aria-pressed={view === "agents"}
+          >
+            <DaftHelmetIcon size={26} />
+          </button>
+        </div>
 
         <div className="sidebar-section">
           <span className="sidebar-section-title">Recent sessions</span>
           <div className="sidebar-recent-list">
-            <button type="button" className="sidebar-recent">
+            <button type="button" className="sidebar-recent" onClick={() => setView("chat")}>
               <span className="sidebar-recent-title">{sessionTitle}</span>
               <span className="sidebar-recent-meta">NOW · LIVE</span>
             </button>
@@ -279,23 +489,35 @@ export default function Home() {
         <header className="app-topbar">
           <div className="app-topbar-left">
             <span className="app-topbar-dot" aria-hidden="true" />
-            <span className="app-topbar-title">{sessionTitle}</span>
+            <span className="app-topbar-title">
+              {view === "agents" ? "Architecture" : sessionTitle}
+            </span>
           </div>
-          <span className="app-topbar-meta">TWILIGHT · OUTPUT MIDI</span>
+          <span className="app-topbar-meta">
+            {view === "chat" ? "TWILIGHT · OUTPUT MIDI" : "SYSTEM VIEW · CHAT PAUSED"}
+          </span>
         </header>
-        <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} />
-        {error ? (
-          <p className="error-banner" role="alert">{error}</p>
-        ) : null}
-        <ChatComposer
-          busy={busy}
-          prompt={prompt}
-          selectedFileName={selectedFile?.name ?? null}
-          fileInputRef={fileInputRef}
-          onPromptChange={setPrompt}
-          onFileChange={setSelectedFile}
-          onSubmit={submit}
-        />
+        {view === "agents" ? (
+          <AgentGraphView />
+        ) : (
+          <>
+            <ChatThread messages={messages} busyLabel={activeWork} busyElapsedMs={busy ? busyElapsedMs : undefined} onCancel={busy ? cancelWork : undefined} pipeline={pipeline} />
+            {error ? (
+              <p className="error-banner" role="alert">{error}</p>
+            ) : null}
+            <ChatComposer
+              busy={busy}
+              prompt={prompt}
+              selectedFileName={selectedFile?.name ?? null}
+              fileInputRef={fileInputRef}
+              onPromptChange={setPrompt}
+              onFileChange={setSelectedFile}
+              onSubmit={submit}
+              queuedPrompts={promptQueue}
+              onCancelQueued={(i) => setPromptQueue((prev) => prev.filter((_, idx) => idx !== i))}
+            />
+          </>
+        )}
       </section>
     </main>
   );

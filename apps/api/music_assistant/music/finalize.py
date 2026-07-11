@@ -25,11 +25,16 @@ def _is_bass(roster: RosterItem) -> bool:
     return "bass" in roster.instrument.lower() or "bass" in roster.role.lower()
 
 
-def _nearest_chord_tone(pitch: int, chord_pcs: frozenset[int], lo: int, hi: int) -> int:
-    """The in-range MIDI pitch whose pitch class is in the chord, closest to `pitch`.
-    Ties break toward the lower pitch (a deeper bass note). Returns `pitch` unchanged
-    if no chord tone fits the range (shouldn't happen for a 3+ note chord)."""
-    candidates = [p for p in range(lo, hi + 1) if (p % 12) in chord_pcs]
+def _nearest_chord_tone(pitch: int, chord_pcs: frozenset[int]) -> int:
+    """The MIDI pitch whose pitch class is in the chord, closest to `pitch`.
+    Ties break toward the lower pitch (a deeper bass note). We search within a
+    ±6-semitone window so the snap stays in the register the bass is already
+    playing — no roster midi_range is needed since the search anchors on the
+    note's own pitch."""
+    candidates = [
+        p for p in range(max(0, pitch - 6), min(127, pitch + 6) + 1)
+        if (p % 12) in chord_pcs
+    ]
     if not candidates:
         return pitch
     return min(candidates, key=lambda p: (abs(p - pitch), p))
@@ -47,7 +52,6 @@ def enforce_bass_downbeats(song: SongState) -> int:
         roster = roster_by_id.get(part_id)
         if roster is None or not _is_bass(roster):
             continue
-        lo, hi = roster.midi_range
         for note in part.notes:
             if note.pitch is None or abs(note.start_beat) > _EPS:
                 continue  # rests and off-downbeat notes are left alone
@@ -55,7 +59,7 @@ def enforce_bass_downbeats(song: SongState) -> int:
             chord_pcs = chord_pitch_classes(chord) if chord else frozenset()
             if not chord_pcs or (note.pitch % 12) in chord_pcs:
                 continue
-            snapped = _nearest_chord_tone(note.pitch, chord_pcs, lo, hi)
+            snapped = _nearest_chord_tone(note.pitch, chord_pcs)
             if snapped != note.pitch:
                 note.pitch = snapped
                 changed += 1

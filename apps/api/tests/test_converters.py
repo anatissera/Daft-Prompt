@@ -30,7 +30,7 @@ def test_musicxml_is_valid(sample_song, tmp_path):
 
 def test_quantization_handles_ragged_durations(tmp_path):
     third = 1.0 / 3.0  # 0.333… — not representable on a binary grid
-    roster = [RosterItem(id="lead", instrument="lead", midi_range=(0, 127))]
+    roster = [RosterItem(id="lead", instrument="lead")]
     notes = [Note(bar=0, start_beat=i * third, pitch=60 + i, dur=third) for i in range(3)]
     song = SongState(
         request="triplets",

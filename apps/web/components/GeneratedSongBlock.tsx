@@ -1,17 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { CompositionChatMessage } from "@/lib/chatTypes";
 import type { Part, RosterItem, SongState } from "@/lib/types";
+import type { PlayerApi } from "@/lib/playerApi";
 import { getAudibleTrackIds } from "@/lib/trackMixerLogic.mjs";
 import { harmonicFitView, harmonicFitLabel } from "@/lib/harmonicFitView.mjs";
 import { triggerMidiDownload } from "@/lib/midiExport";
+import { triggerMp3Download } from "@/lib/mp3Export";
 import NegotiationFeed from "@/components/NegotiationFeed";
 import RosterView from "@/components/RosterView";
 
 const ScoreViewer = dynamic(() => import("@/components/ScoreViewer"), { ssr: false });
 const TrackMixer = dynamic(() => import("@/components/TrackMixer"), { ssr: false });
+const PianoRoll = dynamic(() => import("@/components/PianoRoll"), { ssr: false });
 
 function hasMixState(muted: Set<string>, solo: Set<string>): boolean {
   return muted.size > 0 || solo.size > 0;
@@ -66,31 +69,31 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
   // share the same Mute/Solo state.
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(() => new Set());
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
+  // Per-agent volume (0..1, default 1). Adjusted with the mouse wheel on
+  // each roster card's knob; applied live AND baked into MIDI/MP3 downloads.
+  const [trackGains, setTrackGains] = useState<Record<string, number>>({});
+  const [mp3State, setMp3State] = useState<"idle" | "rendering" | "error">("idle");
+  const [mp3Error, setMp3Error] = useState<string | null>(null);
+
+  // Shared playback clock: TrackMixer fills this handle, PianoRoll reads it.
+  const playerApiRef = useRef<PlayerApi | null>(null);
+  const audibleTrackIds = useMemo(
+    () => getAudibleTrackIds(Object.keys(song.parts), mutedTrackIds, soloTrackIds),
+    [song.parts, mutedTrackIds, soloTrackIds],
+  );
 
   return (
     <section className="song-deck" aria-label="Generated song">
       <header className="song-deck-header">
-        <div className="song-deck-stencil">
-          <span className="song-deck-stencil-label">TRK</span>
-          <span className="song-deck-stencil-number">001</span>
-        </div>
-        <div className="song-deck-title-block">
-          <p className="song-deck-eyebrow">— Generated · {result.source} —</p>
-          <h2 className="song-deck-title">{h.genre}</h2>
-          <ul className="song-deck-specs">
-            <li><span>KEY</span><strong>{h.key}</strong></li>
-            <li><span>BPM</span><strong>{Math.round(h.tempo_bpm)}</strong></li>
-            <li><span>METER</span><strong>{h.time_signature[0]}/{h.time_signature[1]}</strong></li>
-            <li><span>BARS</span><strong>{h.num_bars}</strong></li>
-            <li><span>AGENTS</span><strong>{partsCount}</strong></li>
-            {fit ? (
-              <li title="Fraction of notes that fit the active chord">
-                <span>HARMONY</span>
-                <strong data-fit={harmonicFitLabel(fit.overallPct)}>{fit.overallPct}%</strong>
-              </li>
-            ) : null}
-          </ul>
-        </div>
+        <h2 className="song-deck-title">{h.genre}</h2>
+        <p className="song-deck-specs-inline">
+          {h.key} · {Math.round(h.tempo_bpm)} BPM · {h.time_signature[0]}/{h.time_signature[1]} · {h.num_bars} bars · {partsCount} agents
+          {fit ? (
+            <span title="Fraction of notes that fit the active chord">
+              {" · "}<span data-fit={harmonicFitLabel(fit.overallPct)}>{fit.overallPct}% harmony</span>
+            </span>
+          ) : null}
+        </p>
       </header>
 
       {message.header ? (
@@ -101,31 +104,57 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
           embedded
           mutedTrackIds={mutedTrackIds}
           soloTrackIds={soloTrackIds}
+          trackGains={trackGains}
           onToggleMute={(id) => setMutedTrackIds((prev) => toggleSetItem(prev, id))}
           onToggleSolo={(id) => setSoloTrackIds((prev) => toggleSetItem(prev, id))}
+          onGainChange={(id, gain) => setTrackGains((prev) => ({ ...prev, [id]: gain }))}
         />
       ) : null}
 
       {hasPlayableParts ? (
         <>
+          <PianoRoll song={song} audibleTrackIds={audibleTrackIds} playerApiRef={playerApiRef} />
           <TrackMixer
             song={song}
             mutedTrackIds={mutedTrackIds}
             soloTrackIds={soloTrackIds}
+            trackGains={trackGains}
             onMutedChange={setMutedTrackIds}
             onSoloChange={setSoloTrackIds}
+            playerApiRef={playerApiRef}
           />
-          <button
-            type="button"
-            className="artifact-link"
-            onClick={() => {
-              const partIds = Object.keys(song.parts);
-              const audible = getAudibleTrackIds(partIds, mutedTrackIds, soloTrackIds);
-              triggerMidiDownload(song, audible);
-            }}
-          >
-            ↓ Download MIDI ({hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full"})
-          </button>
+          <div className="artifact-link-row">
+            <button
+              type="button"
+              className="download-chip"
+              title={`Download MIDI (${hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full mix"})`}
+              onClick={() => {
+                triggerMidiDownload(song, audibleTrackIds, trackGains);
+              }}
+            >
+              MIDI
+            </button>
+            <button
+              type="button"
+              className="download-chip"
+              title={`Download rendered MP3 (${hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full mix"})`}
+              disabled={mp3State === "rendering"}
+              onClick={async () => {
+                setMp3State("rendering");
+                setMp3Error(null);
+                try {
+                  await triggerMp3Download(song, trackGains, audibleTrackIds);
+                  setMp3State("idle");
+                } catch (e) {
+                  setMp3Error(String((e as Error).message ?? e));
+                  setMp3State("error");
+                }
+              }}
+            >
+              {mp3State === "rendering" ? "…" : "MP3"}
+            </button>
+          </div>
+          {mp3Error ? <p className="empty-note">MP3 render failed: {mp3Error}</p> : null}
         </>
       ) : (
         <p className="empty-note">
