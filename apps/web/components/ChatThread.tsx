@@ -1,5 +1,6 @@
 import type { ChatMessage } from "@/lib/chatTypes";
 import AnalysisResultBlock from "@/components/AnalysisResultBlock";
+import ChordDiagramBlock from "@/components/ChordDiagramBlock";
 import GeneratedSongBlock from "@/components/GeneratedSongBlock";
 import Typewriter from "@/components/Typewriter";
 import { DaftHelmetIcon } from "@/components/icons";
@@ -122,6 +123,7 @@ export default function ChatThread({ messages, busyLabel, busyElapsedMs, onCance
             </p>
           </div>
           {message.meta ? <span className="chat-meta">{message.meta}</span> : null}
+          {message.kind === "chord_diagram" ? <ChordDiagramBlock message={message} /> : null}
           {message.kind === "analysis" ? <AnalysisResultBlock profile={message.profile} /> : null}
           {message.kind === "composition" ? <GeneratedSongBlock message={message} /> : null}
         </article>

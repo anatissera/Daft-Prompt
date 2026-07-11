@@ -36,6 +36,16 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify(body),
       }),
     );
+    if (!upstream.ok) {
+      const text = await upstream.text();
+      return new Response(text || JSON.stringify({ detail: `backend error ${upstream.status}` }), {
+        status: upstream.status,
+        headers: {
+          "content-type": upstream.headers.get("content-type") ?? "application/json",
+          "cache-control": "no-cache",
+        },
+      });
+    }
     return new Response(upstream.body, {
       status: upstream.status,
       headers: {

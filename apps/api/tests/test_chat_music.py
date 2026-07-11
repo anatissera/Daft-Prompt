@@ -14,9 +14,15 @@ from music_assistant.domain.audio_profile import (
     AudioProfile,
     ChordEstimate,
     ExplanationAnswer,
+    HarmonicProfile,
+    KeyProfile,
+    ResearchEvidence,
     ReferenceProfile,
     ReferenceSource,
     SectionProfile,
+    StructuralSection,
+    StructureProfile,
+    ProgressionEstimate,
 )
 from music_assistant.domain.song_state import SongState
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
@@ -170,3 +176,115 @@ def test_compose_from_reference_uses_message_as_prefix():
     style = composer.calls[0]
     assert style.startswith("generate a chill chorus inspired by this song")
     assert "demo.wav" in style
+
+
+def test_show_chords_on_piano_returns_playable_chord_notes_from_sections():
+    profile = _make_profile()
+    assert profile.audio is not None
+    profile.audio.structure = StructureProfile(
+        sections=[
+            StructuralSection(
+                label="intro",
+                start_bar=0,
+                end_bar=4,
+                start_seconds=0.0,
+                end_seconds=12.0,
+                confidence=0.82,
+                main_progression=["Eb", "Bbm", "Fm"],
+            )
+        ],
+        confidence=0.82,
+    )
+    chat, _, _, store = _make_chat()
+    store.save(profile)
+
+    response = chat.handle(
+        ChatRequest(message="Can you show them to me in the piano?", reference_id=profile.reference_id),
+    )
+
+    assert response.intent == "playable_chords"
+    assert response.playable_chords is not None
+    assert response.playable_chords.instrument == "piano"
+    section = response.playable_chords.sections[0]
+    assert section.name == "intro"
+    assert [chord.chord for chord in section.chords] == ["Eb", "Bbm", "Fm"]
+    assert section.chords[0].midi_notes == [63, 67, 70]
+    assert section.chords[1].notes == ["Bb", "Db", "F"]
+
+
+def test_playable_chords_prefers_section_progressions_over_generic_harmony():
+    profile = _make_profile()
+    assert profile.audio is not None
+    profile.audio.harmony = HarmonicProfile(
+        key=KeyProfile(),
+        progressions=[
+            ProgressionEstimate(
+                start_bar=0,
+                end_bar=4,
+                chords=["C", "G"],
+                confidence=0.5,
+            )
+        ],
+    )
+    profile.audio.structure = StructureProfile(
+        sections=[
+            StructuralSection(
+                label="chorus",
+                start_bar=8,
+                end_bar=12,
+                start_seconds=24.0,
+                end_seconds=36.0,
+                confidence=0.9,
+                main_progression=["Eb", "Bbm", "Fm"],
+            )
+        ],
+        confidence=0.9,
+    )
+    chat, _, _, store = _make_chat()
+    store.save(profile)
+
+    response = chat.handle(
+        ChatRequest(message="show the chords on piano", reference_id=profile.reference_id),
+    )
+
+    assert response.playable_chords is not None
+    assert response.playable_chords.sections[0].name == "chorus"
+    assert [chord.chord for chord in response.playable_chords.sections[0].chords] == ["Eb", "Bbm", "Fm"]
+
+
+def test_show_chords_on_guitar_uses_chord_names_not_source_excerpt():
+    source = ReferenceSource(
+        reference_id="ref_clocks",
+        kind="metadata",
+        label="Clocks by Coldplay",
+        uri="research://Clocks by Coldplay",
+        authorized=True,
+    )
+    profile = ReferenceProfile(
+        reference_id="ref_clocks",
+        source=source,
+        audio=AudioProfile(duration_seconds=0.0, overall_confidence=0.6),
+        research_evidence=[
+            ResearchEvidence(
+                url="https://example.test/clocks",
+                site="Example Tabs",
+                claim_type="chord_progression",
+                value="Eb Bbm Fm",
+                confidence=0.64,
+                snippet="intro: Eb Bbm Fm",
+            )
+        ],
+    )
+    chat, composer, _, store = _make_chat()
+    store.save(profile)
+
+    response = chat.handle(
+        ChatRequest(message="Can you show them to me in the guitar?", reference_id=profile.reference_id),
+    )
+
+    assert response.intent == "playable_chords"
+    assert response.playable_chords is not None
+    assert response.playable_chords.instrument == "guitar"
+    assert [chord.chord for chord in response.playable_chords.sections[0].chords] == ["Eb", "Bbm", "Fm"]
+    assert response.playable_chords.sections[0].chords[0].midi_notes == []
+    assert composer.calls == []

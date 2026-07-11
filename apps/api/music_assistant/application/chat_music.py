@@ -21,6 +21,7 @@ from music_assistant.domain.audio_profile import ExplanationAnswer, ReferencePro
 from music_assistant.domain.errors import OffTopicRequest
 from music_assistant.domain.song_state import SongState
 from music_assistant.domain.usage import USAGE_TRACKER, UsageTracker
+from music_assistant.music.theory import chord_tone_names
 from music_assistant.ports.reference_store import ReferenceStore
 
 
@@ -28,6 +29,7 @@ Intent = Literal[
     "answer_reference",
     "song_question",
     "edit_song",
+    "playable_chords",
     "compose",
     "compose_from_reference",
     "clarify",
@@ -54,6 +56,25 @@ class ChatComposeResult(BaseModel):
     artifacts: Optional[ChatArtifacts] = None
 
 
+class PlayableChord(BaseModel):
+    chord: str
+    notes: list[str] = Field(default_factory=list)
+    midi_notes: list[int] = Field(default_factory=list)
+
+
+class PlayableChordSection(BaseModel):
+    name: str
+    chords: list[PlayableChord] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class PlayableChords(BaseModel):
+    instrument: Literal["piano", "guitar"]
+    source_label: str
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    sections: list[PlayableChordSection] = Field(default_factory=list)
+
+
 class UsageInfo(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
@@ -68,6 +89,7 @@ class ChatResponse(BaseModel):
     reference_id: Optional[str] = None
     answer: Optional[ExplanationAnswer] = None
     compose: Optional[ChatComposeResult] = None
+    playable_chords: Optional[PlayableChords] = None
     clarification: Optional[str] = None
     usage: Optional[UsageInfo] = None
 
@@ -77,6 +99,16 @@ _REFERENCE_TOPIC_RE = re.compile(
     r"\b(chord|chords|tempo|bpm|key|energy|section|sections|chorus|verse|analysis|analyze|profile|progression|harmony|harmonic)\b",
     re.IGNORECASE,
 )
+_PLAYABLE_CHORDS_RE = re.compile(
+    r"\b(show|display|play|teach|visuali[sz]e|ver|mostrar|mostrame|ense[nñ]ar|ense[nñ]ame)\b.*"
+    r"\b(chords?|acordes?|them|these|those|eso|esos|estas|estos)\b.*"
+    r"\b(piano|keyboard|keys|guitar|guitarra)\b"
+    r"|"
+    r"\b(piano|keyboard|keys|guitar|guitarra)\b.*"
+    r"\b(chords?|acordes?)\b",
+    re.IGNORECASE,
+)
+_GUITAR_WORD_RE = re.compile(r"\b(guitar|guitarra)\b", re.IGNORECASE)
 # A QUESTION about a known song ("which chords does Something by The
 # Beatles got?", "¿qué acordes tiene X?") must be ANSWERED, not turned into
 # a composition — compose used to be the unconditional default. Requires an
@@ -179,6 +211,33 @@ class ChatMusic:
                 reply=answer.answer,
                 reference_id=profile.reference_id,
                 answer=answer,
+            )
+
+        if intent == "playable_chords":
+            assert profile is not None
+            instrument: Literal["piano", "guitar"] = (
+                "guitar" if _GUITAR_WORD_RE.search(message) else "piano"
+            )
+            playable = _build_playable_chords(profile, instrument)
+            if playable is None:
+                return ChatResponse(
+                    intent="answer_reference",
+                    reply="I do not have section chord evidence to show on an instrument yet.",
+                    reference_id=profile.reference_id,
+                )
+            reply = (
+                f"Here are the section chords from {profile.source.label} as simple piano shapes."
+                if instrument == "piano"
+                else (
+                    f"Here are the section chords from {profile.source.label} as guitar chord names. "
+                    "Ask for tab if you want a source-specific riff excerpt."
+                )
+            )
+            return ChatResponse(
+                intent="playable_chords",
+                reply=reply,
+                reference_id=profile.reference_id,
+                playable_chords=playable,
             )
 
         if intent == "compose_from_reference":
@@ -315,6 +374,8 @@ class ChatMusic:
         wants_reference_guidance = bool(_REFERENCE_GUIDE_RE.search(message))
 
         if has_reference:
+            if _PLAYABLE_CHORDS_RE.search(message):
+                return "playable_chords"
             if wants_compose and (wants_reference_guidance or asks_about_reference):
                 return "compose_from_reference"
             if wants_compose:
@@ -368,3 +429,169 @@ def _style_with_reference(message: str, profile: ReferenceProfile) -> str:
     if not traits:
         return f"{prefix} inspired by reference {profile.source.label}"
     return f"{prefix} inspired by reference {profile.source.label}: " + ", ".join(traits)
+
+
+def _build_playable_chords(
+    profile: ReferenceProfile,
+    instrument: Literal["piano", "guitar"],
+) -> PlayableChords | None:
+    sections = _chord_sections(profile)
+    if not sections:
+        return None
+    playable_sections = [
+        PlayableChordSection(
+            name=name,
+            confidence=confidence,
+            chords=[
+                PlayableChord(
+                    chord=chord,
+                    notes=list(chord_tone_names(chord)),
+                    midi_notes=_piano_midi_notes(chord) if instrument == "piano" else [],
+                )
+                for chord in chords
+                if chord and chord.upper() != "N.C."
+            ],
+        )
+        for name, chords, confidence in sections
+    ]
+    playable_sections = [section for section in playable_sections if section.chords]
+    if not playable_sections:
+        return None
+    confidence = max(section.confidence for section in playable_sections)
+    return PlayableChords(
+        instrument=instrument,
+        source_label=profile.source.label,
+        confidence=confidence,
+        sections=playable_sections[:8],
+    )
+
+
+def _chord_sections(profile: ReferenceProfile) -> list[tuple[str, list[str], float]]:
+    audio = profile.audio
+    if audio and audio.structure and audio.structure.sections:
+        out = [
+            (
+                section.label,
+                _dedupe_chords(section.main_progression),
+                section.confidence,
+            )
+            for section in audio.structure.sections
+            if section.main_progression
+        ]
+        if out:
+            return out
+
+    harmony = audio.harmony if audio else None
+    if harmony and harmony.progressions:
+        out = [
+            (
+                f"bars {progression.start_bar}-{progression.end_bar}",
+                _dedupe_chords(progression.chords),
+                progression.confidence,
+            )
+            for progression in harmony.progressions
+            if progression.chords
+        ]
+        if out:
+            return out
+
+    if harmony and harmony.chord_spans:
+        spans = [span for span in harmony.chord_spans if span.chosen is not None]
+        if spans:
+            return [
+                (
+                    "bar-level chords",
+                    _dedupe_chords([span.chosen.label for span in spans if span.chosen]),
+                    max((span.confidence for span in spans), default=0.0),
+                )
+            ]
+
+    evidence_sections: list[tuple[str, list[str], float]] = []
+    for item in profile.research_evidence:
+        if item.claim_type != "chord_progression":
+            continue
+        chords = _chords_from_progression_text(item.value)
+        if not chords:
+            continue
+        label = _section_label_from_evidence(item.value, item.snippet) or "song"
+        evidence_sections.append((label, chords, item.confidence))
+    return evidence_sections
+
+
+def _dedupe_chords(chords: list[str]) -> list[str]:
+    out: list[str] = []
+    for chord in chords:
+        clean = _clean_chord_token(chord)
+        if clean and clean not in out:
+            out.append(clean)
+    return out
+
+
+def _chords_from_progression_text(value: str) -> list[str]:
+    raw = value.replace("|", " ").replace("-", " ")
+    return _dedupe_chords(raw.split())
+
+
+def _section_label_from_evidence(value: str, snippet: str) -> str:
+    for text in (snippet, value):
+        if ":" in text:
+            before = text.split(":", 1)[0].strip()
+            if 0 < len(before) <= 32 and not _looks_like_chord(before):
+                return before
+    return ""
+
+
+_CHORD_TOKEN_RE = re.compile(
+    r"^[A-G](?:#|b)?(?:m|min|maj|dim|aug|sus|add)?\d*(?:/[A-G](?:#|b)?)?$",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_chord(value: str) -> bool:
+    return bool(_CHORD_TOKEN_RE.match(value.strip()))
+
+
+def _clean_chord_token(value: str) -> str:
+    token = value.strip().strip(".,;:()[]{}")
+    return token if _looks_like_chord(token) else ""
+
+
+_NOTE_TO_PC = {
+    "C": 0,
+    "C#": 1,
+    "Db": 1,
+    "D": 2,
+    "D#": 3,
+    "Eb": 3,
+    "E": 4,
+    "F": 5,
+    "F#": 6,
+    "Gb": 6,
+    "G": 7,
+    "G#": 8,
+    "Ab": 8,
+    "A": 9,
+    "A#": 10,
+    "Bb": 10,
+    "B": 11,
+}
+
+
+def _piano_midi_notes(chord: str) -> list[int]:
+    tones = chord_tone_names(chord)
+    if not tones:
+        return []
+    pcs = [_NOTE_TO_PC.get(tone) for tone in tones]
+    if any(pc is None for pc in pcs):
+        return []
+    root_pc = int(pcs[0])
+    root = 48 + root_pc if root_pc >= 9 else 60 + root_pc
+    notes = [root]
+    previous = root
+    for pc_value in pcs[1:]:
+        pitch = 48 + int(pc_value)
+        while pitch <= previous:
+            pitch += 12
+        notes.append(pitch)
+        previous = pitch
+    return notes
