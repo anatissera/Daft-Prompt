@@ -20,6 +20,7 @@ from music_assistant.application.answer_music_question import AnswerMusicQuestio
 from music_assistant.application.artist_style_profile import BuildArtistStyleProfile
 from music_assistant.application.chat_music import ChatMusic
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
+from music_assistant.application.composition_reviewer import CompositionReviewer
 from music_assistant.application.language import is_spanish
 from music_assistant.application.reference_instruments import ReferenceInstrumentProfileBuilder
 from music_assistant.application.research_reference import ResearchReference
@@ -285,6 +286,7 @@ def _compose_song() -> ComposeSong:
         negotiator=run_negotiation,
         event_streamer=iter_negotiation_events,
         instrument_reviser=revise_instrument_part,
+        reviewer=CompositionReviewer(),
         canned=canned_song,
     )
 

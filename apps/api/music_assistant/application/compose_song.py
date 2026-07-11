@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from music_assistant.domain.audio_profile import CompositionBrief
+from music_assistant.application.composition_reviewer import CompositionReview, CompositionReviewer
 from music_assistant.domain.errors import OffTopicRequest
 from music_assistant.domain.song_state import SongState
 from music_assistant.music.reference_materialization import register_literal_note_pack
@@ -38,18 +39,22 @@ class ComposeSong:
         event_streamer: Callable[[str], Iterator[tuple[dict[str, Any], Any]]],
         canned: Callable[[str], SongState],
         instrument_reviser: Callable[[SongState, str, str], SongState] | None = None,
+        reviewer: CompositionReviewer | None = None,
     ):
         self.llm_configured = llm_configured
         self.negotiator = negotiator
         self.event_streamer = event_streamer
         self.canned = canned
         self.instrument_reviser = instrument_reviser
+        self.reviewer = reviewer
+        self.last_review: CompositionReview | None = None
 
     def compose(self, style: str | CompositionBrief) -> tuple[SongState, str]:
         if not self.llm_configured():
             raise ComposeConfigurationError()
         prompt = _style_prompt(style)
-        return self.negotiator(prompt), "director"
+        song = self.negotiator(prompt)
+        return self._review_if_needed(style, song), "director"
 
     def stream(self, style: str | CompositionBrief) -> Iterator[tuple[dict[str, Any], SongState | None, str]]:
         if not self.llm_configured():
@@ -71,7 +76,42 @@ class ComposeSong:
                 }
                 previous_event_at = now
             yield event, song, source
+        if song is not None:
+            song = self._review_if_needed(style, song)
         yield {}, song, source
+
+    def _review_if_needed(self, style: str | CompositionBrief, song: SongState) -> SongState:
+        self.last_review = None
+        if self.reviewer is None or not isinstance(style, CompositionBrief):
+            return song
+        try:
+            review = self.reviewer.review(style, song)
+        except Exception as exc:  # noqa: BLE001 - review must not discard a playable result
+            song.errors.append(f"composition reviewer unavailable: {type(exc).__name__}")
+            return song
+
+        chosen = song
+        chosen_review = review
+        if any(issue.severity == "high" for issue in review.issues):
+            revision_prompt = (
+                f"{_style_prompt(style)}\n"
+                "Final CompositionReviewer findings require one bounded correction pass:\n"
+                + "\n".join(f"- {request}" for request in review.targeted_revision_requests)
+                + "\nReturn a corrected complete SongState that preserves unaffected requested material."
+            )
+            try:
+                candidate = self.negotiator(revision_prompt)
+                candidate_review = self.reviewer.review(style, candidate)
+                if _review_rank(candidate_review) < _review_rank(review):
+                    chosen, chosen_review = candidate, candidate_review
+            except Exception as exc:  # noqa: BLE001 - keep the original playable result
+                review.user_warnings.append(f"A targeted composition revision was unavailable ({type(exc).__name__}).")
+
+        if not chosen_review.accepted:
+            warnings = chosen_review.user_warnings or [issue.message for issue in chosen_review.issues]
+            chosen.errors.extend(f"Composition review: {warning}" for warning in warnings)
+        self.last_review = chosen_review
+        return chosen
 
     def revise_instrument(self, song: SongState, instruction: str, instrument_id: str) -> tuple[SongState, str]:
         if not self.llm_configured():
@@ -97,6 +137,11 @@ def _merge_targeted_revision(original: SongState, candidate: SongState, instrume
         deep=True,
         update={"parts": {**original.parts, instrument_id: revised_part}},
     )
+
+
+def _review_rank(review: CompositionReview) -> tuple[int, int]:
+    high = sum(issue.severity == "high" for issue in review.issues)
+    return high, len(review.issues)
 
 
 def prompt_from_composition_brief(brief: CompositionBrief) -> str:

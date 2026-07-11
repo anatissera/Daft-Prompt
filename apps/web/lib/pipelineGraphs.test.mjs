@@ -21,6 +21,7 @@ test("pipeline graphs describe the current composition graph and LLM schemas", (
   assert.match(source, /director/);
   assert.match(source, /instrument_turn/);
   assert.match(source, /arbiter/);
+  assert.match(source, /CompositionReviewer/);
   assert.match(source, /FallbackChatModel/);
   assert.match(source, /with_structured_output/);
   assert.match(source, /DirectorOutput/);
