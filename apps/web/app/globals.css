@@ -2230,6 +2230,7 @@ input[type="number"], select {
   border-radius: var(--radius-sm);
   background: rgba(3, 5, 10, 0.46);
 }
+.piano-roll-panel { margin: 12px 0; }
 .piano-roll-header {
   display: flex;
   justify-content: space-between;

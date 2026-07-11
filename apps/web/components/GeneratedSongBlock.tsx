@@ -68,6 +68,7 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
   // share the same Mute/Solo state.
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(() => new Set());
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
+  const [pianoRollOpen, setPianoRollOpen] = useState(false);
   const [mp3State, setMp3State] = useState<"idle" | "rendering" | "error">("idle");
   const [mp3Error, setMp3Error] = useState<string | null>(null);
   const partIds = useMemo(() => Object.keys(song.parts), [song.parts]);
@@ -124,7 +125,14 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             onMutedChange={setMutedTrackIds}
             onSoloChange={setSoloTrackIds}
           />
-          <PianoRoll song={song} audibleTrackIds={audibleTrackIds} />
+          <details
+            className="details-panel piano-roll-panel"
+            open={pianoRollOpen}
+            onToggle={(event) => setPianoRollOpen(event.currentTarget.open)}
+          >
+            <summary className="details-summary">Piano roll · open on request</summary>
+            {pianoRollOpen ? <PianoRoll song={song} audibleTrackIds={audibleTrackIds} /> : null}
+          </details>
           <div className="artifact-link-row">
             <button
               type="button"
