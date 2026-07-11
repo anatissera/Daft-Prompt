@@ -265,9 +265,11 @@ code, pre, .mono { font-family: var(--font-mono); }
   overflow: auto;
 }
 .graph-svg {
+  /* Fit the whole graph in the panel (SVG "meet" letterboxing) — no inner
+   * scrolling, so the bottom lane is always visible. */
   width: 100%;
-  height: auto;
-  min-width: 900px;
+  height: 100%;
+  display: block;
 }
 .graph-node-title {
   font-family: var(--font-tech, var(--font-sans));
