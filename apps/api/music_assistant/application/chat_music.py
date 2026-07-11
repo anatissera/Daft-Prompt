@@ -31,7 +31,7 @@ from music_assistant.application.music_tool_models import (
     TabExcerptToolOutput,
 )
 from music_assistant.application.music_tools import MusicTools
-from music_assistant.domain.audio_profile import ExplanationAnswer, MelodyProfile, ReferenceProfile
+from music_assistant.domain.audio_profile import ArtistStyleProfile, ExplanationAnswer, MelodyProfile, ReferenceProfile
 from music_assistant.domain.errors import OffTopicRequest
 from music_assistant.domain.song_state import SongState
 from music_assistant.domain.usage import USAGE_TRACKER, UsageTracker
@@ -55,6 +55,7 @@ class ChatRequest(BaseModel):
     reference_ids: list[str] = Field(default_factory=list)
     reference_context: Optional[str] = None
     conversation_context: Optional[str] = Field(default=None, max_length=1600)
+    artist_style_profiles: list[ArtistStyleProfile] = Field(default_factory=list)
     current_song: Optional[SongState] = None
 
 
@@ -98,6 +99,7 @@ class ChatResponse(BaseModel):
     melody_preview: Optional[MelodyProfile] = None
     tab_excerpt: Optional[TabExcerptToolOutput] = None
     compose: Optional[ChatComposeResult] = None
+    artist_style_profiles: list[ArtistStyleProfile] = Field(default_factory=list)
     clarification: Optional[str] = None
     usage: Optional[UsageInfo] = None
     error: Optional[dict[str, Any]] = None

@@ -149,6 +149,7 @@ export interface ChatResponse {
   chord_chart?: ChordChartRow[];
   melody_preview?: MelodyProfile | null;
   compose?: ChatComposeResult | null;
+  artist_style_profiles?: ArtistStyleProfile[];
   clarification?: string | null;
   usage?: Record<string, number> | null;
   error?: ChatErrorDetail | null;
@@ -159,6 +160,7 @@ export interface ChatRequestPayload {
   reference_id?: string | null;
   current_song?: SongState | null;
   conversation_context?: string | null;
+  artist_style_profiles?: ArtistStyleProfile[];
 }
 
 export type ReferenceSourceKind = "upload" | "direct_url" | "youtube" | "metadata" | "local";

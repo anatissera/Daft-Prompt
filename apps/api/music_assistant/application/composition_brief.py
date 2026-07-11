@@ -8,6 +8,7 @@ import re
 from pydantic import BaseModel
 
 from music_assistant.domain.audio_profile import (
+    ArtistStyleProfile,
     CompositionBrief,
     EvidenceClaim,
     ReferenceInstrumentProfile,
@@ -27,6 +28,7 @@ class BuildCompositionBrief:
         message: str,
         profiles: list[SongKnowledgeProfile],
         *,
+        artist_style_profiles: list[ArtistStyleProfile] | None = None,
         transfer_intent: ReferenceTransferIntent | None = None,
         instrument_profiles: dict[str, dict[str, ReferenceInstrumentProfile]] | None = None,
     ) -> BriefBuildResult:
@@ -46,7 +48,11 @@ class BuildCompositionBrief:
             brief_id=_brief_id(cleaned, profiles),
             user_request=cleaned,
             references_used=[profile.profile_id for profile in profiles],
+            song_profile_ids=[profile.profile_id for profile in profiles],
+            artist_style_profile_ids=[profile.profile_id for profile in artist_style_profiles or []],
+            artist_style_profiles=artist_style_profiles or [],
             global_constraints=_global_constraints(normalized),
+            style_guidance=_style_guidance(artist_style_profiles or []),
         )
         if not profiles:
             return BriefBuildResult(brief=brief)
@@ -203,6 +209,29 @@ def _global_constraints(normalized: str) -> dict[str, str]:
     if tempo:
         constraints["tempo_bpm"] = tempo.group(1)
     return constraints
+
+
+def _style_guidance(style_profiles: list[ArtistStyleProfile]) -> dict[str, dict[str, list[str] | tuple[float | None, float | None]]]:
+    guidance: dict[str, dict[str, list[str] | tuple[float | None, float | None]]] = {}
+    for profile in style_profiles:
+        guidance[profile.profile_id] = {
+            "artist": [profile.artist_name],
+            "genres": profile.genre_tags,
+            "tempo_range_bpm": profile.tempo_range_bpm,
+            "meters": profile.common_meters,
+            "keys": profile.common_keys,
+            "progressions": profile.common_progressions,
+            "instruments": profile.typical_instruments,
+            "drums": profile.drum_traits,
+            "bass": profile.bass_traits,
+            "guitar": profile.guitar_traits,
+            "keys": profile.keys_traits,
+            "synth": profile.synth_traits,
+            "hooks": profile.melody_hook_traits,
+            "production": profile.production_tone_traits,
+            "form": profile.section_form_traits,
+        }
+    return guidance
 
 
 def _requested_dimensions(normalized: str) -> list[str]:
