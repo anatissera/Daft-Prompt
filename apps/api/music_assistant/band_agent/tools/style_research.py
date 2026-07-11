@@ -15,7 +15,11 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from music_assistant.infrastructure.web_research.fetch import UrlLibPageFetcher
+from music_assistant.infrastructure.web_research.fetch import (
+    CurlPageFetcher,
+    FallbackPageFetcher,
+    UrlLibPageFetcher,
+)
 
 _MAX_PAGES = 3
 _EXCERPT_CHARS = 1500
@@ -67,7 +71,13 @@ def fetch_style_excerpts(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
     targets = hits[:_MAX_PAGES]
     if not targets:
         return []
-    fetcher = UrlLibPageFetcher(timeout_seconds=_FETCH_TIMEOUT_S)
+    # urllib first; sites that 403 its user-agent get retried through curl
+    # (real UA + compression) — Franco's fallback, ported verbatim.
+    fetcher = FallbackPageFetcher(
+        primary=UrlLibPageFetcher(timeout_seconds=_FETCH_TIMEOUT_S),
+        fallback=CurlPageFetcher(timeout_seconds=_FETCH_TIMEOUT_S),
+        retry_when="HTTP Error 403",
+    )
     out: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=len(targets)) as pool:
         futures = {

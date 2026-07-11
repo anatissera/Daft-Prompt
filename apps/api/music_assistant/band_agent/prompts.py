@@ -172,9 +172,14 @@ RULES — non-negotiable:
    and at every change. Use plain symbols: `Cmaj7`, `Am7`, `F#m`, `Bb7`,
    `G/B`, etc.
 
-9. Give at least 4 distinct instruments (bass, drums, and two melodic/
-   harmonic voices at minimum). Give each a clear `role` and short
-   `playing_style` — the fill stage relies on these to write good notes.
+9. ENSEMBLE SIZE: first choose the SMALLEST ensemble capable of an
+   authentic arrangement of this style, then declare it. A solo, duo or
+   trio is valid; silence and omitted layers are valid. NEVER add an
+   instrument merely because a slot is available or to make the plan
+   look more sophisticated — every roster item must earn its place with
+   a distinct purpose stated in its `role` (why does THIS style need
+   THIS voice?). Give each a clear `role` and short `playing_style` —
+   the fill stage relies on these to write good notes.
 
    Each roster item ALSO commits two rhythmic contracts that are enforced
    mechanically downstream (notes violating them get dropped):
@@ -215,6 +220,7 @@ def skeleton_user_prompt(
     research: dict[str, Any],
     corpus: dict[str, Any],
     excerpts: list[dict[str, Any]] | None = None,
+    song_evidence: dict[str, Any] | None = None,
 ) -> str:
     excerpt_block = ""
     if excerpts:
@@ -223,8 +229,18 @@ def skeleton_user_prompt(
             f"ground `style_summary` and `canonical_instruments` in these):\n"
             f"{json.dumps(excerpts, ensure_ascii=False, indent=2)}\n\n"
         )
+    evidence_block = ""
+    if song_evidence:
+        evidence_block = (
+            f"KNOWN-SONG EVIDENCE (scraped from tab/chord sites for the exact "
+            f"song the user referenced — STRONG grounding: prefer these tempo/"
+            f"key/meter values and let the per-section chord progressions "
+            f"shape yours):\n"
+            f"{json.dumps(song_evidence, ensure_ascii=False, indent=2)}\n\n"
+        )
     return (
         f"USER REQUEST:\n{style.strip() or 'a short demo song'}\n\n"
+        f"{evidence_block}"
         f"{excerpt_block}"
         f"WEB RESEARCH (titles only):\n{json.dumps(research, ensure_ascii=False, indent=2)}\n\n"
         f"CORPUS DIGEST (weak prior — see rule 11):\n{json.dumps(corpus, ensure_ascii=False, indent=2)}\n\n"
