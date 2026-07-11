@@ -86,7 +86,11 @@ def enforce_density(
     if max_per_bar <= 0 or not notes:
         return notes
     by_bar: dict[int, dict[float, list[Any]]] = {}
+    rests: list[Any] = []
     for n in notes:
+        if n.pitch is None:
+            rests.append(n)  # rests are free — they don't consume budget
+            continue
         by_bar.setdefault(int(n.bar), {}).setdefault(float(n.start_beat), []).append(n)
     kept: list[Any] = []
     dropped = 0
@@ -107,5 +111,52 @@ def enforce_density(
             "groove_enforce: %s — pruned %d notes over density budget %d/bar",
             instrument_id, dropped, max_per_bar,
         )
+    kept.extend(rests)
     kept.sort(key=lambda n: (int(n.bar), float(n.start_beat)))
     return kept
+
+
+def enforce_register(
+    notes: list[Any],
+    low: int,
+    high: int,
+    *,
+    instrument_id: str = "?",
+) -> list[Any]:
+    """Octave-fold pitches into [low, high]. Folding (±12 per step) preserves
+    the melodic contour and pitch class — dropping or hard-clamping would
+    flatten lines onto the boundary. A (0, 127) range means uncommitted →
+    untouched. Registers are instrument physics ("a bass doesn't play G#5"),
+    the same nature as patch families — not genre mapping."""
+    if low <= 0 and high >= 127:
+        return notes
+    if low > high:
+        low, high = high, low  # LLM swapped the bounds; the intent is clear
+    if low == high:
+        return notes
+    out: list[Any] = []
+    folded = 0
+    for n in notes:
+        p = n.pitch
+        if p is None:
+            out.append(n)
+            continue
+        q = int(p)
+        while q > high:
+            q -= 12
+        while q < low:
+            q += 12
+        # Range narrower than an octave can make folding oscillate; land on
+        # the nearest boundary inside in that case.
+        if q > high:
+            q = high
+        if q != p:
+            folded += 1
+            n = n.model_copy(update={"pitch": q})
+        out.append(n)
+    if folded:
+        log.info(
+            "groove_enforce: %s — octave-folded %d/%d notes into [%d, %d]",
+            instrument_id, folded, len(notes), low, high,
+        )
+    return out

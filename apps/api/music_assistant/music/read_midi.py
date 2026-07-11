@@ -53,7 +53,23 @@ def read_midi(path: str) -> ReadSong:
     """Read a `.mid` file and return a `ReadSong` in bar/beat form. Multi-tempo
     and multi-time-signature files use their first entry (LMD tracks are usually
     stable within a track); notes past `num_bars` are dropped defensively."""
-    pm = pretty_midi.PrettyMIDI(path)
+    try:
+        pm = pretty_midi.PrettyMIDI(path)
+    except OSError as exc:
+        if "data byte must be in range" not in str(exc):
+            raise
+        # Wild MIDIs (Bitmidi downloads especially) often carry data bytes
+        # >127. mido can CLIP those instead of refusing the file; re-save a
+        # sanitized copy and parse that. This is what let "Smells Like Teen
+        # Spirit" import instead of crashing the whole replicate flow.
+        import tempfile
+
+        import mido
+
+        clipped = mido.MidiFile(filename=path, clip=True)
+        with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as tmp:
+            clipped.save(tmp.name)
+            pm = pretty_midi.PrettyMIDI(tmp.name)
     return pretty_midi_to_song(pm)
 
 

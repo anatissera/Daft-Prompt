@@ -202,6 +202,10 @@ RULES — non-negotiable:
    - `max_notes_per_bar`: hard density ceiling per bar (simultaneous
      chord tones count as ONE event). Calm/sparse styles: 2-4 for
      accompaniment. Busy styles: 8-16. 0 = unlimited (use sparingly).
+   - `pitch_low` / `pitch_high`: the sensible MIDI register for THIS
+     instrument in THIS role (bass: 28-52, not 0-127; a comping guitar:
+     48-76; a lead: 60-88). Notes outside get octave-folded back in —
+     a bass wandering into the 5th octave stops sounding like a bass.
    A slow blues where every instrument commits max 3-4 events/bar CANNOT
    turn into a wall of sound — that is the point of these fields.
 
@@ -303,6 +307,8 @@ RULES — non-negotiable:
        free phrasing.
      - `max_notes_per_bar`: your density ceiling (chord tones struck
        together count as one event). Stay under it.
+     - `pitch_low` / `pitch_high`: your register. Notes outside get
+       octave-folded back in, so write inside it from the start.
 4. On the downbeat of each bar, land on a chord tone of that bar's chord.
    Bass-role instruments should land on the ROOT of the chord, dropped to
    MIDI 28-48. Rests: `pitch: null`.

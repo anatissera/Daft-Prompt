@@ -88,6 +88,9 @@ export default function Home() {
   const [sessionTitle, setSessionTitle] = useState<string>("Untitled session");
   const sessionTitledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Last composed job — lets the backend EDIT it on a later turn
+  // ("swap the piano for a rhodes"). Reset with the session.
+  const lastJobIdRef = useRef<string | null>(null);
 
   function maybeTitleSession(firstUserMessage: string) {
     if (sessionTitledRef.current) return;
@@ -230,6 +233,7 @@ export default function Home() {
         body: JSON.stringify({
           message,
           reference_id: referenceProfile?.reference_id ?? null,
+          edit_job_id: lastJobIdRef.current,
         }),
       });
       if (!res.ok) throw new Error(await readApiError(res));
@@ -296,6 +300,7 @@ export default function Home() {
       const idx = nextMessageIndex();
 
       if (doneEvent && doneEvent.song && doneEvent.artifacts) {
+        lastJobIdRef.current = doneEvent.job_id ?? lastJobIdRef.current;
         const composeResponse = {
           job_id: doneEvent.job_id ?? "chat",
           source: (doneEvent.source ?? "director") as "director" | "canned",
@@ -398,6 +403,7 @@ export default function Home() {
     setError(null);
     setSessionTitle("Untitled session");
     sessionTitledRef.current = false;
+    lastJobIdRef.current = null;
     setView("chat");
   }
 

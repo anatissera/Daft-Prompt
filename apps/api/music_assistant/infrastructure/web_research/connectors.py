@@ -513,16 +513,28 @@ def _normalize_section_name(section: str) -> str:
     return aliases.get(normalized, normalized)
 
 
+def _ascii_slug(value: str) -> str:
+    """Chord sites use accent-stripped slugs ("Adiós" → "adios"); percent-
+    encoding the accent 404s instead. NFD-decompose and drop the marks."""
+    import unicodedata
+
+    flattened = "".join(
+        ch for ch in unicodedata.normalize("NFD", value)
+        if not unicodedata.combining(ch)
+    )
+    return quote_plus(flattened.lower().replace(" ", "-"))
+
+
 def _hooktheory_url(query: ResolvedSongQuery) -> str:
-    artist = quote_plus((query.artist or "").lower().replace(" ", "-"))
-    title = quote_plus(query.title.lower().replace(" ", "-"))
+    artist = _ascii_slug(query.artist or "")
+    title = _ascii_slug(query.title)
     suffix = f"{artist}/{title}" if artist else title
     return f"https://www.hooktheory.com/theorytab/view/{suffix}"
 
 
 def _cifraclub_url(query: ResolvedSongQuery) -> str:
-    artist = quote_plus((query.artist or "").lower().replace(" ", "-"))
-    title = quote_plus(query.title.lower().replace(" ", "-"))
+    artist = _ascii_slug(query.artist or "")
+    title = _ascii_slug(query.title)
     suffix = f"{artist}/{title}" if artist else title
     return f"https://www.cifraclub.com.br/{suffix}/"
 
