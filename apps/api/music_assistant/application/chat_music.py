@@ -123,6 +123,11 @@ _EDIT_VERB_RE = re.compile(
     r"transpon[eé]|pon[eé]le?|agreg[aá](?:le|me)?|a[ñn]ad[ií](?:le|r)?|"
     r"sum[aá](?:le|me)?|mete(?:le)?|replace|change|swap|remove|drop|raise|"
     r"lower|transpose|mute|add|insert)\b"
+    r"|\b(convert[ií]|conviert[ea]|transform[aá]|volv[eé](?:le)?)\b"
+    # "hace que X sea/sean Y", "haz que…" — imperative hacer only counts as
+    # an edit when followed by "que" (bare "haceme una canción" composes).
+    r"|\bha(?:c[eé](?:me)?|z)\s+que\b"
+    r"|\bmake\s+(?:all|every|the|it|them)\b|\bturn\b[^.?!]*\binto\b"
     r"|\bm[aá]s\s+(r[aá]pid[oa]|lent[oa]|fuerte|suave|agud[oa]|grave)\b"
     r"|\b(faster|slower|louder|quieter|higher|lower)\b",
     re.IGNORECASE,
@@ -348,6 +353,15 @@ class ChatMusic:
             return "song_question"
         if asks_about_reference:
             return "clarify"
+        # Ambiguous zone — no compose verb, no recognized question. The old
+        # behaviour defaulted to compose, which orchestrated a whole band for
+        # "quién es Freddy Mercury?". Let a small LLM decide; if it's down,
+        # keep the old default.
+        from music_assistant.band_agent.tools.intent_router import route_intent
+
+        routed = route_intent(message, has_previous=has_previous)
+        if routed in ("compose", "song_question", "edit_song", "clarify"):
+            return routed  # type: ignore[return-value]
         return "compose"
 
 

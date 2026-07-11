@@ -199,6 +199,15 @@ export default function TrackMixer({
       const ctx = ctxRef.current;
       if (ctx.state === "suspended") await ctx.resume();
 
+      if (!ctx.audioWorklet) {
+        // Browsers only expose AudioWorklet in secure contexts. Plain-HTTP
+        // access (http://<lan-ip>:3001) hits this; localhost and HTTPS
+        // (e.g. the tailscale serve URL) are fine.
+        throw new Error(
+          "el audio necesita un contexto seguro — abrí la app por HTTPS " +
+            "(o localhost), no por http://IP:puerto",
+        );
+      }
       const spessa = await import("spessasynth_lib");
       // addModule is idempotent per URL — safe to call each engine boot.
       await ctx.audioWorklet.addModule(workletUrl());

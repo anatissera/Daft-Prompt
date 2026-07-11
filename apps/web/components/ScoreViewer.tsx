@@ -16,10 +16,20 @@ export default function ScoreViewer({ musicXmlUrl }: { musicXmlUrl: string }) {
         autoResize: true,
         drawTitle: false,
       });
-      const xml = await fetch(musicXmlUrl).then((r) => r.text());
-      if (cancelled) return;
-      await osmd.load(xml);
-      osmd.render();
+      try {
+        const res = await fetch(musicXmlUrl);
+        if (!res.ok) throw new Error(`score fetch failed: ${res.status}`);
+        const xml = await res.text();
+        if (cancelled) return;
+        await osmd.load(xml);
+        osmd.render();
+      } catch {
+        // Transient network hiccups (dev-server restart, flaky mobile link)
+        // shouldn't crash the page with a runtime overlay.
+        if (!cancelled && host) {
+          host.textContent = "No se pudo cargar la partitura — recargá la página.";
+        }
+      }
     })();
     return () => {
       cancelled = true;

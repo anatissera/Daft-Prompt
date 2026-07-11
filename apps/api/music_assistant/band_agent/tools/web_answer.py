@@ -13,6 +13,7 @@ import logging
 from pydantic import BaseModel
 
 from music_assistant.infrastructure.llm import make_llm
+from music_assistant.infrastructure.web_research.wikipedia import WikipediaSearch
 
 from . import search_web
 from .style_research import fetch_style_excerpts
@@ -29,9 +30,21 @@ def answer_from_websearch(message: str) -> str | None:
     nothing to stand on. Never raises."""
     try:
         hits = search_web(message, decorate=False)
-        if not hits:
-            return None
-        excerpts = fetch_style_excerpts(hits)
+        if hits:
+            excerpts = fetch_style_excerpts(hits)
+        else:
+            # DDG rate-limits/captchas this host regularly. Wikipedia's
+            # official API is keyless and reliable — good enough grounding
+            # for who-is / genre / history questions.
+            wiki = WikipediaSearch().search(message)
+            if not wiki:
+                return None
+            hits = [{"title": w["title"], "url": w["url"], "site": w["site"]} for w in wiki]
+            excerpts = [
+                {"title": w["title"], "site": w["site"], "excerpt": w["extract"]}
+                for w in wiki
+                if w.get("extract")
+            ]
         context = {
             "question": message,
             "results": [{"title": h.get("title"), "site": h.get("site")} for h in hits[:6]],

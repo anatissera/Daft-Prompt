@@ -39,6 +39,28 @@ def test_replace_instrument_swaps_patch_and_folds_register():
     assert song.parts["keys"].notes[0].pitch == 52
 
 
+def test_replace_instrument_echoed_old_name_does_not_veto_patch():
+    # The planner LLM often echoes the OLD instrument name in new_name.
+    # That must neither keep the stale display name nor let name-keyword
+    # reconciliation override the requested patch (bass name -> bass patch).
+    plan = EditPlan(operations=[
+        EditOp(op="replace_instrument", target="bass", new_patch="acoustic_grand_piano", new_name="slap bass"),
+    ])
+    song, _ = apply_edit(_song(), plan)
+    bass = next(r for r in song.roster if r.id == "bass")
+    assert bass.patch == "acoustic_grand_piano"
+    assert bass.midi_program == 0
+    assert bass.instrument == "acoustic grand piano"
+
+
+def test_replace_instrument_skips_drums():
+    plan = EditPlan(operations=[EditOp(op="replace_instrument", target="drums", new_patch="acoustic_grand_piano")])
+    song, changes = apply_edit(_song(), plan)
+    drums = next(r for r in song.roster if r.id == "drums")
+    assert drums.is_drum and drums.instrument == "kit"
+    assert any("batería" in c for c in changes)
+
+
 def test_remove_instrument():
     song, _ = apply_edit(_song(), EditPlan(operations=[EditOp(op="remove_instrument", target="piano")]))
     assert all(r.id != "keys" for r in song.roster)

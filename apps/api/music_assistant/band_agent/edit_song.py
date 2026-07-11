@@ -252,18 +252,40 @@ def apply_edit(song: SongState, plan: EditPlan) -> tuple[SongState, list[str]]:
             for r in song.roster:
                 if r.id != pid:
                     continue
-                patch = reconcile_patch(op.new_name or op.new_patch, op.new_patch)
+                if r.is_drum:
+                    # Drum parts live on the GM percussion channel where the
+                    # patch is meaningless — renaming them to "piano" would
+                    # lie in the UI while still sounding like drums.
+                    changes.append(f"{r.instrument}: sigue siendo batería (no se convierte)")
+                    break
+                # The plan's patch is authoritative here. reconcile_patch
+                # keyword-matches the *name* — and the LLM often echoes the
+                # OLD name in new_name ("electric_guitar_rhythm"), which
+                # would silently veto the user's requested sound (piano →
+                # clean_electric_guitar). Only fall back to reconciliation
+                # when the patch itself isn't in the vocabulary.
+                patch = op.new_patch
                 try:
                     program, preset = resolve_patch(patch)
                 except UnknownPatchError:
-                    changes.append(f"(unknown patch {op.new_patch!r} — skipped)")
-                    break
+                    patch = reconcile_patch(op.new_name or op.new_patch, op.new_patch)
+                    try:
+                        program, preset = resolve_patch(patch)
+                    except UnknownPatchError:
+                        changes.append(f"(unknown patch {op.new_patch!r} — skipped)")
+                        break
                 old = r.patch
+                old_name = r.instrument
                 r.patch = patch
                 r.midi_program = program
                 r.synth_preset = preset
-                if op.new_name:
+                # Always rename: keeping "electric_guitar_rhythm" on a part
+                # that now plays a piano patch reads as a bug in the UI. An
+                # echoed old name counts as "no name given".
+                if op.new_name and op.new_name != old_name:
                     r.instrument = op.new_name
+                else:
+                    r.instrument = patch.replace("_", " ")
                 # Fold the existing notes into the NEW instrument's physical
                 # register (a piano line handed to a bass must drop octaves).
                 fam = family_pitch_range(r.instrument, patch)

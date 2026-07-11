@@ -7,6 +7,13 @@ const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Dev-mode remote access (phone via Tailscale/LAN). Next dev blocks
+  // cross-origin /_next/* requests from unlisted hosts in newer versions.
+  allowedDevOrigins: [
+    "teslatower.tail06606f.ts.net",
+    "100.110.66.122",
+    "192.168.1.43",
+  ],
   // Artifact files (MusicXML for the score viewer) are served by the FastAPI
   // backend. The backend emits RELATIVE /artifacts/… URLs so they resolve
   // against the frontend origin — required for remote access (Tailscale,

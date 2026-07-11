@@ -33,6 +33,7 @@ from music_assistant.domain.song_state import Part, SongState
 from music_assistant.graph import iter_negotiation_events, run_negotiation
 from music_assistant.band_agent import stream_compose as band_agent_stream
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
+from music_assistant.infrastructure.storage import demo_cache
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
@@ -542,6 +543,11 @@ def _band_agent_event_streamer(style: str) -> Iterator[tuple[dict, Optional[Part
 
 
 def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base: str) -> Iterator[dict]:
+    cached = _demo_cache_events(req.style, base)
+    if cached is not None:
+        yield from cached
+        return
+
     artifacts = Artifacts(
         midi=ARTIFACTS.url_for(base, job_id, "song.mid"),
         musicxml=ARTIFACTS.url_for(base, job_id, "song.musicxml"),
@@ -605,6 +611,37 @@ def _compose_stream_events(req: ComposeRequest, job_id: str, job_dir: Path, base
         yield DoneEvent(job_id=job_id, source=last_source, song=last_song, artifacts=artifacts).model_dump(
             by_alias=True, mode="json"
         )
+
+
+def _demo_cache_events(style: str, base: str) -> list[dict] | None:
+    """Replay a pinned composition instantly when the prompt matches a
+    demo_cache entry exactly (after normalization). Any other prompt — or a
+    pinned job whose artifacts were deleted — misses and composes normally."""
+    cached_job_id = demo_cache.lookup(OUTPUTS, style)
+    if not cached_job_id:
+        return None
+    song_path = ARTIFACTS.path_for(cached_job_id, "song.json")
+    if song_path is None or not song_path.is_file():
+        return None
+    try:
+        song = SongState.model_validate_json(song_path.read_text())
+    except Exception:
+        return None
+    artifacts = Artifacts(
+        midi=ARTIFACTS.url_for(base, cached_job_id, "song.mid"),
+        musicxml=ARTIFACTS.url_for(base, cached_job_id, "song.musicxml"),
+    )
+    return [
+        {
+            "type": "director",
+            "source": "director",
+            "header": song.header.model_dump(mode="json"),
+            "roster": [r.model_dump(mode="json") for r in song.roster],
+        },
+        DoneEvent(job_id=cached_job_id, source="director", song=song, artifacts=artifacts).model_dump(
+            by_alias=True, mode="json"
+        ),
+    ]
 
 
 def _llm_error_event(exc: LLMError, *, partial: bool) -> dict:
