@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from music_assistant.domain.patch import UnknownPatchError, reconcile_patch, resolve_patch
+from music_assistant.domain.patch import (
+    UnknownPatchError,
+    family_pitch_range,
+    reconcile_patch,
+    resolve_patch,
+)
 from music_assistant.domain.song_state import (
     ChordSpan,
     Header,
@@ -24,7 +29,7 @@ from music_assistant.music.theory import beats_per_bar as _beats_per_bar
 
 from ..band_spec import BandSpec
 from .drums import synthesize_drum_notes
-from .groove_enforce import enforce_density, enforce_grid
+from .groove_enforce import enforce_density, enforce_grid, enforce_register
 
 
 def compose_band(
@@ -96,6 +101,20 @@ def compose_band(
         plan_notes = enforce_density(
             plan_notes, inst.max_notes_per_bar, instrument_id=inst.id,
         )
+        # Register enforcement (octave folding). A bass line wandering up to
+        # G#5 doesn't sound like "a creative bass" — it sounds like a broken
+        # piano, because bass samples pitched far above their capture range
+        # lose all body. Use the director's committed range; when it left
+        # (0, 127), fall back to the family's PHYSICAL range.
+        if not inst.is_drum:
+            low, high = inst.pitch_low, inst.pitch_high
+            if low <= 0 and high >= 127:
+                fam = family_pitch_range(inst.instrument, inst.patch)
+                if fam:
+                    low, high = fam
+            plan_notes = enforce_register(
+                plan_notes, low, high, instrument_id=inst.id,
+            )
         # Floor duration so a stray dur=0 from a chatty LLM still produces
         # an audible note (0.05 quarter-note ≈ a 64th-note staccato).
         notes: list[Note] = [

@@ -182,7 +182,9 @@ def _skeleton_node(state: _AgentState) -> _AgentState:
     import time as _time
     skeleton: BandSkeleton | None = None
     last_exc: Exception | None = None
-    for attempt in (1, 2):
+    # Three attempts: the parse-None flake has been observed to strike twice
+    # in a row on m3; the third try costs nothing when the first succeeds.
+    for attempt in (1, 2, 3):
         _t0 = _time.monotonic()
         try:
             skeleton = llm.invoke(messages)
@@ -580,43 +582,86 @@ def _intent_node(state: _AgentState) -> _AgentState:
 
 
 def _replicate_node(state: _AgentState) -> _AgentState:
+    from music_assistant.infrastructure.web_research.entity_resolution import (
+        token_similarity,
+    )
+
     prompt = state.get("style", "")
     decision = state.get("intent")
     query = (decision.target if decision else "") or prompt
     events = list(state.get("events", []))
     hits = search_midi_online(query, limit=3)
-    if not hits:
+    # Bitmidi's search is fuzzy and its catalog is thin outside anglo
+    # repertoire — a Cerati request once matched a Star Wars MIDI because
+    # we took hits[0] blindly. Require real title overlap with the target;
+    # a mismatch is a MISS (compose fallback), not a shrug.
+    candidates = []
+    if hits:
+        scored = sorted(
+            ((token_similarity(query, h.title), h) for h in hits),
+            key=lambda t: -t[0],
+        )
+        _log.warning(
+            "replicate: query %r → candidates %s",
+            query,
+            [(round(s, 2), h.title) for s, h in scored],
+        )
+        candidates = [h for s, h in scored if s >= 0.45]
+    if not candidates:
         events.append({
             "type": "progress",
             "stage": "replicate_miss",
-            "message": f"no MIDI found on Bitmidi for '{query}' — falling back to compose",
+            "message": (
+                f"no MIDI matching '{query}' on Bitmidi"
+                + (f" (best candidate was '{hits[0].title}' — rejected)" if hits else "")
+                + " — falling back to compose"
+            ),
         })
         # Signal to the router: no song yet, and skeleton/fills should run.
         return {"events": events, "replicate_failed": True}
-    chosen = hits[0]
-    events.append({
-        "type": "progress",
-        "stage": "replicate_hit",
-        "message": f"downloading '{chosen.title}' from Bitmidi",
-    })
-    path = download_midi(chosen)
-    if path is None:
+
+    # Try candidates in score order: wild MIDI files are frequently corrupt
+    # (truncated tracks, bytes >127 — "Smells Like Teen Spirit" hit both),
+    # so a failed download OR a failed import moves on to the next match
+    # instead of crashing the whole request.
+    for chosen in candidates:
         events.append({
             "type": "progress",
-            "stage": "replicate_miss",
-            "message": "download failed — falling back to compose",
+            "stage": "replicate_hit",
+            "message": f"downloading '{chosen.title}' from Bitmidi",
         })
-        return {"events": events, "replicate_failed": True}
-    song = import_midi(path, request=prompt)
+        try:
+            path = download_midi(chosen)
+            if path is None:
+                raise RuntimeError("download failed")
+            song = import_midi(path, request=prompt)
+        except Exception as exc:
+            _log.warning(
+                "replicate: %r unusable (%s: %s) — trying next candidate",
+                chosen.title, type(exc).__name__, exc,
+            )
+            events.append({
+                "type": "progress",
+                "stage": "replicate_retry",
+                "message": f"'{chosen.title}' is corrupt — trying the next match",
+            })
+            continue
+        events.append({
+            "type": "progress",
+            "stage": "replicate_done",
+            "message": (
+                f"imported {len(song.roster)} tracks, "
+                f"{sum(len(p.notes) for p in song.parts.values())} notes"
+            ),
+        })
+        return {"song": song, "events": events}
+
     events.append({
         "type": "progress",
-        "stage": "replicate_done",
-        "message": (
-            f"imported {len(song.roster)} tracks, "
-            f"{sum(len(p.notes) for p in song.parts.values())} notes"
-        ),
+        "stage": "replicate_miss",
+        "message": "every matching MIDI was corrupt — falling back to compose",
     })
-    return {"song": song, "events": events}
+    return {"events": events, "replicate_failed": True}
 
 
 def _route_after_intent(state: _AgentState) -> str:

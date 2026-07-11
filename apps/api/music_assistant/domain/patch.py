@@ -358,6 +358,37 @@ _FAMILY_DEFAULTS: dict[str, str] = {
 }
 
 
+# Physical playable range per family (MIDI note numbers). These are facts
+# about instruments, not genres: a bass guitar tops out around G4, a flute
+# doesn't reach below middle C. Used as the register fallback when the
+# director commits no explicit pitch range for a roster item.
+_FAMILY_PITCH_RANGES: dict[str, tuple[int, int]] = {
+    "bass": (24, 55),
+    "guitar": (40, 86),
+    "piano": (21, 108),
+    "organ": (36, 96),
+    "accordion": (41, 93),
+    "violin": (36, 100),
+    "brass": (36, 84),
+    "sax": (44, 88),
+    "flute": (55, 103),
+    "vocal": (43, 84),
+    "pad": (36, 96),
+    "lead_synth": (48, 100),
+}
+
+
+def family_pitch_range(instrument_name: str, patch: str) -> tuple[int, int] | None:
+    """Return the physical (low, high) for the instrument's family, matching
+    by the free-text name first, then by patch membership. None = unknown
+    family (leave the register unconstrained)."""
+    name_n = _normalize_name(instrument_name)
+    for family, keywords, members in _FAMILIES:
+        if any(kw in name_n for kw in keywords) or patch in members:
+            return _FAMILY_PITCH_RANGES.get(family)
+    return None
+
+
 def _normalize_name(name: str) -> str:
     return name.strip().lower().replace("-", "_").replace(" ", "_")
 
