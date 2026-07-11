@@ -68,7 +68,7 @@ function Graph({ title, subtitle, nodes, edges, viewW, viewH }: {
         <p className="graph-view-subtitle">{subtitle}</p>
       </div>
       <div className="graph-view-canvas">
-        <svg viewBox={`0 0 ${viewW} ${viewH}`} className="graph-svg" role="img" aria-label={title}>
+        <svg viewBox={`0 0 ${viewW} ${viewH}`} preserveAspectRatio="xMidYMin meet" className="graph-svg" role="img" aria-label={title}>
           <defs>
             <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 8 4 L 0 8 z" fill={GOLD} />
@@ -163,62 +163,71 @@ function Graph({ title, subtitle, nodes, edges, viewW, viewH }: {
 // ---------------------------------------------------------------------------
 
 const AGENT_NODES: NodeSpec[] = [
-  { id: "prompt", x: 20, y: 320, w: 120, h: 52, title: "PROMPT", lines: ["user request"], accent: SILVER, kind: "input" },
-  { id: "intent", x: 190, y: 320, w: 150, h: 80, title: "INTENT", lines: ["do_intent · graph node", "IntentDecision schema", "compose vs replicate"], kind: "llm call" },
+  // ── column 0: user surface ────────────────────────────────────────────
+  { id: "prompt", x: 20, y: 330, w: 150, h: 52, title: "PROMPT", lines: ["user request"], accent: SILVER, kind: "input" },
+  { id: "answer", x: 20, y: 470, w: 150, h: 66, title: "ANSWER", lines: ["evidence or websearch", "+ 1 small LLM call"], accent: SILVER, kind: "q&a" },
+  { id: "edit", x: 20, y: 600, w: 150, h: 80, title: "EDIT", lines: ["plan: transpose, swap,", "add, remove, tempo", "applied deterministically"], accent: OXBLOOD, kind: "llm plan + pure fn" },
 
-  // replicate branch (top)
-  { id: "bitmidi", x: 400, y: 52, w: 160, h: 94, title: "BITMIDI SEARCH", lines: ["do_replicate · graph node", "find the exact song", "similarity guard on hits", "corrupt-file fallback"], accent: OXBLOOD, kind: "tool · http api" },
-  { id: "import", x: 620, y: 60, w: 150, h: 66, title: "MIDI IMPORT", lines: ["verbatim tracks", "no re-generation"], accent: OXBLOOD, kind: "tool · parser" },
+  // ── column 1: router ─────────────────────────────────────────────────
+  { id: "intent", x: 230, y: 322, w: 160, h: 80, title: "INTENT", lines: ["do_intent · graph node", "IntentDecision schema", "compose vs replicate"], kind: "llm call" },
 
-  // research tools
-  { id: "websearch", x: 400, y: 190, w: 160, h: 58, title: "WEB SEARCH", lines: ["DuckDuckGo hits"], accent: TEAL, kind: "tool · http (no MCP)" },
-  { id: "excerpts", x: 400, y: 280, w: 160, h: 58, title: "PAGE EXCERPTS", lines: ["real production prose"], accent: TEAL, kind: "tool · http fetch" },
-  { id: "corpus", x: 400, y: 370, w: 160, h: 66, title: "CORPUS", lines: ["Lakh exemplars", "Groove drum patterns"], accent: TEAL, kind: "tool · offline index" },
-  { id: "evidence", x: 400, y: 468, w: 160, h: 80, title: "SONG EVIDENCE", lines: ["MusicBrainz resolve", "CifraClub/HookTheory", "key + section chords"], accent: TEAL, kind: "tool · scrapers" },
-  { id: "answer", x: 20, y: 468, w: 150, h: 66, title: "ANSWER", lines: ["evidence or websearch", "+ 1 small LLM call"], accent: SILVER, kind: "q&a" },
-  { id: "edit", x: 20, y: 570, w: 150, h: 80, title: "EDIT", lines: ["plan: transpose, swap,", "add, remove, tempo", "applied deterministically"], accent: OXBLOOD, kind: "llm plan + pure fn" },
-  { id: "llmstack", x: 620, y: 566, w: 220, h: 96, title: "LLM STACK", lines: ["make_llm(role) → fallback chain", "ChatOpenAI · opencode.ai", "minimax-m3 / m2.5 (fills)", "pydantic structured output"], kind: "langchain · http" },
-  { id: "stream", x: 900, y: 680, w: 230, h: 80, title: "STREAMING", lines: ['graph.stream("values") → SSE', "FastAPI /chat/stream → proxy", "→ pipeline stepper + deck"], accent: SILVER, kind: "langgraph api · transport" },
+  // ── column 2: tools (research + replicate source) ────────────────────
+  { id: "bitmidi", x: 450, y: 40, w: 170, h: 94, title: "BITMIDI SEARCH", lines: ["do_replicate · graph node", "find the exact song", "similarity guard on hits", "corrupt-file fallback"], accent: OXBLOOD, kind: "tool · http api" },
+  { id: "websearch", x: 450, y: 170, w: 170, h: 58, title: "WEB SEARCH", lines: ["DuckDuckGo hits"], accent: TEAL, kind: "tool · http (no MCP)" },
+  { id: "excerpts", x: 450, y: 262, w: 170, h: 58, title: "PAGE EXCERPTS", lines: ["real production prose"], accent: TEAL, kind: "tool · http fetch" },
+  { id: "corpus", x: 450, y: 354, w: 170, h: 66, title: "CORPUS", lines: ["Lakh exemplars", "Groove drum patterns"], accent: TEAL, kind: "tool · offline index" },
+  { id: "evidence", x: 450, y: 470, w: 170, h: 80, title: "SONG EVIDENCE", lines: ["MusicBrainz resolve", "CifraClub/HookTheory", "key + section chords"], accent: TEAL, kind: "tool · scrapers" },
 
-  // director
-  { id: "director", x: 640, y: 240, w: 190, h: 116, title: "DIRECTOR", lines: ["do_skeleton → BandSkeleton", "style + canon instruments", "feel + grids + registers", "roster + chords + plan"], kind: "graph node · llm · m3" },
+  // ── column 3: planning ───────────────────────────────────────────────
+  { id: "import", x: 690, y: 48, w: 180, h: 66, title: "MIDI IMPORT", lines: ["verbatim tracks", "no re-generation"], accent: OXBLOOD, kind: "tool · parser" },
+  { id: "director", x: 690, y: 270, w: 190, h: 116, title: "DIRECTOR", lines: ["do_skeleton → BandSkeleton", "style + canon instruments", "feel + grids + registers", "roster + chords + plan"], kind: "graph node · llm · m3" },
 
-  // fills
-  { id: "fills", x: 900, y: 240, w: 190, h: 96, title: "INSTRUMENT AGENTS", lines: ["do_fills → InstrumentFill ×N", "one per instrument × slice", "ThreadPool(16) workers"], kind: "graph node · llm ×N · m2.5" },
-  { id: "fallbacks", x: 900, y: 400, w: 190, h: 82, title: "FALLBACK CHAIN", lines: ["rich → minimal schema", "LLM-seeded 1-bar loop", "deterministic pattern"], accent: SILVER, kind: "llm + deterministic" },
+  // ── column 4: performance ────────────────────────────────────────────
+  { id: "fills", x: 940, y: 280, w: 190, h: 96, title: "INSTRUMENT AGENTS", lines: ["do_fills → InstrumentFill ×N", "one per instrument × slice", "ThreadPool(16) workers"], kind: "graph node · llm ×N · m2.5" },
+  { id: "fallbacks", x: 940, y: 446, w: 190, h: 82, title: "FALLBACK CHAIN", lines: ["rich → minimal schema", "LLM-seeded 1-bar loop", "deterministic pattern"], accent: SILVER, kind: "llm + deterministic" },
 
-  // compose + render
-  { id: "compose", x: 1160, y: 240, w: 180, h: 124, title: "COMPOSER", lines: ["do_compose · pure fn", "grid/density/register", "enforcement (binding)", "patch reconciliation", "drums + bass roots"], kind: "graph node · deterministic" },
-  { id: "render", x: 1160, y: 400, w: 180, h: 66, title: "RENDER", lines: ["song.mid + MusicXML", "artifacts + SSE done"], kind: "deterministic" },
-  { id: "player", x: 900, y: 540, w: 190, h: 82, title: "PLAYER", lines: ["SF3 soundfont (sampled)", "Tone.js synths (native)", "per-agent mixer"], accent: TEAL, kind: "frontend · web audio" },
+  // ── column 5: materialization ────────────────────────────────────────
+  { id: "compose", x: 1190, y: 256, w: 185, h: 124, title: "COMPOSER", lines: ["do_compose · pure fn", "grid/density/register", "enforcement (binding)", "patch reconciliation", "drums + bass roots"], kind: "graph node · deterministic" },
+  { id: "render", x: 1190, y: 446, w: 185, h: 66, title: "RENDER", lines: ["song.mid + MusicXML", "artifacts + SSE done"], kind: "deterministic" },
+  { id: "player", x: 1190, y: 600, w: 185, h: 82, title: "PLAYER", lines: ["SF3 soundfont (sampled)", "Tone.js synths (native)", "per-agent mixer + roll"], accent: TEAL, kind: "frontend · web audio" },
+
+  // ── bottom lane: shared plumbing ─────────────────────────────────────
+  { id: "llmstack", x: 690, y: 600, w: 190, h: 96, title: "LLM STACK", lines: ["make_llm(role) → fallbacks", "ChatOpenAI · opencode.ai", "minimax-m3 / m2.5 (fills)", "pydantic structured output"], kind: "langchain · http" },
+  { id: "stream", x: 940, y: 600, w: 190, h: 80, title: "STREAMING", lines: ['graph.stream("values")', "→ FastAPI SSE → proxy", "→ pipeline stepper + deck"], accent: SILVER, kind: "langgraph · transport" },
 ];
 
 const AGENT_EDGES: EdgeSpec[] = [
   { from: "prompt", to: "intent" },
+  // replicate branch (top)
   { from: "intent", to: "bitmidi", label: "replicate", fromSide: "top", toSide: "left" },
   { from: "bitmidi", to: "import" },
   { from: "import", to: "render", fromSide: "right", toSide: "top", dashed: true },
+  // research fan
   { from: "intent", to: "websearch", label: "compose" },
+  { from: "websearch", to: "excerpts", dashed: true },
   { from: "intent", to: "corpus" },
   { from: "intent", to: "evidence", fromSide: "bottom", toSide: "left" },
-  { from: "evidence", to: "director" },
-  { from: "intent", to: "answer", label: "question", fromSide: "bottom", toSide: "top" },
-  { from: "evidence", to: "answer", dashed: true },
-  { from: "intent", to: "edit", label: "edit", fromSide: "bottom", toSide: "top" },
-  { from: "edit", to: "render", dashed: true, fromSide: "bottom", toSide: "bottom" },
-  { from: "director", to: "llmstack", dashed: true, fromSide: "bottom", toSide: "top" },
-  { from: "fills", to: "llmstack", dashed: true, fromSide: "bottom", toSide: "top" },
-  { from: "render", to: "stream", dashed: true, fromSide: "bottom", toSide: "right" },
-  { from: "websearch", to: "excerpts", dashed: true },
   { from: "websearch", to: "director" },
   { from: "excerpts", to: "director" },
   { from: "corpus", to: "director" },
+  { from: "evidence", to: "director", fromSide: "right", toSide: "bottom" },
+  // main pipeline
   { from: "director", to: "fills" },
   { from: "fills", to: "fallbacks", dashed: true, label: "on failure" },
   { from: "fallbacks", to: "fills", dashed: true },
   { from: "fills", to: "compose" },
   { from: "compose", to: "render" },
   { from: "render", to: "player" },
+  // question + edit branches
+  { from: "intent", to: "answer", label: "question", fromSide: "bottom", toSide: "top" },
+  { from: "evidence", to: "answer", dashed: true },
+  { from: "intent", to: "edit", label: "edit", fromSide: "left", toSide: "right" },
+  { from: "edit", to: "render", dashed: true, fromSide: "bottom", toSide: "bottom" },
+  // shared plumbing
+  { from: "director", to: "llmstack", dashed: true, fromSide: "bottom", toSide: "top" },
+  { from: "fills", to: "llmstack", dashed: true, fromSide: "left", toSide: "top" },
+  { from: "llmstack", to: "stream", dashed: true },
+  { from: "render", to: "stream", dashed: true, fromSide: "bottom", toSide: "right" },
 ];
 
 export function AgentGraphView() {
@@ -228,8 +237,8 @@ export function AgentGraphView() {
       subtitle="El sistema completo: del prompt a la canción — nodos del LangGraph (do_*), herramientas, compromisos del director, agentes de instrumento, enforcement y el stack LLM/streaming."
       nodes={AGENT_NODES}
       edges={AGENT_EDGES}
-      viewW={1380}
-      viewH={790}
+      viewW={1440}
+      viewH={710}
     />
   );
 }
