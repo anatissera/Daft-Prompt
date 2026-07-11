@@ -120,8 +120,9 @@ _GUITAR_WORD_RE = re.compile(r"\b(guitar|guitarra)\b", re.IGNORECASE)
 _EDIT_VERB_RE = re.compile(
     r"\b(cambi[aá](?:le|me)?|reemplaz[aá]|remplaz[aá]|sac[aá](?:le|me)?|"
     r"quit[aá](?:le|me)?|elimin[aá]|sub[ií](?:le|r)?|baj[aá](?:le|r)?|"
-    r"transpon[eé]|pon[eé]le?|replace|change|swap|remove|drop|raise|lower|"
-    r"transpose|mute)\b"
+    r"transpon[eé]|pon[eé]le?|agreg[aá](?:le|me)?|a[ñn]ad[ií](?:le|r)?|"
+    r"sum[aá](?:le|me)?|mete(?:le)?|replace|change|swap|remove|drop|raise|"
+    r"lower|transpose|mute|add|insert)\b"
     r"|\bm[aá]s\s+(r[aá]pid[oa]|lent[oa]|fuerte|suave|agud[oa]|grave)\b"
     r"|\b(faster|slower|louder|quieter|higher|lower)\b",
     re.IGNORECASE,

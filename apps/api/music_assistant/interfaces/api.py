@@ -318,7 +318,11 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         yield sse_data({"type": "intent", "intent": intent})
 
         if intent == "edit_song":
-            from music_assistant.band_agent.edit_song import apply_edit, plan_edit
+            from music_assistant.band_agent.edit_song import (
+                apply_additions,
+                apply_edit,
+                plan_edit,
+            )
 
             prev = SongState.model_validate_json(prev_song_path.read_text())
             yield sse_data({
@@ -343,6 +347,12 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 "type": "progress", "stage": "edit",
                 "message": plan.summary or "; ".join(changes) or "applying edit",
             })
+            edited, add_changes = apply_additions(edited, plan)
+            if add_changes:
+                yield sse_data({
+                    "type": "progress", "stage": "edit",
+                    "message": "; ".join(add_changes),
+                })
             job = ARTIFACTS.create_job()
             base = str(request.base_url).rstrip("/")
             render_artifacts(edited, job.path)

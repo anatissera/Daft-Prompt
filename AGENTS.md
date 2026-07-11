@@ -183,20 +183,17 @@ APIs directly.
 Do not copy estimated reference chords by default. Use them only when the user
 explicitly asks for harmonic guidance or accepts it in chat.
 
-## Architecture Graphs Must Stay In Sync
+## The Architecture Graph Must Stay In Sync
 
-The UI ships two hand-maintained architecture diagrams in
-`apps/web/components/PipelineGraphs.tsx`, opened from the sidebar squares:
+The UI ships ONE hand-maintained architecture diagram in
+`apps/web/components/PipelineGraphs.tsx`, opened from the sidebar helmet
+button: the unified map — the conceptual pipeline (intent, research tools,
+director commitments, instrument agents, enforcement, composer, render,
+player, answer/edit branches) annotated with the hard LangGraph identities
+(`do_*` node names, pydantic schemas, models per role) plus the LLM stack
+and streaming transport.
 
-- **Agent map** (helmet button): the conceptual pipeline — every component
-  from prompt to rendered song (intent, research tools, director, instrument
-  agents, fallback chain, composer, render, player).
-- **LangGraph architecture** (LC button): the hard implementation — the
-  StateGraph nodes and conditional edges, the LLM stack
-  (`make_llm` -> `FallbackChatModel` -> `ChatOpenAI` -> `with_structured_output`
-  schemas) and the SSE streaming path to the UI.
-
-If you change anything those diagrams describe, you MUST update them in the
+If you change anything the diagram describes, you MUST update it in the
 same change. This includes:
 
 - adding, removing, or renaming pipeline nodes / tools / fallback tiers;
@@ -206,8 +203,10 @@ same change. This includes:
 - changing what a node fundamentally IS (its `kind` tag: llm call, tool,
   deterministic step, graph node, …).
 
-Stale diagrams are worse than no diagrams — they are part of the product
-(they get presented) and part of onboarding.
+A stale diagram is worse than no diagram — it is part of the product
+(it gets presented) and part of onboarding.
+
+## UI Rules
 
 The UI should be conversational first.
 
