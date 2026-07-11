@@ -205,6 +205,10 @@ node --test lib/*.test.mjs
 
 **Port 3000 is taken.** Next.js falls back to the next free port automatically; check the terminal output for the actual URL.
 
+## Why "Daft Prompt"?
+
+The name is a wink at [Daft Punk](https://en.wikipedia.org/wiki/Daft_Punk) — two robots who made deeply human music — reimagined for the LLM era, where the robots are agents and the interface is a *prompt*. It fits the project's core bet: that a team of language models, each playing one instrument and negotiating with the others, can behave less like a single autocomplete and more like a band in a room. Harder, better, faster, stronger, one bar at a time.
+
 ## Credits
 
 Built for the NLP course at Universidad de San Andres by:
