@@ -350,7 +350,7 @@ def test_connector_song_researcher_stores_songsterr_tab_bundle_and_keeps_cifra_c
                     TabMeasure(
                         index=0,
                         marker="Intro",
-                        events=[TabEvent(measure_index=0, beat_index=0, duration="1/4", string=3, fret=5)],
+                        events=[TabEvent(measure_index=0, beat_index=0, duration="1/4", string=0, fret=5)],
                     )
                 ],
                 note_count=1,
@@ -389,6 +389,7 @@ def test_connector_song_researcher_stores_songsterr_tab_bundle_and_keeps_cifra_c
     assert [part.kind for part in profile.knowledge.playable_parts] == ["bass_tab", "drum_tab"]
     assert profile.knowledge.playable_parts[0].part_id == "songsterr_bass_4"
     assert profile.knowledge.playable_parts[0].tab is not None
+    assert profile.knowledge.playable_parts[0].tab.measures[0].events[0].string is None
     assert profile.knowledge.playable_parts[0].tab.measures[0].events[0].fret == 5
     assert "stored separately" in profile.knowledge.playable_parts[0].rendering_notes[0]
     assert [tone.family for tone in profile.knowledge.tone_profiles] == ["bass", "drums"]

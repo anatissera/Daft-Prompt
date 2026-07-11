@@ -23,6 +23,7 @@ from music_assistant.application.compose_song import ComposeConfigurationError, 
 from music_assistant.application.language import is_spanish
 from music_assistant.application.music_tool_models import (
     AnswerToolOutput,
+    ArtistStyleToolOutput,
     ChatAgentDecision as ChatToolDecision,
     CompositionRequestToolInput,
     CompositionToolOutput,
@@ -220,7 +221,7 @@ class ChatMusic:
         if request.artist_style_profiles and _wants_existing_artist_style(message):
             return self._compose_from_artist_style(message, request.artist_style_profiles[-1])
 
-        artist_target = _artist_style_target(message)
+        artist_target = _artist_style_target(message) if self.chat_model is None else None
         if artist_target is not None:
             if self.artist_style_profile_builder is None:
                 return ChatResponse(
@@ -257,20 +258,22 @@ class ChatMusic:
             return _getting_started_response(message)
 
         intent = self._classify(message, has_reference=profile is not None)
-        if intent == "research_song":
-            return self._execute_deterministic_intent(intent, message, profile)
-        if profile is not None and intent == "answer_reference" and _should_answer_reference_locally(message, profiles):
-            return self._execute_deterministic_intent(intent, message, profile)
-
         if self.chat_model is not None:
             try:
                 return self._handle_with_llm_tools(request, message, profile, profiles)
             except Exception:
+                if intent == "research_song":
+                    return self._execute_deterministic_intent(intent, message, profile)
                 if profile is not None:
                     return self._execute_deterministic_intent(intent, message, profile)
                 if _looks_like_named_song_analysis(message):
                     return self._execute_deterministic_intent("research_song", message, None)
                 raise
+
+        if intent == "research_song":
+            return self._execute_deterministic_intent(intent, message, profile)
+        if profile is not None and intent == "answer_reference" and _should_answer_reference_locally(message, profiles):
+            return self._execute_deterministic_intent(intent, message, profile)
 
         return self._execute_deterministic_intent(intent, message, profile)
 
@@ -289,6 +292,7 @@ class ChatMusic:
             song_researcher=self.song_researcher,
             songsterr_tab_store=self.songsterr_tab_store,
             chat_model=self.chat_model,
+            artist_style_profile_builder=self.artist_style_profile_builder,
             enable_web_research=self.enable_web_research,
         )
         agent_request = request.model_copy(
@@ -327,6 +331,28 @@ class ChatMusic:
                 reference_id=output.reference_id,
                 clarification=clarification,
                 error={"code": output.error, "message": output.answer or output.error},
+            )
+        if isinstance(output, ArtistStyleToolOutput):
+            profiles = [output.profile] if output.profile is not None else []
+            if output.song is not None and output.source is not None:
+                return ChatResponse(
+                    intent="compose",
+                    reply=output.answer,
+                    compose=ChatComposeResult(
+                        song=output.song,
+                        source=output.source,
+                        warnings=output.warnings,
+                    ),
+                    artist_style_profiles=profiles,
+                    diagnostics={"route": "llm_tool_router", "responder": "artist_style_composition"},
+                )
+            return ChatResponse(
+                intent="artist_style" if output.profile is not None else "clarify",
+                reply=output.answer,
+                artist_style_profiles=profiles,
+                clarification=output.answer if output.error else None,
+                error={"code": output.error, "message": output.answer} if output.error else None,
+                diagnostics={"route": "llm_tool_router", "responder": "artist_style_profile"},
             )
         if output is not None and output.error and output.intent == "clarify":
             message = output.answer or output.error

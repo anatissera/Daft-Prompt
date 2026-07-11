@@ -587,17 +587,7 @@ def _playable_part_from_songsterr_track(track, family: str, claim_id: str, bundl
                 marker=measure.marker,
                 time_signature=measure.signature,
                 events=[
-                    TabEventProfile(
-                        beat_index=float(event.beat_index),
-                        duration=event.duration,
-                        string=int(event.string) if event.string is not None else None,
-                        fret=event.fret,
-                        pitch=event.pitch,
-                        label=_tab_event_label(event),
-                        rest=event.rest,
-                        tie=event.tie,
-                        ghost=event.ghost,
-                    )
+                    _tab_event_profile_from_songsterr_event(event)
                     for event in measure.events[:32]
                 ],
             )
@@ -626,6 +616,23 @@ def _playable_part_from_songsterr_track(track, family: str, claim_id: str, bundl
         tab=tab,
         confidence=0.82,
         rendering_notes=notes,
+    )
+
+
+def _tab_event_profile_from_songsterr_event(event) -> TabEventProfile:
+    string = int(event.string) if event.string is not None else None
+    if string is not None and string < 1:
+        string = None
+    return TabEventProfile(
+        beat_index=float(event.beat_index),
+        duration=event.duration,
+        string=string,
+        fret=event.fret,
+        pitch=event.pitch,
+        label=_tab_event_label(event),
+        rest=event.rest,
+        tie=event.tie,
+        ghost=event.ghost,
     )
 
 

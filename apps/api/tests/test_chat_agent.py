@@ -4,7 +4,8 @@ from pydantic import BaseModel
 
 from music_assistant.application.chat_agent import ChatAgent
 from music_assistant.application.chat_music import ChatRequest
-from music_assistant.application.music_tool_models import ChatAgentDecision, ToolOutput
+from music_assistant.application.music_tool_models import ArtistStyleToolOutput, ChatAgentDecision, ToolOutput
+from music_assistant.domain.audio_profile import ArtistStyleProfile
 
 
 class FakeStructuredInvoker:
@@ -38,6 +39,14 @@ class FakeTools:
             reference_id="ref_researched",
             answer="Research ready.",
             evidence=["source:Fixture"],
+        )
+
+    def search_artist_or_band_profile(self, payload):
+        self.calls.append(("search_artist_or_band_profile", payload))
+        return ArtistStyleToolOutput(
+            profile=ArtistStyleProfile(profile_id="artist_fixture", artist_name=payload.artist_or_band_name),
+            answer="Artist profile ready.",
+            intent="artist_style",
         )
 
     def get_chords(self, payload):
@@ -181,6 +190,57 @@ def test_chat_agent_uses_llm_structured_song_identity_instead_of_genre_keywords(
     assert tools.calls[0][1].query == "Get Lucky by Daft Punk"
     prompt = "\n".join(message["content"] for message in model.invoker.calls[0])
     assert "Daft Punk is an artist, not the punk genre" in prompt
+
+
+def test_chat_agent_uses_song_evidence_tool_for_named_song_question():
+    tools = FakeTools()
+    model = FakeChatModel([
+        ChatAgentDecision(
+            action="search_song_evidence",
+            research_scope="song",
+            song_title="Smells Like Teen Spirit",
+            song_artist="Nirvana",
+            requested_info=["chords"],
+            original_query="What chords does Smells Like Teen Spirit have?",
+        )
+    ])
+    agent = ChatAgent(chat_model=model, tools=tools)
+
+    agent.run(ChatRequest(message="What chords does Smells Like Teen Spirit have?"))
+
+    assert tools.calls[0][0] == "research_song"
+    payload = tools.calls[0][1]
+    assert payload.query == "Smells Like Teen Spirit by Nirvana"
+    assert payload.song_title == "Smells Like Teen Spirit"
+    assert payload.artist_name == "Nirvana"
+    assert payload.requested_info == ["chords"]
+    prompt = "\n".join(message["content"] for message in model.invoker.calls[0])
+    assert "action='search_song_evidence'" in prompt
+    assert "Do not answer factual song questions from model memory" in prompt
+
+
+def test_chat_agent_uses_artist_profile_tool_for_band_style_request():
+    tools = FakeTools()
+    agent = ChatAgent(
+        chat_model=FakeChatModel([
+            ChatAgentDecision(
+                action="search_artist_or_band_profile",
+                artist_or_band_name="Nirvana",
+                purpose="composition",
+                wants_composition=True,
+                composition_request="Make something like Nirvana",
+            )
+        ]),
+        tools=tools,
+    )
+
+    result = agent.run(ChatRequest(message="Make something like Nirvana"))
+
+    assert result.intent == "artist_style"
+    assert tools.calls[0][0] == "search_artist_or_band_profile"
+    payload = tools.calls[0][1]
+    assert payload.artist_or_band_name == "Nirvana"
+    assert payload.wants_composition is True
 
 
 def test_chat_agent_preserves_explicit_featured_artist_credit():

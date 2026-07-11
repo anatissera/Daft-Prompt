@@ -11,7 +11,7 @@ from music_assistant.application.artist_style_profile import ArtistStyleProfileR
 from music_assistant.application.chat_agent import ChatAgentResult
 from music_assistant.application.chat_music import ChatMusic, ChatRequest
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
-from music_assistant.application.music_tool_models import TabExcerptEvent, TabExcerptMeasure, TabExcerptToolOutput
+from music_assistant.application.music_tool_models import ChatAgentDecision, TabExcerptEvent, TabExcerptMeasure, TabExcerptToolOutput
 from music_assistant.canned import canned_song
 from music_assistant.domain.audio_profile import (
     ArtistStyleProfile,
@@ -118,6 +118,23 @@ def _make_chat(
 class _FailingChatModel:
     def with_structured_output(self, _schema):
         raise RuntimeError("chat model should not be used for this request")
+
+
+class _StructuredChatModel:
+    def __init__(self, decisions: list[ChatAgentDecision]) -> None:
+        self.decisions = decisions
+        self.calls = []
+
+    def with_structured_output(self, schema):
+        assert schema is ChatAgentDecision
+        model = self
+
+        class Invoker:
+            def invoke(self, messages):
+                model.calls.append(messages)
+                return model.decisions.pop(0)
+
+        return Invoker()
 
 
 class _ComposerUnavailable:
@@ -507,6 +524,73 @@ def test_research_phrase_triggers_web_research_without_an_llm():
     assert "Research ready" in response.reply
     assert researcher.queries == ["Every Breath You Take by The Police"]  # verb stripped
     assert store.get("ref_researched") is not None
+
+
+def test_llm_router_searches_song_evidence_for_named_chord_question():
+    researcher = _FakeResearcher()
+    model = _StructuredChatModel([
+        ChatAgentDecision(
+            action="search_song_evidence",
+            research_scope="song",
+            song_title="Something",
+            song_artist="The Beatles",
+            requested_info=["chords"],
+            original_query="What chords does Something by The Beatles have?",
+        )
+    ])
+    chat, composer, _, store = _make_chat(chat_model=model, song_researcher=researcher)
+
+    response = chat.handle(ChatRequest(message="What chords does Something by The Beatles have?"))
+
+    assert response.intent == "answer_reference"
+    assert researcher.queries == ["Something by The Beatles"]
+    assert store.get("ref_researched") is not None
+    assert composer.calls == []
+    prompt = "\n".join(message["content"] for message in model.calls[0])
+    assert "action='search_song_evidence'" in prompt
+
+
+def test_llm_router_uses_artist_band_profile_tool_for_similarity_composition():
+    builder = _ArtistStyleBuilder()
+    model = _StructuredChatModel([
+        ChatAgentDecision(
+            action="search_artist_or_band_profile",
+            artist_or_band_name="Fixture Band",
+            purpose="composition",
+            wants_composition=True,
+            composition_request="Make something like Fixture Band",
+        )
+    ])
+    chat, composer, _, _ = _make_chat(chat_model=model, artist_style_profile_builder=builder)
+
+    response = chat.handle(ChatRequest(message="Make something like Fixture Band"))
+
+    assert response.intent == "compose"
+    assert response.compose is not None
+    assert response.artist_style_profiles[0].artist_name == "Fixture Band"
+    assert builder.calls == ["Fixture Band"]
+    brief = composer.calls[0]
+    assert getattr(brief, "artist_style_profile_ids") == ["artist_fixture_band"]
+
+
+def test_llm_router_returns_artist_band_profile_without_composition():
+    builder = _ArtistStyleBuilder()
+    model = _StructuredChatModel([
+        ChatAgentDecision(
+            action="search_artist_or_band_profile",
+            artist_or_band_name="The Beatles",
+            purpose="style_profile",
+            wants_composition=False,
+        )
+    ])
+    chat, composer, _, _ = _make_chat(chat_model=model, artist_style_profile_builder=builder)
+
+    response = chat.handle(ChatRequest(message="Build a style profile for The Beatles"))
+
+    assert response.intent == "artist_style"
+    assert response.artist_style_profiles[0].artist_name == "Fixture Band"
+    assert builder.calls == ["The Beatles"]
+    assert composer.calls == []
 
 
 def test_research_followup_reuses_stored_profile_without_llm_rediscovery():

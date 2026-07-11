@@ -6,11 +6,17 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from music_assistant.domain.audio_profile import ExplanationAnswer
+from music_assistant.domain.audio_profile import ArtistStyleProfile, ExplanationAnswer
 from music_assistant.domain.song_state import SongState
 
 
 MusicToolName = Literal[
+    "search_song_evidence",
+    "search_artist_or_band_profile",
+    "answer_from_current_profile",
+    "get_playable_part",
+    "compose_music",
+    "edit_generated_song",
     "research_song",
     "get_song_profile",
     "get_chords",
@@ -38,6 +44,11 @@ class ChatAgentDecision(BaseModel):
     song_title: Optional[str] = None
     song_artist: Optional[str] = None
     song_featured_artists: list[str] = Field(default_factory=list)
+    requested_info: list[str] = Field(default_factory=list)
+    original_query: Optional[str] = None
+    artist_or_band_name: Optional[str] = None
+    purpose: Optional[Literal["facts", "style_profile", "composition", "similarity"]] = None
+    wants_composition: bool = False
     reference_id: Optional[str] = None
     section_name: Optional[str] = None
     instrument: Optional[str] = None
@@ -49,6 +60,19 @@ class ChatAgentDecision(BaseModel):
 
 class ResearchSongToolInput(BaseModel):
     query: str = Field(min_length=1)
+    song_title: Optional[str] = None
+    artist_name: Optional[str] = None
+    featured_artists: list[str] = Field(default_factory=list)
+    requested_info: list[str] = Field(default_factory=list)
+    original_query: Optional[str] = None
+
+
+class ArtistStyleToolInput(BaseModel):
+    artist_or_band_name: str = Field(min_length=1)
+    purpose: Literal["style_profile", "composition", "similarity"] = "style_profile"
+    wants_composition: bool = False
+    composition_request: Optional[str] = None
+    original_query: Optional[str] = None
 
 
 class SongReferenceToolInput(BaseModel):
@@ -94,13 +118,21 @@ class ToolOutput(BaseModel):
     summary: str = ""
     evidence: list[str] = Field(default_factory=list)
     error: Optional[str] = None
-    intent: Literal["answer_reference", "compose", "compose_from_reference", "clarify", "off_topic"] = "answer_reference"
+    intent: Literal["answer_reference", "artist_style", "compose", "compose_from_reference", "clarify", "off_topic"] = "answer_reference"
 
 
 class ResearchSongToolOutput(ToolOutput):
     tool: str = "research_song"
     evidence_count: int = 0
     instrument_profile_summary: list[dict] = Field(default_factory=list)
+
+
+class ArtistStyleToolOutput(ToolOutput):
+    tool: str = "search_artist_or_band_profile"
+    profile: Optional["ArtistStyleProfile"] = None
+    song: Optional[SongState] = None
+    source: Optional[str] = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ProfileToolOutput(ToolOutput):

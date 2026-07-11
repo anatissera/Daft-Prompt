@@ -13,6 +13,8 @@ from music_assistant.application.reference_transfer_intent import BuildReference
 from music_assistant.application.music_tool_models import (
     AnswerToolOutput,
     AnswerProfileToolInput,
+    ArtistStyleToolInput,
+    ArtistStyleToolOutput,
     ChordsToolInput,
     CompositionRequestToolInput,
     CompositionToolOutput,
@@ -31,8 +33,10 @@ from music_assistant.application.music_tool_models import (
     TrackIndexItem,
     InstrumentSummaryToolInput,
 )
+from music_assistant.application.artist_style_profile import BuildArtistStyleProfile
 from music_assistant.application.profile_queries import ProfileQueryTools
 from music_assistant.domain.audio_profile import (
+    ArtistStyleProfile,
     ExplanationAnswer,
     ReferenceInstrumentProfile,
     ReferenceProfile,
@@ -56,6 +60,7 @@ class MusicTools:
         compose_song: ComposeSong | None = None,
         songsterr_tab_store: SongsterrTabStore | None = None,
         chat_model: ChatModel | None = None,
+        artist_style_profile_builder: BuildArtistStyleProfile | None = None,
         enable_web_research: bool = True,
     ) -> None:
         self.reference_store = reference_store
@@ -64,6 +69,7 @@ class MusicTools:
         self.compose_song = compose_song
         self.songsterr_tab_store = songsterr_tab_store
         self.chat_model = chat_model
+        self.artist_style_profile_builder = artist_style_profile_builder
         self.enable_web_research = enable_web_research
         self.profile_queries = ProfileQueryTools()
 
@@ -86,7 +92,18 @@ class MusicTools:
                 error="song_researcher_missing",
                 intent="clarify",
             )
-        profile = self.song_researcher.research(payload.query)
+        try:
+            profile = self.song_researcher.research(payload.query)
+        except Exception as exc:  # noqa: BLE001 - connector data must not crash chat
+            return ResearchSongToolOutput(
+                answer=(
+                    "I could not retrieve enough public evidence for that song right now. "
+                    "No answer was guessed from memory; try again or include title and artist."
+                ),
+                error="song_research_failed",
+                intent="clarify",
+                summary=str(exc)[:240],
+            )
         self.reference_store.save(profile)
         evidence_count = len(profile.knowledge.evidence_claims) if profile.knowledge else 0
         instrument_summary = _instrument_profile_summary(profile, self.songsterr_tab_store)
@@ -98,6 +115,52 @@ class MusicTools:
             evidence=_profile_evidence_summary(profile),
             instrument_profile_summary=instrument_summary,
         )
+
+    def search_artist_or_band_profile(self, payload: ArtistStyleToolInput) -> ArtistStyleToolOutput:
+        if self.artist_style_profile_builder is None:
+            return ArtistStyleToolOutput(
+                answer="Artist or band style profiling is not configured on this server.",
+                error="artist_style_profile_builder_missing",
+                intent="clarify",
+            )
+        result = self.artist_style_profile_builder.execute(payload.artist_or_band_name)
+        profile = result.profile
+        answer = _artist_style_tool_answer(profile)
+        if payload.wants_composition:
+            if self.compose_song is None:
+                return ArtistStyleToolOutput(
+                    profile=profile,
+                    answer="Composition is not configured.",
+                    error="compose_song_missing",
+                    intent="clarify",
+                )
+            request = payload.composition_request or payload.original_query or f"Compose in the style of {profile.artist_name}"
+            built = BuildCompositionBrief().execute(request, [], artist_style_profiles=[profile])
+            if built.clarification:
+                return ArtistStyleToolOutput(
+                    profile=profile,
+                    answer=built.clarification,
+                    error="clarification_needed",
+                    intent="clarify",
+                )
+            if built.brief is None:
+                return ArtistStyleToolOutput(
+                    profile=profile,
+                    answer="I could not build a composition brief from that artist style request.",
+                    error="brief_missing",
+                    intent="clarify",
+                )
+            song, source = self.compose_song.compose(built.brief)
+            warnings = _composition_warnings(song)
+            return ArtistStyleToolOutput(
+                profile=profile,
+                answer=_compose_tool_answer(song, source, warnings=warnings),
+                song=song,
+                source=source,
+                warnings=warnings,
+                intent="compose",
+            )
+        return ArtistStyleToolOutput(profile=profile, answer=answer, intent="artist_style")
 
     def get_song_profile(self, payload: SongReferenceToolInput) -> ProfileToolOutput:
         profile = self._profile(payload.reference_id)
@@ -510,6 +573,21 @@ def _research_song_answer(profile: ReferenceProfile, instrument_summary: list[di
     if instruments:
         bits.append("Loaded Songsterr instruments: " + ", ".join(instruments) + ".")
     return " ".join(bits) or "Research ready from source-backed evidence."
+
+
+def _artist_style_tool_answer(profile: ArtistStyleProfile) -> str:
+    songs = ", ".join(song.title for song in profile.representative_songs[:3]) or "no representative songs yet"
+    traits: list[str] = []
+    if profile.genre_tags:
+        traits.append("genres: " + ", ".join(profile.genre_tags[:3]))
+    if profile.typical_instruments:
+        traits.append("instruments: " + ", ".join(profile.typical_instruments[:5]))
+    if profile.common_progressions:
+        traits.append("harmony: " + "; ".join(profile.common_progressions[:2]))
+    if profile.production_tone_traits:
+        traits.append("production: " + "; ".join(profile.production_tone_traits[:2]))
+    body = " ".join(traits) if traits else "Evidence is still thin, so treat this as low confidence."
+    return f"I built a {profile.confidence_label}-confidence style profile for {profile.artist_name} from {songs}. {body}"
 
 
 def _instrument_profile_summary(profile: ReferenceProfile, songsterr_tab_store: SongsterrTabStore | None) -> list[dict]:

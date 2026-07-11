@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from music_assistant.application.music_tool_models import (
     ChatAgentDecision,
     AnswerProfileToolInput,
+    ArtistStyleToolInput,
     ChordsToolInput,
     CompositionRequestToolInput,
     InstrumentSummaryToolInput,
@@ -67,11 +68,11 @@ class ChatAgent:
 
     def _execute(self, decision: ChatAgentDecision, request: ChatRequest) -> ToolOutput:
         reference_id = decision.reference_id or request.reference_id
-        if decision.tool == "answer_profile":
+        if decision.tool in {"answer_profile", "answer_from_current_profile"}:
             return self.tools.answer_profile(
                 AnswerProfileToolInput(reference_id=_required_reference(reference_id), question=request.message)
             )
-        if decision.tool in {"compose", "compose_from_reference"}:
+        if decision.tool in {"compose", "compose_from_reference", "compose_music"}:
             return self.tools.request_composition(
                 CompositionRequestToolInput(
                     composition_request=decision.composition_request or request.message,
@@ -79,9 +80,26 @@ class ChatAgent:
                     reference_ids=request.reference_ids if decision.tool == "compose_from_reference" else [],
                 )
             )
-        if decision.tool == "research_song":
+        if decision.tool in {"research_song", "search_song_evidence"}:
             return self.tools.research_song(
-                ResearchSongToolInput(query=_research_query(decision, request.message))
+                ResearchSongToolInput(
+                    query=_research_query(decision, request.message),
+                    song_title=decision.song_title,
+                    artist_name=decision.song_artist,
+                    featured_artists=decision.song_featured_artists,
+                    requested_info=decision.requested_info,
+                    original_query=decision.original_query or request.message,
+                )
+            )
+        if decision.tool == "search_artist_or_band_profile":
+            return self.tools.search_artist_or_band_profile(
+                ArtistStyleToolInput(
+                    artist_or_band_name=_required_artist_or_band(decision),
+                    purpose=decision.purpose if decision.purpose in {"style_profile", "composition", "similarity"} else "style_profile",
+                    wants_composition=decision.wants_composition,
+                    composition_request=decision.composition_request or request.message,
+                    original_query=decision.original_query or request.message,
+                )
             )
         if decision.tool == "get_song_profile":
             return self.tools.get_song_profile(SongReferenceToolInput(reference_id=_required_reference(reference_id)))
@@ -102,7 +120,7 @@ class ChatAgent:
                     instrument=decision.instrument or "instrument",
                 )
             )
-        if decision.tool == "get_tab_excerpt":
+        if decision.tool in {"get_tab_excerpt", "get_playable_part"}:
             return self.tools.get_tab_excerpt(
                 TabExcerptToolInput(
                     reference_id=_required_reference(reference_id),
@@ -123,6 +141,12 @@ class ChatAgent:
                     reference_ids=request.reference_ids,
                 )
             )
+        if decision.tool == "edit_generated_song":
+            return ToolOutput(
+                tool="edit_generated_song",
+                answer="I need the current generated song context before I can edit it.",
+                intent="clarify",
+            )
         if decision.tool == "off_topic":
             return ToolOutput(tool="off_topic", answer=decision.clarification or "Music only.", intent="off_topic")
         return ToolOutput(
@@ -136,6 +160,10 @@ def _required_reference(reference_id: str | None) -> str:
     if reference_id is None:
         return "__missing_reference__"
     return reference_id
+
+
+def _required_artist_or_band(decision: ChatAgentDecision) -> str:
+    return (decision.artist_or_band_name or decision.query or "").strip() or "__missing_artist_or_band__"
 
 
 def _research_query(decision: ChatAgentDecision, user_message: str) -> str:
@@ -178,19 +206,24 @@ def _decision_messages(request: Any, *, web_research_enabled: bool) -> list[dict
         {
             "role": "system",
             "content": (
-                "You are LLMinem's chat agent. Choose exactly one explicit music tool. "
-                f"{research_instruction}For research_song, semantically decide whether the named entity is a song, "
-                "artist, album, style, genre, or era. Do not classify an artist from keywords inside its name: "
-                "for example, Daft Punk is an artist, not the punk genre. For a song, always populate "
-                "research_scope='song', song_title, song_artist, and song_featured_artists separately; preserve featured-artist credits. "
-                "Use query only for non-song scopes. If they ask to analyze an audio/file upload, clarify that "
-                "Daft Prompt uses public evidence connectors instead of local audio analysis. "
-                "Use get_chords/get_sections/get_instruments/get_instrument_summary/get_tab_excerpt "
-                "for existing profiles. Use request_composition for composition and keep composition "
-                "delegated to the composer/orchestrator. If the user says this song, this reference, "
-                "esta canción, or similar while a current reference is listed, use that current reference; "
-                "do not ask which song. Never answer from memory or request raw tabs/full lyrics. "
-                "Reply in the same language as the user, including clarifications and teaching notes."
+                "You are Daft Prompt's LLM tool router. Choose exactly one explicit tool action; do not answer directly. "
+                f"{research_instruction}Identify whether the named entity is a song, artist/band, album, genre, era, "
+                "or the current generated song. If the user asks factual info about a named song and no evidence profile exists, "
+                "call action='search_song_evidence'. This includes chords, key, tabs, tempo, authorship, structure, sections, "
+                "instrumentation, or lyrics-adjacent metadata. For a song, always populate research_scope='song', "
+                "song_title, song_artist when present, song_featured_artists, requested_info, and original_query; preserve exact "
+                "title, artist/band, featured artists, and user wording. If the user asks for artist/band similarity, style, "
+                "influences, representative songs, or composition like an artist/band, call action='search_artist_or_band_profile' "
+                "and populate artist_or_band_name, purpose, wants_composition, and composition_request when needed. "
+                "If the user says this song, this reference, esta canción, or similar while a current reference is listed, "
+                "use that current reference and call action='answer_from_current_profile' for factual questions. "
+                "Use action='get_playable_part' for tabs, keys, piano roll, drum/bass/guitar parts from an existing profile. "
+                "Use action='compose_music' for new MIDI generation. Use action='edit_generated_song' for natural-language edits "
+                "to the current generated SongState. Use clarify only when the entity or task is genuinely ambiguous. "
+                "Do not answer factual song questions from model memory; use public evidence/search tools. "
+                "Do not classify an artist from keywords inside its name: Daft Punk is an artist, not the punk genre. "
+                "If they ask to analyze an audio/file upload, clarify that Daft Prompt uses public evidence connectors instead of local audio analysis. "
+                "Never request raw tabs/full lyrics. Reply in the same language as the user, including clarifications and teaching notes."
             ),
         },
         {"role": "system", "content": f"Current reference ids: {reference_context}"},
