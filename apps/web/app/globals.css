@@ -1627,8 +1627,9 @@ code, pre, .mono { font-family: var(--font-mono); }
     0 0 14px rgba(243, 196, 90, 0.6);
 }
 
-/* MIDI link sits centered with breathing room */
-.song-deck > .artifact-link {
+/* Export links sit centered with breathing room */
+.song-deck > .artifact-link,
+.song-deck > .artifact-link-row {
   margin: 4px 18px 0;
   align-self: flex-start;
 }
@@ -1786,6 +1787,28 @@ code, pre, .mono { font-family: var(--font-mono); }
   transform: translateY(-1px);
 }
 .artifact-link:active { transform: translateY(0); }
+.artifact-link:disabled {
+  cursor: wait;
+  opacity: 0.58;
+  transform: none;
+}
+
+.artifact-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.artifact-link-row .artifact-link {
+  flex: 1 1 220px;
+  justify-content: center;
+}
+
+.mixer-error {
+  margin: 8px 0 0;
+  color: #ff9a8a;
+  font-size: 12px;
+}
 
 .analysis-status {
   font-family: var(--font-tech);

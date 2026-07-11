@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type * as ToneType from "tone";
 import type { RosterItem, SongState } from "@/lib/types";
 import { instrumentColor } from "@/lib/colors";
 import {
@@ -10,11 +9,7 @@ import {
   getSongDurationSeconds,
   type TrackEvent,
 } from "@/lib/trackMixerLogic.mjs";
-import {
-  midiToName,
-  resolveIsDrum,
-  resolveProgram,
-} from "@/lib/gmInstruments";
+import { buildMidiWithChannels, loadSoundBank, workletUrl } from "@/lib/spessasynthPlayer";
 
 interface TrackRow {
   id: string;
@@ -30,12 +25,35 @@ interface TrackMixerProps {
   onSoloChange?: (next: Set<string>) => void;
 }
 
-// Lazy import keeps Tone.js out of the initial bundle.
-async function loadTone(): Promise<typeof ToneType> {
-  return (await import("tone")) as unknown as typeof ToneType;
+interface SpessaChannel {
+  setSystemParameter?: (name: string, value: boolean | number | string) => void;
 }
 
-type LocalVoice = ToneType.PolySynth<ToneType.Synth>;
+interface SpessaSynth {
+  connect(destination: AudioNode): void;
+  soundBankManager: {
+    addSoundBank(buffer: ArrayBuffer, name?: string): Promise<unknown> | unknown;
+  };
+  isReady: Promise<unknown>;
+  midiChannels?: SpessaChannel[];
+  controllerChange?: (channel: number, controller: number, value: number) => void;
+}
+
+interface SpessaSequencer {
+  currentHighResolutionTime: number;
+  currentTime: number;
+  duration: number;
+  isFinished: boolean;
+  loopCount: number;
+  loadNewSongList(songs: Array<{ binary: ArrayBuffer }>): void;
+  pause(): void;
+  play(): void;
+}
+
+interface SpessaModule {
+  WorkletSynthesizer: new (context: BaseAudioContext) => SpessaSynth;
+  Sequencer: new (synth: SpessaSynth, options?: { skipToFirstNoteOn?: boolean }) => SpessaSequencer;
+}
 
 export default function TrackMixer({
   song,
@@ -54,29 +72,171 @@ export default function TrackMixer({
   const mutedTrackIds = mutedProp ?? internalMuted;
   const soloTrackIds = soloProp ?? internalSolo;
 
-  const [preparingPlayback, setPreparingPlayback] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
-  const toneRef = useRef<typeof ToneType | null>(null);
-  // One sampler + gain per ROW (not per samplerKey) so two channels with the
-  // same MIDI program still get independent mute/solo control.
-  const voicesRef = useRef<Map<string, LocalVoice>>(new Map());
-  const gainsRef = useRef<Map<string, ToneType.Gain>>(new Map());
-  const timerRef = useRef<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const contextRef = useRef<AudioContext | null>(null);
+  const synthRef = useRef<SpessaSynth | null>(null);
+  const sequencerRef = useRef<SpessaSequencer | null>(null);
+  const channelByPartIdRef = useRef<Map<string, number>>(new Map());
+  const frameRef = useRef<number | null>(null);
+  const engineSongRef = useRef<SongState | null>(null);
 
   const audibleTrackIds = useMemo(
     () => getAudibleTrackIds(trackIds, mutedTrackIds, soloTrackIds),
     [trackIds, mutedTrackIds, soloTrackIds],
   );
 
-  // Push gain changes live whenever mute/solo state shifts.
-  useEffect(() => {
-    for (const [id, gain] of gainsRef.current) {
-      gain.gain.rampTo(audibleTrackIds.has(id) ? 0.9 : 0, 0.05);
+  const stopAnimation = useCallback(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+  }, []);
+
+  const applyMuteState = useCallback(() => {
+    const synth = synthRef.current;
+    if (!synth) return;
+    for (const [partId, channel] of channelByPartIdRef.current) {
+      const audible = audibleTrackIds.has(partId);
+      try {
+        synth.midiChannels?.[channel]?.setSystemParameter?.("isMuted", !audible);
+        synth.controllerChange?.(channel, 7, audible ? 114 : 0);
+      } catch {
+        // A channel can be briefly unavailable during worklet startup.
+      }
     }
   }, [audibleTrackIds]);
 
-  useEffect(() => () => stopAndCleanup(true), []);
+  useEffect(() => {
+    applyMuteState();
+  }, [applyMuteState]);
+
+  const teardown = useCallback(() => {
+    stopAnimation();
+    try { sequencerRef.current?.pause(); } catch { /* noop */ }
+    sequencerRef.current = null;
+    synthRef.current = null;
+    channelByPartIdRef.current = new Map();
+    engineSongRef.current = null;
+    const context = contextRef.current;
+    contextRef.current = null;
+    if (context && context.state !== "closed") {
+      context.close().catch(() => { /* noop */ });
+    }
+  }, [stopAnimation]);
+
+  useEffect(() => () => teardown(), [teardown]);
+
+  useEffect(() => {
+    if (!engineSongRef.current || engineSongRef.current === song) return;
+    teardown();
+    setPlaying(false);
+    setPosition(0);
+  }, [song, teardown]);
+
+  const tick = useCallback(() => {
+    const sequencer = sequencerRef.current;
+    if (!sequencer) return;
+    const current = Math.max(0, sequencer.currentHighResolutionTime || sequencer.currentTime || 0);
+    setPosition(Math.min(duration, current));
+    if (sequencer.isFinished || current >= Math.max(0, sequencer.duration - 0.01)) {
+      sequencer.pause();
+      sequencer.currentTime = 0;
+      setPosition(0);
+      setPlaying(false);
+      stopAnimation();
+      return;
+    }
+    frameRef.current = requestAnimationFrame(tick);
+  }, [duration, stopAnimation]);
+
+  async function ensureEngine(): Promise<void> {
+    if (synthRef.current && sequencerRef.current && engineSongRef.current === song) return;
+    setLoading(true);
+    try {
+      if (!contextRef.current || contextRef.current.state === "closed") {
+        contextRef.current = new AudioContext();
+      }
+      const context = contextRef.current;
+      if (context.state === "suspended") await context.resume();
+
+      const [spessa, soundBankBuffer] = await Promise.all([
+        import("spessasynth_lib").then((module) => module as unknown as SpessaModule),
+        loadSoundBank(),
+      ]);
+      await context.audioWorklet.addModule(workletUrl());
+
+      const synth = new spessa.WorkletSynthesizer(context);
+      synth.connect(context.destination);
+      await synth.soundBankManager.addSoundBank(soundBankBuffer, "main");
+      await synth.isReady;
+
+      const { bytes, channelByPartId } = buildMidiWithChannels(song);
+      const sequencer = new spessa.Sequencer(synth, { skipToFirstNoteOn: true });
+      const midiBuffer = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+      sequencer.loadNewSongList([{ binary: midiBuffer }]);
+      sequencer.pause();
+      sequencer.currentTime = 0;
+      sequencer.loopCount = 0;
+
+      synthRef.current = synth;
+      sequencerRef.current = sequencer;
+      channelByPartIdRef.current = channelByPartId;
+      engineSongRef.current = song;
+      applyMuteState();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function togglePlayback() {
+    setError(null);
+    const sequencer = sequencerRef.current;
+    if (playing) {
+      try { sequencer?.pause(); } catch { /* noop */ }
+      stopAnimation();
+      setPlaying(false);
+      return;
+    }
+
+    try {
+      await ensureEngine();
+    } catch (err) {
+      setError(String((err as Error).message ?? err));
+      return;
+    }
+
+    const nextSequencer = sequencerRef.current;
+    const context = contextRef.current;
+    if (!nextSequencer || !context) return;
+    if (context.state === "suspended") await context.resume();
+    if (position >= duration - 0.01) {
+      nextSequencer.currentTime = 0;
+      setPosition(0);
+    } else if (Math.abs(nextSequencer.currentTime - position) > 0.02) {
+      nextSequencer.currentTime = position;
+    }
+    applyMuteState();
+    nextSequencer.play();
+    setPlaying(true);
+    stopAnimation();
+    frameRef.current = requestAnimationFrame(tick);
+  }
+
+  function seek(value: number) {
+    const next = Math.min(duration, Math.max(0, value));
+    setPosition(next);
+    const sequencer = sequencerRef.current;
+    if (sequencer) {
+      try { sequencer.currentTime = next; } catch { /* noop */ }
+    }
+  }
 
   const toggleMuted = useCallback(
     (id: string) => {
@@ -86,6 +246,7 @@ export default function TrackMixer({
     },
     [mutedTrackIds, onMutedChange],
   );
+
   const toggleSolo = useCallback(
     (id: string) => {
       const next = toggleSetItem(soloTrackIds, id);
@@ -95,103 +256,6 @@ export default function TrackMixer({
     [soloTrackIds, onSoloChange],
   );
 
-  function stopAndCleanup(resetPosition: boolean) {
-    if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    const Tone = toneRef.current;
-    if (Tone) {
-      Tone.Transport.pause();
-      Tone.Transport.cancel(0);
-      for (const voice of voicesRef.current.values()) {
-        try { voice.releaseAll(); } catch { /* noop */ }
-      }
-    }
-    if (resetPosition && Tone) Tone.Transport.seconds = 0;
-    if (resetPosition) setPosition(0);
-    setPlaying(false);
-  }
-
-  function ensureVoices(Tone: typeof ToneType) {
-    setPreparingPlayback(true);
-    try {
-      // Per-row local voices; drop any whose row id no longer exists.
-      const wanted = new Set(rows.map((r) => r.id));
-      for (const [id, voice] of voicesRef.current) {
-        if (!wanted.has(id)) {
-          voice.dispose();
-          voicesRef.current.delete(id);
-          gainsRef.current.get(id)?.disconnect();
-          gainsRef.current.delete(id);
-        }
-      }
-      for (const row of rows) {
-        if (voicesRef.current.has(row.id)) continue;
-        const gain = new Tone.Gain(audibleTrackIds.has(row.id) ? 0.9 : 0).toDestination();
-        const voice = makeLocalVoice(Tone, row.roster).connect(gain);
-        voicesRef.current.set(row.id, voice);
-        gainsRef.current.set(row.id, gain);
-      }
-    } finally {
-      setPreparingPlayback(false);
-    }
-  }
-
-  async function togglePlayback() {
-    if (playing) {
-      stopAndCleanup(false);
-      return;
-    }
-    const Tone = await loadTone();
-    toneRef.current = Tone;
-    await Tone.start();
-    ensureVoices(Tone);
-
-    // Clear any leftover scheduled events from a previous run.
-    Tone.Transport.cancel(0);
-    const start = position >= duration ? 0 : position;
-    Tone.Transport.seconds = start;
-
-    for (const row of rows) {
-      const voice = voicesRef.current.get(row.id);
-      if (!voice) continue;
-      const gain = gainsRef.current.get(row.id);
-      if (gain) gain.gain.value = audibleTrackIds.has(row.id) ? 0.9 : 0;
-
-      for (const event of eventsByTrack[row.id] ?? []) {
-        if (event.startSeconds + event.durationSeconds <= start) continue;
-        const note = midiToName(event.pitch);
-        const dur = Math.max(0.05, event.durationSeconds);
-        const vel = Math.max(0.1, Math.min(1, event.velocity));
-        // Schedule against the transport so cancel(0) actually clears it.
-        Tone.Transport.schedule((time: number) => {
-          try { voice.triggerAttackRelease(note, dur, time, vel); } catch { /* skip */ }
-        }, event.startSeconds);
-      }
-    }
-
-    Tone.Transport.start();
-    setPlaying(true);
-    timerRef.current = window.setInterval(() => {
-      const elapsed = Tone.Transport.seconds;
-      if (elapsed >= duration) {
-        stopAndCleanup(true);
-        return;
-      }
-      setPosition(elapsed);
-    }, 60);
-  }
-
-  function seek(value: number) {
-    const next = Math.min(duration, Math.max(0, value));
-    const wasPlaying = playing;
-    if (wasPlaying) stopAndCleanup(false);
-    setPosition(next);
-    const Tone = toneRef.current;
-    if (Tone) Tone.Transport.seconds = next;
-  }
-
   return (
     <div className="track-mixer">
       <div className="mixer-transport">
@@ -199,9 +263,9 @@ export default function TrackMixer({
           type="button"
           className="transport-button"
           onClick={togglePlayback}
-          disabled={duration === 0 || preparingPlayback}
+          disabled={duration === 0 || loading}
         >
-          {preparingPlayback ? "Preparing…" : playing ? "Stop" : "Play"}
+          {loading ? "Loading..." : playing ? "Pause" : "Play"}
         </button>
         <span className="transport-time">{formatTime(position)}</span>
         <input
@@ -216,6 +280,8 @@ export default function TrackMixer({
         />
         <span className="transport-time">{formatTime(duration)}</span>
       </div>
+
+      {error ? <p className="mixer-error">Playback error: {error}</p> : null}
 
       <ul className="mixer-track-list">
         {rows.map((row) => {
@@ -245,34 +311,18 @@ export default function TrackMixer({
   );
 }
 
-function makeLocalVoice(Tone: typeof ToneType, roster: RosterItem): LocalVoice {
-  const isDrum = resolveIsDrum(roster);
-  const program = resolveProgram(roster);
-  const oscillator = isDrum
-    ? "sine"
-    : program >= 80 && program <= 87
-      ? "square"
-      : program >= 29 && program <= 31
-        ? "sawtooth"
-        : program >= 24 && program <= 28
-          ? "triangle"
-          : "sine";
-  return new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: oscillator },
-    envelope: isDrum
-      ? { attack: 0.001, decay: 0.08, sustain: 0, release: 0.05 }
-      : { attack: 0.01, decay: 0.12, sustain: 0.35, release: 0.25 },
-    volume: isDrum ? -5 : -9,
-  });
-}
-
 function buildRows(song: SongState): TrackRow[] {
   const rosterById = new Map(song.roster.map((item) => [item.id, item]));
   const events = buildTrackEvents(song);
   return Object.entries(song.parts).map(([partId]) => {
     const roster = rosterById.get(partId) ?? {
-      id: partId, instrument: partId, is_drum: false,
-      midi_program: 0, midi_range: [0, 127] as [number, number], role: "", playing_style: "",
+      id: partId,
+      instrument: partId,
+      is_drum: false,
+      midi_program: 0,
+      midi_range: [0, 127] as [number, number],
+      role: "",
+      playing_style: "",
     };
     return { id: partId, roster, events: events[partId] ?? [] };
   });
@@ -287,7 +337,7 @@ function toggleSetItem(prev: Set<string>, item: string): Set<string> {
 
 function formatTime(value: number) {
   const safe = Number.isFinite(value) ? Math.max(0, value) : 0;
-  const m = Math.floor(safe / 60);
-  const s = Math.floor(safe % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
+  const minutes = Math.floor(safe / 60);
+  const seconds = Math.floor(safe % 60);
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }

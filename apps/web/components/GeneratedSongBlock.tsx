@@ -7,6 +7,7 @@ import type { Part, RosterItem, SongState } from "@/lib/types";
 import { getAudibleTrackIds } from "@/lib/trackMixerLogic.mjs";
 import { harmonicFitView, harmonicFitLabel } from "@/lib/harmonicFitView.mjs";
 import { triggerMidiDownload } from "@/lib/midiExport";
+import { triggerMp3Download } from "@/lib/mp3Export";
 import NegotiationFeed from "@/components/NegotiationFeed";
 import RosterView from "@/components/RosterView";
 import PianoRoll from "@/components/PianoRoll";
@@ -67,6 +68,8 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
   // share the same Mute/Solo state.
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(() => new Set());
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
+  const [mp3State, setMp3State] = useState<"idle" | "rendering" | "error">("idle");
+  const [mp3Error, setMp3Error] = useState<string | null>(null);
   const partIds = useMemo(() => Object.keys(song.parts), [song.parts]);
   const audibleTrackIds = useMemo(
     () => getAudibleTrackIds(partIds, mutedTrackIds, soloTrackIds),
@@ -122,15 +125,38 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             onSoloChange={setSoloTrackIds}
           />
           <PianoRoll song={song} audibleTrackIds={audibleTrackIds} />
-          <button
-            type="button"
-            className="artifact-link"
-            onClick={() => {
-              triggerMidiDownload(song, audibleTrackIds);
-            }}
-          >
-            ↓ Download MIDI ({hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full"})
-          </button>
+          <div className="artifact-link-row">
+            <button
+              type="button"
+              className="artifact-link"
+              onClick={() => {
+                triggerMidiDownload(song, audibleTrackIds);
+              }}
+            >
+              Download MIDI ({hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full"})
+            </button>
+            <button
+              type="button"
+              className="artifact-link"
+              disabled={mp3State === "rendering"}
+              onClick={async () => {
+                setMp3State("rendering");
+                setMp3Error(null);
+                try {
+                  await triggerMp3Download(song, undefined, audibleTrackIds);
+                  setMp3State("idle");
+                } catch (err) {
+                  setMp3Error(String((err as Error).message ?? err));
+                  setMp3State("error");
+                }
+              }}
+            >
+              {mp3State === "rendering"
+                ? "Rendering MP3..."
+                : `Download MP3 (${hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full"})`}
+            </button>
+          </div>
+          {mp3Error ? <p className="empty-note">MP3 render failed: {mp3Error}</p> : null}
         </>
       ) : (
         <p className="empty-note">
