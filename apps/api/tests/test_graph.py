@@ -3,10 +3,10 @@ state reducer (LLM mocked — no API key needed)."""
 
 from __future__ import annotations
 
-from llm_band.agents.instrument import InstrumentOutput
-from llm_band.graph import run_instruments
-from llm_band.music.validators import errors_only, validate_song
-from llm_band.domain.song_state import Header, Note, RosterItem, SongState
+from music_assistant.agents.instrument import InstrumentOutput
+from music_assistant.graph import run_instruments
+from music_assistant.music.validators import errors_only, validate_song
+from music_assistant.domain.song_state import Header, Note, RosterItem, SongState
 
 
 class _FakeStructured:
@@ -25,7 +25,7 @@ class FakeLLM:
 def _song(n_instruments: int) -> SongState:
     header = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
     roster = [
-        RosterItem(id=f"inst{i}", instrument="synth", midi_range=(0, 127), role="x")
+        RosterItem(id=f"inst{i}", instrument="synth", role="x")
         for i in range(n_instruments)
     ]
     return SongState(request="x", header=header, roster=roster)

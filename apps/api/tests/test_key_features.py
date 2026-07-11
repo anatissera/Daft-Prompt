@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from llm_band.infrastructure.mir.key_features import (
+from music_assistant.infrastructure.mir.key_features import (
     estimate_key,
     key_profile_from_pitch_classes,
 )
@@ -123,7 +123,7 @@ def test_chroma_is_tuned_for_scoring_while_labels_stay_a440(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "librosa", fake_librosa)
     monkeypatch.setattr(
-        "llm_band.infrastructure.mir.librosa_analyzer._prepare_librosa_import",
+        "music_assistant.infrastructure.mir.librosa_analyzer._prepare_librosa_import",
         lambda: None,
     )
 
