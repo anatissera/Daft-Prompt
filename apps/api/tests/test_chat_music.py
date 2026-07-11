@@ -332,6 +332,47 @@ def test_generated_song_tab_is_derived_from_current_song_without_regeneration():
     assert composer.revision_calls == []
 
 
+def test_generated_song_bass_tab_uses_bass_tuning_positions():
+    chat, composer, _, _ = _make_chat()
+
+    response = chat.handle(ChatRequest(message="Show the bass tab", current_song=_generated_song()))
+
+    assert response.tab_excerpt is not None
+    assert response.tab_excerpt.error is None
+    assert response.tab_excerpt.instrument == "bass"
+    assert response.tab_excerpt.tuning == ["G2", "D2", "A1", "E1"]
+    assert response.tab_excerpt.measures[0].events[0].string == 2
+    assert response.tab_excerpt.measures[0].events[0].fret == 2
+    assert composer.calls == []
+
+
+def test_generated_song_drum_tab_uses_gm_drum_hits():
+    chat, composer, _, _ = _make_chat()
+
+    response = chat.handle(ChatRequest(message="Show the drum tab", current_song=_generated_song_with_drums_and_keys()))
+
+    assert response.tab_excerpt is not None
+    assert response.tab_excerpt.error is None
+    assert response.tab_excerpt.instrument == "drums"
+    assert response.tab_excerpt.measures[0].events[0].pitch == 38
+    assert response.tab_excerpt.measures[0].events[0].fret == 38
+    assert composer.calls == []
+
+
+def test_generated_song_piano_keys_preserve_midi_pitches():
+    chat, composer, _, _ = _make_chat()
+
+    response = chat.handle(ChatRequest(message="Show the piano keys", current_song=_generated_song_with_drums_and_keys()))
+
+    assert response.tab_excerpt is not None
+    assert response.tab_excerpt.error is None
+    assert response.tab_excerpt.instrument == "piano"
+    assert response.tab_excerpt.measures[0].events[0].pitch == 60
+    assert response.tab_excerpt.measures[0].events[0].string is None
+    assert response.tab_excerpt.measures[0].events[0].fret is None
+    assert composer.calls == []
+
+
 def test_tab_failure_returns_renderable_user_facing_attachment():
     profile = _make_profile("ref_no_tabs")
     chat, _, _, store = _make_chat(songsterr_tab_store=InMemorySongsterrTabStore())
@@ -624,6 +665,30 @@ def _generated_song() -> SongState:
                 notes_summary="steady bass",
             ),
         },
+    )
+
+
+def _generated_song_with_drums_and_keys() -> SongState:
+    song = _generated_song()
+    drums = RosterItem(id="drums", instrument="drum_kit", midi_range=(35, 81), role="backbeat", is_drum=True)
+    piano = RosterItem(id="piano", instrument="acoustic_piano", midi_range=(21, 108), role="keys")
+    return song.model_copy(
+        update={
+            "roster": [*song.roster, drums, piano],
+            "parts": {
+                **song.parts,
+                "drums": Part(
+                    instrument_id="drums",
+                    notes=[Note(bar=0, start_beat=1.0, pitch=38, dur=0.25)],
+                    notes_summary="snare backbeat",
+                ),
+                "piano": Part(
+                    instrument_id="piano",
+                    notes=[Note(bar=0, start_beat=0.0, pitch=60, dur=1.0)],
+                    notes_summary="middle C",
+                ),
+            },
+        }
     )
 
 

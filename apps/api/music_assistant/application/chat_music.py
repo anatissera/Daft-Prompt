@@ -891,7 +891,13 @@ def _looks_like_song_edit(message: str) -> bool:
 
 
 def _is_tab_request(message: str) -> bool:
-    return bool(re.search(r"\b(tab|tabs|tablature|tablatura)\b", message, re.IGNORECASE))
+    normalized = message.lower()
+    if re.search(r"\b(tab|tabs|tablature|tablatura)\b", normalized, re.IGNORECASE):
+        return True
+    return bool(
+        re.search(r"\b(show|render|display|play|give me|dame|mostrame|muestra|mostrá)\b", normalized)
+        and re.search(r"\b(guitar|guitarra|bass|bajo|drum|drums|bater[ií]a|piano|keyboard|keys|teclado)\b", normalized)
+    )
 
 
 def _tab_instrument(message: str) -> str:
@@ -922,6 +928,7 @@ def _tab_chat_response(excerpt: TabExcerptToolOutput, profile: ReferenceProfile 
 
 
 _GUITAR_OPEN_MIDI = ((1, 64), (2, 59), (3, 55), (4, 50), (5, 45), (6, 40))
+_BASS_OPEN_MIDI = ((1, 43), (2, 38), (3, 33), (4, 28))
 
 
 def _tab_excerpt_from_song(song: SongState, message: str) -> TabExcerptToolOutput:
@@ -947,7 +954,7 @@ def _tab_excerpt_from_song(song: SongState, message: str) -> TabExcerptToolOutpu
         for note in sorted((note for note in part.notes if note.bar == bar), key=lambda note: note.start_beat):
             if note.pitch is None:
                 continue
-            string, fret = _guitar_position(note.pitch) if requested == "guitar" else (None, None)
+            string, fret = _tab_position(note.pitch, requested)
             events.append(
                 TabExcerptEvent(
                     beat_index=note.start_beat,
@@ -982,17 +989,30 @@ def _tab_excerpt_from_song(song: SongState, message: str) -> TabExcerptToolOutpu
         evidence=[f"songstate:{target.id}:measures={len(measures)}:notes={sounding}"],
         instrument=requested,
         track_name=target.instrument,
-        tuning=["E4", "B3", "G3", "D3", "A2", "E2"] if requested == "guitar" else [],
+        tuning=_tab_tuning(requested),
         measures=measures,
     )
 
 
-def _guitar_position(pitch: int) -> tuple[int | None, int | None]:
-    for string, open_pitch in _GUITAR_OPEN_MIDI:
+def _tab_position(pitch: int, instrument: str) -> tuple[int | None, int | None]:
+    if instrument == "drums":
+        return None, pitch
+    if instrument not in {"guitar", "bass"}:
+        return None, None
+    open_strings = _GUITAR_OPEN_MIDI if instrument == "guitar" else _BASS_OPEN_MIDI
+    for string, open_pitch in open_strings:
         fret = pitch - open_pitch
         if 0 <= fret <= 24:
             return string, fret
     return None, None
+
+
+def _tab_tuning(instrument: str) -> list[str]:
+    if instrument == "guitar":
+        return ["E4", "B3", "G3", "D3", "A2", "E2"]
+    if instrument == "bass":
+        return ["G2", "D2", "A1", "E1"]
+    return []
 
 
 @dataclass(frozen=True)

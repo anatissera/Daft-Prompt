@@ -1954,6 +1954,25 @@ input[type="number"], select {
 .tab-measure header span { color: var(--text-muted); font-size: 11px; }
 .tab-measure ol { margin: 8px 0 0; padding-left: 18px; color: var(--text); font-family: var(--font-mono); font-size: 11px; line-height: 1.65; }
 .tab-measure p { margin: 8px 0 0; color: var(--text-muted); font-size: 11px; }
+.tab-event-list { display: grid; gap: 6px; list-style: none; padding-left: 0 !important; }
+.tab-event-list li { display: grid; grid-template-columns: minmax(54px, max-content) 1fr; align-items: center; gap: 8px; min-width: 0; }
+.tab-event-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  min-height: 24px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  border: 1px solid rgba(244, 210, 122, 0.28);
+  background: rgba(244, 210, 122, 0.1);
+  color: var(--gold-bright);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tab-event-chip-bass { color: var(--cyan); border-color: rgba(0, 212, 255, 0.28); background: rgba(0, 212, 255, 0.1); }
+.tab-event-chip-drums { color: var(--text); border-color: rgba(215, 218, 230, 0.28); background: rgba(215, 218, 230, 0.08); }
+.tab-event-chip-piano { min-width: 42px; color: #101014; background: linear-gradient(180deg, #fff9e7, #d7dae6); border-color: rgba(255, 255, 255, 0.5); }
 
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
