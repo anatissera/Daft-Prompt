@@ -18,6 +18,7 @@ from music_assistant.agents.instrument import (
 )
 from music_assistant.domain.song_state import ChordSpan, Header, Note, RosterItem, Section
 from music_assistant.infrastructure.llm import LLMQuotaExceeded
+from music_assistant.skills._tables import DRUM_TOM_HIGH, DRUM_TOM_LOW, DRUM_TOM_MID
 
 
 class _FakeStructured:
@@ -140,6 +141,21 @@ def test_compose_part_propagates_quota_errors_instead_of_empty_fallback():
 
     with pytest.raises(LLMQuotaExceeded):
         compose_part(HEADER, BASS, ROSTER, {}, llm=QuotaLLM())
+
+
+def test_compose_part_uses_deterministic_drum_fills_without_llm():
+    class NoCallLLM:
+        def with_structured_output(self, _schema):
+            raise AssertionError("drum parts should not call the LLM")
+
+    drums = RosterItem(id="drums", instrument="kit", role="disco beat", is_drum=True)
+    part = compose_part(HEADER, drums, [drums, BASS], {}, llm=NoCallLLM())
+    fill_pitches = [note.pitch for note in part.notes if note.bar == 3 and note.start_beat >= 3.0]
+
+    assert DRUM_TOM_HIGH in fill_pitches
+    assert DRUM_TOM_MID in fill_pitches
+    assert DRUM_TOM_LOW in fill_pitches
+    assert "transition_fills" in part.self_notes
 
 
 def test_run_instrument_turn_falls_back_when_structured_output_is_none():

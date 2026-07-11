@@ -21,7 +21,7 @@ from ..music.validators import ValidationIssue, errors_only, validate_song
 from ..skills._tables import DRUM_PATTERNS, DRUM_PATTERN_ALIASES
 from ..skills.edits import EditFailure, NoteEdit, apply_edits
 from ..skills.harmony import fit_to_range
-from ..skills.rhythm import drum_pattern
+from ..skills.rhythm import apply_transition_fills, drum_pattern, transition_fill_bars
 from ..domain.song_state import (
     ChordSpan,
     Header,
@@ -258,12 +258,23 @@ def _drum_part(header: Header, roster_item: RosterItem) -> Part:
     tell a skill-derived part apart from an LLM-generated one.
     """
     style = _resolve_drum_style(header, roster_item)
-    notes = drum_pattern(style, header.time_signature, header.num_bars)
+    notes = apply_transition_fills(
+        drum_pattern(style, header.time_signature, header.num_bars),
+        header.time_signature,
+        header.num_bars,
+    )
+    has_fills = bool(transition_fill_bars(header.num_bars))
     return Part(
         instrument_id=roster_item.id,
         notes=notes,
-        notes_summary=f"{style} pattern, {header.num_bars} bars",
-        self_notes=f"skill:drum_pattern[{style}]",
+        notes_summary=(
+            f"{style} pattern{' with transition fills' if has_fills else ''}, "
+            f"{header.num_bars} bars"
+        ),
+        self_notes=(
+            f"skill:drum_pattern[{style}]"
+            f"{'+transition_fills[4]' if has_fills else ''}"
+        ),
     )
 
 

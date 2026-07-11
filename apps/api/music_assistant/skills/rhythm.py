@@ -79,4 +79,69 @@ def drum_pattern(
     return notes
 
 
-__all__ = ["quantize_rhythm", "drum_pattern"]
+def transition_fill_bars(num_bars: int, every: int = 4) -> list[int]:
+    """Bars that should receive a deterministic fill before a phrase boundary."""
+    if num_bars < every or every <= 0:
+        return []
+    return list(range(every - 1, num_bars, every))
+
+
+def drum_transition_fill(
+    time_signature: tuple[int, int],
+    bar: int,
+    velocity: int = 108,
+) -> list[Note]:
+    """A short tom/snare fill over the last quarter-note beat of `bar`."""
+    bpb = beats_per_bar(time_signature)
+    if bpb <= 0:
+        return []
+    fill_start = max(0.0, bpb - 1.0)
+    step = max(0.0625, (bpb - fill_start) / 4)
+    pitches = [
+        _tables.DRUM_SNARE,
+        _tables.DRUM_TOM_HIGH,
+        _tables.DRUM_TOM_MID,
+        _tables.DRUM_TOM_LOW,
+    ]
+    return [
+        Note(
+            bar=bar,
+            start_beat=round(fill_start + index * step, 6),
+            pitch=pitch,
+            dur=round(step, 6),
+            velocity=velocity,
+        )
+        for index, pitch in enumerate(pitches)
+        if fill_start + index * step < bpb
+    ]
+
+
+def apply_transition_fills(
+    notes: list[Note],
+    time_signature: tuple[int, int],
+    num_bars: int,
+    every: int = 4,
+) -> list[Note]:
+    """Replace the last beat of each phrase-boundary bar with a fixed drum fill."""
+    fill_bars = set(transition_fill_bars(num_bars, every=every))
+    if not fill_bars:
+        return list(notes)
+    bpb = beats_per_bar(time_signature)
+    fill_start = max(0.0, bpb - 1.0)
+    kept = [
+        note
+        for note in notes
+        if not (note.bar in fill_bars and note.start_beat >= fill_start)
+    ]
+    for bar in sorted(fill_bars):
+        kept.extend(drum_transition_fill(time_signature, bar))
+    return sorted(kept, key=lambda note: (note.bar, note.start_beat, note.pitch or 0))
+
+
+__all__ = [
+    "quantize_rhythm",
+    "drum_pattern",
+    "transition_fill_bars",
+    "drum_transition_fill",
+    "apply_transition_fills",
+]

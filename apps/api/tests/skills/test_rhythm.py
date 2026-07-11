@@ -2,8 +2,20 @@
 
 from __future__ import annotations
 
-from music_assistant.skills._tables import DRUM_KICK, DRUM_SNARE
-from music_assistant.skills.rhythm import drum_pattern, quantize_rhythm
+from music_assistant.skills._tables import (
+    DRUM_HAT_CLOSED,
+    DRUM_KICK,
+    DRUM_SNARE,
+    DRUM_TOM_HIGH,
+    DRUM_TOM_LOW,
+    DRUM_TOM_MID,
+)
+from music_assistant.skills.rhythm import (
+    apply_transition_fills,
+    drum_pattern,
+    quantize_rhythm,
+    transition_fill_bars,
+)
 
 
 def test_quantize_snaps_to_grid():
@@ -62,3 +74,31 @@ def test_drum_pattern_skips_hits_past_bar_in_odd_meter():
     # 3/4 bar = 3 beats; beat-3 hits must be dropped.
     notes = drum_pattern("rock_basic", (3, 4), num_bars=1)
     assert all(n.start_beat < 3.0 for n in notes)
+
+
+def test_transition_fill_bars_mark_phrase_boundaries():
+    assert transition_fill_bars(3) == []
+    assert transition_fill_bars(4) == [3]
+    assert transition_fill_bars(8) == [3, 7]
+
+
+def test_apply_transition_fills_replaces_last_beat_with_toms():
+    base = drum_pattern("rock_basic", (4, 4), num_bars=4)
+    filled = apply_transition_fills(base, (4, 4), num_bars=4)
+
+    last_beat = [n for n in filled if n.bar == 3 and n.start_beat >= 3.0]
+    assert [n.pitch for n in last_beat] == [
+        DRUM_SNARE,
+        DRUM_TOM_HIGH,
+        DRUM_TOM_MID,
+        DRUM_TOM_LOW,
+    ]
+    assert all(n.pitch != DRUM_HAT_CLOSED for n in last_beat)
+
+
+def test_apply_transition_fills_keeps_short_patterns_unchanged():
+    base = drum_pattern("rock_basic", (4, 4), num_bars=3)
+    filled = apply_transition_fills(base, (4, 4), num_bars=3)
+    assert [(n.bar, n.start_beat, n.pitch) for n in filled] == [
+        (n.bar, n.start_beat, n.pitch) for n in base
+    ]

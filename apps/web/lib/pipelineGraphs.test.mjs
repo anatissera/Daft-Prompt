@@ -25,6 +25,7 @@ test("pipeline graphs describe the current composition graph and LLM schemas", (
   assert.match(source, /DirectorOutput/);
   assert.match(source, /InstrumentRevisionOutput/);
   assert.match(source, /piano roll/);
+  assert.match(source, /deterministic patterns and transition fills/);
 });
 
 test("pipeline graphs stay centered on public evidence and generated-song projections", () => {

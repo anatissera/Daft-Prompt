@@ -92,8 +92,8 @@ const AGENT_GRAPH: PipelineGraphSpec = {
         {
           title: "Instrument agents",
           kind: "LLM batch",
-          detail: "Guitar, bass, drums, keys, synths, or requested roles negotiate through shared SongState.",
-          meta: "InstrumentTurnOutput",
+          detail: "Guitar, bass, keys, synths, or requested roles negotiate through shared SongState; drums use deterministic patterns and transition fills.",
+          meta: "InstrumentTurnOutput + drum skills",
         },
         {
           title: "Arbiter + renderers",

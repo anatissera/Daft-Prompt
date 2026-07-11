@@ -30,6 +30,9 @@ DRUM_HAT_CLOSED = 42
 DRUM_HAT_OPEN = 46
 DRUM_CRASH = 49
 DRUM_RIDE = 51
+DRUM_TOM_LOW = 41
+DRUM_TOM_MID = 47
+DRUM_TOM_HIGH = 50
 
 # Drum patterns are expressed as (drum_key, start_beat_in_bar, duration_beats).
 # Listed once per bar; `drum_pattern` repeats them across `num_bars`.
