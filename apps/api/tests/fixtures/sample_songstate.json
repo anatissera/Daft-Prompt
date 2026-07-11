@@ -40,10 +40,6 @@
       "id": "lead",
       "instrument": "acoustic_grand_piano",
       "midi_program": 0,
-      "midi_range": [
-        48,
-        84
-      ],
       "role": "melody",
       "is_drum": false
     },
@@ -51,10 +47,6 @@
       "id": "bass",
       "instrument": "electric_bass",
       "midi_program": 33,
-      "midi_range": [
-        28,
-        55
-      ],
       "role": "root motion",
       "is_drum": false
     },
@@ -62,10 +54,6 @@
       "id": "drums",
       "instrument": "drum_kit",
       "midi_program": 0,
-      "midi_range": [
-        35,
-        81
-      ],
       "role": "four-on-the-floor",
       "is_drum": true
     }

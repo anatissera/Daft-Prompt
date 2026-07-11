@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from llm_band.domain.audio_profile import (
+from music_assistant.domain.audio_profile import (
     ChordCandidate,
     ChordSpan,
     KeyCandidate,
@@ -18,10 +18,10 @@ from llm_band.domain.audio_profile import (
     StructureProfile,
     TempoProfile,
 )
-from llm_band.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
-from llm_band.infrastructure.mir.harmonic_source import HarmonicSource
-from llm_band.infrastructure.mir.tempo_grid import TempoGrid
-from llm_band.ports.stem_separator import SeparatedStem
+from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
+from music_assistant.infrastructure.mir.harmonic_source import HarmonicSource
+from music_assistant.infrastructure.mir.tempo_grid import TempoGrid
+from music_assistant.ports.stem_separator import SeparatedStem
 
 
 def _source(tmp_path: Path) -> ReferenceSource:

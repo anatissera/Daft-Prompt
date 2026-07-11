@@ -5,16 +5,20 @@ from __future__ import annotations
 
 import pytest
 
-from llm_band.agents.instrument import (
+from music_assistant.agents.instrument import (
     MAX_REPAIRS,
     InstrumentOutput,
     InstrumentTurnOutput,
+    MinimalInstrumentOutput,
+    _chord_map_text,
+    _negotiation_etiquette,
     _peer_context,
+    _section_map_text,
     compose_part,
     run_instrument_turn,
 )
-from llm_band.domain.song_state import Header, Note, RosterItem
-from llm_band.infrastructure.llm import LLMQuotaExceeded
+from music_assistant.domain.song_state import ChordSpan, Header, Note, RosterItem, Section
+from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
 
 class _FakeStructured:
@@ -34,12 +38,22 @@ class FakeLLM:
         self.structured = _FakeStructured(outputs)
 
     def with_structured_output(self, schema):
-        assert schema is InstrumentOutput
+        # compose_part tries the rich schema, then retries with the minimal
+        # one; the seeded fallback's local _SeedOutput may also pass through.
+        assert schema is not None
         return self.structured
 
 
-HEADER = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=4)
-BASS = RosterItem(id="bass", instrument="electric_bass", midi_range=(28, 55), role="groove")
+# chord_progression present because the deterministic fallback (like the real
+# skeleton output) needs an active chord per bar to emit notes.
+HEADER = Header(
+    genre="disco",
+    key="C major",
+    tempo_bpm=120,
+    num_bars=4,
+    chord_progression=[ChordSpan(bar=0, chord="C"), ChordSpan(bar=2, chord="F")],
+)
+BASS = RosterItem(id="bass", instrument="electric_bass", role="groove")
 ROSTER = [BASS, RosterItem(id="drums", instrument="kit", role="beat", is_drum=True)]
 
 
@@ -50,10 +64,14 @@ def _valid_output() -> InstrumentOutput:
     )
 
 
-def _out_of_range_output() -> InstrumentOutput:
+def _invalid_output() -> InstrumentOutput:
+    # bar 99 is outside the fixture's num_bars — triggers the bar_oob
+    # validation issue, which drives the repair loop the same way the old
+    # pitch-range check used to. We can't rely on pitch clamping anymore now
+    # that the instrument agent picks its own register.
     return InstrumentOutput(
-        notes=[Note(bar=0, start_beat=0.0, pitch=10, dur=1.0, velocity=100)],  # below bass range
-        notes_summary="too low",
+        notes=[Note(bar=99, start_beat=0.0, pitch=40, dur=1.0, velocity=100)],
+        notes_summary="wrong bar",
     )
 
 
@@ -65,18 +83,21 @@ def test_compose_part_accepts_valid_output_first_try():
     assert llm.structured.calls == 1  # no repair needed
 
 
-def test_compose_part_repairs_after_validation_failure():
-    llm = FakeLLM([_out_of_range_output(), _valid_output()])
+def test_compose_part_clips_out_of_range_notes_then_falls_back():
+    # bar 99 is outside num_bars=4: the section clip empties both schema
+    # tiers, and the deterministic fallback fills the section instead —
+    # there is no repair loop in the section-scoped compose path anymore.
+    llm = FakeLLM([_invalid_output(), _invalid_output()])
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
-    assert part.notes[0].pitch == 40
-    assert llm.structured.calls == 2  # one repair round-trip
+    assert part.notes  # deterministic fallback shipped something
+    assert all(0 <= n.bar < HEADER.num_bars for n in part.notes)
 
 
-def test_compose_part_never_crashes_when_repairs_exhausted():
-    llm = FakeLLM([_out_of_range_output()])  # always invalid
+def test_compose_part_never_crashes_when_all_llm_tiers_fail():
+    llm = FakeLLM([_invalid_output()])  # every tier gets the same bad answer
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
-    assert part.notes[0].pitch == 10  # shipped as-is
-    assert llm.structured.calls == 1 + MAX_REPAIRS
+    assert part.notes
+    assert all(0 <= n.bar < HEADER.num_bars for n in part.notes)
 
 
 def test_compose_part_falls_back_when_structured_output_is_none():
@@ -84,9 +105,8 @@ def test_compose_part_falls_back_when_structured_output_is_none():
     part = compose_part(HEADER, BASS, ROSTER, {}, llm=llm)
 
     assert part.instrument_id == "bass"
-    assert part.notes == []
-    assert "structured output" in part.notes_summary
-    assert llm.structured.calls == 2
+    assert part.notes  # deterministic fallback, not silence
+    assert all(0 <= n.bar < HEADER.num_bars for n in part.notes)
 
 
 def test_compose_part_propagates_quota_errors_instead_of_empty_fallback():
@@ -111,7 +131,7 @@ def test_run_instrument_turn_falls_back_when_structured_output_is_none():
 
     llm = TurnLLM([None, None])
     part, resolutions, new_requests = run_instrument_turn(
-        HEADER, BASS, ROSTER, {}, [], None, llm=llm
+        HEADER, BASS, ROSTER, {}, [], [], None, llm=llm
     )
 
     assert part.instrument_id == "bass"
@@ -127,3 +147,91 @@ def test_peer_context_uses_summary_strings_not_note_lists():
     assert "four-on-the-floor kick" in text
     assert "bass" not in text  # self excluded
     assert "[" not in text  # no serialized note list leaking in
+
+
+def test_chord_map_text_formats_bar_chord_pairs():
+    chords = [ChordSpan(bar=0, chord="Dm7"), ChordSpan(bar=1, chord="G7"), ChordSpan(bar=2, chord="Cm9")]
+    text = _chord_map_text(chords)
+    assert "bar 0: Dm7" in text
+    assert "bar 1: G7" in text
+    assert "bar 2: Cm9" in text
+
+
+def test_chord_map_text_with_empty_list_returns_placeholder():
+    assert "no chord" in _chord_map_text([]).lower()
+
+
+def test_section_map_text_includes_energy_and_bar_range():
+    sections = [
+        Section(name="Intro", start_bar=0, end_bar=4, energy="low"),
+        Section(name="Chorus", start_bar=8, end_bar=12, energy="high"),
+    ]
+    text = _section_map_text(sections)
+    assert "Intro" in text
+    assert "low" in text
+    assert "Chorus" in text
+    assert "high" in text
+    assert "0" in text and "4" in text
+
+
+def test_section_map_text_with_empty_list_returns_placeholder():
+    assert "no section" in _section_map_text([]).lower()
+
+
+def test_negotiation_etiquette_includes_scope_hint_when_batch_peers_provided():
+    text = _negotiation_etiquette(["drums", "bass"])
+    assert "drums" in text
+    assert "bass" in text
+    assert "only" in text.lower() or "group" in text.lower()
+
+
+def test_negotiation_etiquette_no_scope_hint_when_no_peers():
+    text = _negotiation_etiquette([])
+    # should still return the base etiquette text
+    assert "request" in text.lower()
+
+
+def test_system_prompt_includes_chord_map_and_section_map():
+    from music_assistant.agents.instrument import _system_prompt
+    from music_assistant.domain.song_state import Header, RosterItem, ChordSpan, Section
+    header = Header(
+        genre="funk", key="D minor", tempo_bpm=110, num_bars=8,
+        chord_progression=[ChordSpan(bar=i, chord="Dm7") for i in range(8)],
+        sections=[Section(name="Verse", start_bar=0, end_bar=8, energy="medium")],
+    )
+    roster_item = RosterItem(
+        id="bass", instrument="Electric Bass",
+        role="groove", playing_style="Lock to the kick.",
+    )
+    text = _system_prompt(header, roster_item)
+    assert "Dm7" in text
+    assert "Verse" in text
+    assert "medium" in text
+    assert "Lock to the kick." in text
+
+
+def test_run_instrument_turn_accepts_batch_peer_ids():
+    from music_assistant.agents.instrument import InstrumentTurnOutput, run_instrument_turn
+    from music_assistant.domain.song_state import Header, Note, RosterItem
+
+    class TurnLLM:
+        def with_structured_output(self, schema):
+            assert schema is InstrumentTurnOutput
+            return self
+
+        def invoke(self, _messages):
+            return InstrumentTurnOutput(
+                notes=[Note(bar=0, start_beat=0.0, pitch=40, dur=1.0)],
+                notes_summary="bass root note",
+            )
+
+    header = Header(genre="funk", key="D minor", tempo_bpm=110, num_bars=4)
+    bass = RosterItem(id="bass", instrument="Electric Bass", role="groove")
+    roster = [bass, RosterItem(id="drums", instrument="kit", role="beat", is_drum=True)]
+
+    part, resolutions, new_requests = run_instrument_turn(
+        header, bass, roster, {}, ["drums"], [], None, llm=TurnLLM()
+    )
+    assert part.instrument_id == "bass"
+    assert resolutions == []
+    assert new_requests == []

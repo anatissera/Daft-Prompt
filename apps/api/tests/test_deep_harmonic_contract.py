@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from llm_band.domain.audio_profile import (
+from music_assistant.domain.audio_profile import (
     AnalysisNote,
     AudioProfile,
     ChordCandidate,

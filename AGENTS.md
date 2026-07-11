@@ -25,7 +25,7 @@ LLMinem is a monorepo with a Python backend and a Next.js frontend.
 ```text
 apps/
   api/                    # FastAPI, LangGraph, music/audio processing
-    llm_band/
+    music_assistant/
       domain/             # SongState, ReferenceProfile, AudioProfile
       application/        # compose/analyze/answer/chat use cases
       ports/              # LLM, storage, audio analysis, transcription, stems
@@ -182,6 +182,29 @@ APIs directly.
 
 Do not copy estimated reference chords by default. Use them only when the user
 explicitly asks for harmonic guidance or accepts it in chat.
+
+## The Architecture Graph Must Stay In Sync
+
+The UI ships ONE hand-maintained architecture diagram in
+`apps/web/components/PipelineGraphs.tsx`, opened from the sidebar helmet
+button: the unified map — the conceptual pipeline (intent, research tools,
+director commitments, instrument agents, enforcement, composer, render,
+player, answer/edit branches) annotated with the hard LangGraph identities
+(`do_*` node names, pydantic schemas, models per role) plus the LLM stack
+and streaming transport.
+
+If you change anything the diagram describes, you MUST update it in the
+same change. This includes:
+
+- adding, removing, or renaming pipeline nodes / tools / fallback tiers;
+- changing which models or providers each role uses;
+- changing pydantic output schemas fed to `with_structured_output`;
+- changing the streaming path (SSE endpoints, proxies) or parallelism;
+- changing what a node fundamentally IS (its `kind` tag: llm call, tool,
+  deterministic step, graph node, …).
+
+A stale diagram is worse than no diagram — it is part of the product
+(it gets presented) and part of onboarding.
 
 ## UI Rules
 

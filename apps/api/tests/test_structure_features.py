@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from llm_band.domain.audio_profile import ChordCandidate, ChordSpan
-from llm_band.infrastructure.mir.structure_features import (
+from music_assistant.domain.audio_profile import ChordCandidate, ChordSpan
+from music_assistant.infrastructure.mir.structure_features import (
     detect_structure,
     find_repeated_progression_candidate,
 )

@@ -1,6 +1,6 @@
-"""Phase 6: POST /compose/stream emits SSE events (director, agent_pass,
-convergence, done) over the same director/canned + negotiation pipeline as
-/compose. LLM/negotiation mocked — no API key needed."""
+"""POST /compose/stream emits SSE events over the band-agent pipeline
+(progress, director, done — plus error/convergence on failures). The
+band-agent event streamer is mocked — no API key needed."""
 
 from __future__ import annotations
 
@@ -8,15 +8,9 @@ import json
 
 from fastapi.testclient import TestClient
 
-import llm_band.interfaces.api as api
-from llm_band.agents.director import (
-    ArrangementInstrument,
-    ArrangementSection,
-    DirectorOutput,
-    arrangement_to_song,
-)
-from llm_band.domain.song_state import Part
-from llm_band.infrastructure.llm import LLMQuotaExceeded
+import music_assistant.interfaces.api as api
+from music_assistant.domain.song_state import Header, Part, RosterItem, SongState
+from music_assistant.infrastructure.llm import LLMQuotaExceeded
 
 
 def _parse_sse(text: str) -> list[dict]:
@@ -36,49 +30,55 @@ class _NoLLMCfg:
     llm_configured = False
 
 
-def _fake_song(style: str):
-    out = DirectorOutput(
-        genre="disco", key="C major", tempo_bpm=120,
-        time_sig_numerator=4, time_sig_denominator=4, num_bars=8,
-        sections=[ArrangementSection(name="loop", start_bar=0, end_bar=8)],
-        instruments=[
-            ArrangementInstrument(id="bass", instrument="electric_bass",
-                                  midi_program=33, midi_low=28, midi_high=55, role="groove"),
-        ],
-    )
-    return arrangement_to_song(style, out)
+def _make_fake_song(style: str) -> SongState:
+    header = Header(genre="disco", key="C major", tempo_bpm=120, num_bars=8)
+    roster = [RosterItem(id="bass", instrument="electric_bass", role="groove")]
+    return SongState(request=style, header=header, roster=roster)
 
 
-def _fake_negotiation_events(song):
+def _director_event(song: SongState) -> dict:
+    return {
+        "type": "director",
+        "source": "director",
+        "header": song.header.model_dump(mode="json"),
+        "roster": [r.model_dump(mode="json") for r in song.roster],
+    }
+
+
+def _fake_band_stream(style):
+    """Happy path: progress → director (carries song) → empty sentinel."""
+    song = _make_fake_song(style)
     song.parts = {"bass": Part(instrument_id="bass", notes_summary="patched")}
     song.converged = True
-    yield {"type": "agent_pass", "round": 0, "instrument_id": "bass",
-           "notes_summary": "patched", "new_requests": [], "resolved_requests": []}
-    yield {"type": "convergence", "round": 0, "converged": True, "resolved_requests": []}
+    yield {"type": "progress", "stage": "skeleton", "message": "disco @ 120"}, None
+    yield _director_event(song), song
+    yield {}, song
 
 
-def _fake_failing_negotiation_events(song):
-    yield {"type": "agent_pass", "round": 0, "instrument_id": "bass",
-           "notes_summary": "fallback: model did not return structured output",
-           "new_requests": [], "resolved_requests": []}
-    raise RuntimeError("instrument failed after fallback event")
-
-
-def _fake_quota_negotiation_events(_song):
-    raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota exceeded")
-
-
-def _fake_partial_then_quota_events(song):
+def _fake_band_stream_crash_after_director(style):
+    song = _make_fake_song(style)
     song.parts = {"bass": Part(instrument_id="bass", notes_summary="partial bass")}
-    yield {"type": "agent_pass", "round": 0, "instrument_id": "bass",
-           "notes_summary": "partial bass", "new_requests": [], "resolved_requests": []}
+    yield _director_event(song), song
+    raise RuntimeError("fills crashed after director")
+
+
+def _fake_band_stream_quota_after_director(style):
+    song = _make_fake_song(style)
+    yield _director_event(song), song
     raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota exceeded")
 
 
-def test_compose_stream_director_path_emits_agent_pass_and_done(monkeypatch):
+def _fake_band_stream_partial_then_quota(style):
+    song = _make_fake_song(style)
+    song.parts = {"bass": Part(instrument_id="bass", notes_summary="partial bass")}
+    yield _director_event(song), song
+    yield {"type": "progress", "stage": "fills", "message": "filled 1 / 2"}, None
+    raise LLMQuotaExceeded(provider="gemini", model="gemini-2.5-flash", detail="quota exceeded")
+
+
+def test_compose_stream_band_path_emits_progress_director_done(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
-    monkeypatch.setattr(api, "run_director", _fake_song)
-    monkeypatch.setattr(api, "iter_negotiation_events", _fake_negotiation_events)
+    monkeypatch.setattr(api, "_band_agent_event_streamer", _fake_band_stream)
     monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose/stream", json={"style": "disco"})
@@ -87,20 +87,18 @@ def test_compose_stream_director_path_emits_agent_pass_and_done(monkeypatch):
     assert resp.headers["content-type"].startswith("text/event-stream")
     events = _parse_sse(resp.text)
     types = [e["type"] for e in events]
-    assert types == ["director", "agent_pass", "convergence", "done"]
+    assert types == ["progress", "director", "done"]
 
-    assert events[0]["roster"][0]["id"] == "bass"
-    assert events[1]["instrument_id"] == "bass"
+    assert events[1]["roster"][0]["id"] == "bass"
     done = events[-1]
     assert done["source"] == "director"
     assert done["song"]["parts"]["bass"]["notes_summary"] == "patched"
     assert done["artifacts"]["midi"].endswith("song.mid")
 
 
-def test_compose_stream_survives_negotiation_exception_after_fallback_event(monkeypatch):
+def test_compose_stream_survives_crash_after_director_with_partial_song(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
-    monkeypatch.setattr(api, "run_director", _fake_song)
-    monkeypatch.setattr(api, "iter_negotiation_events", _fake_failing_negotiation_events)
+    monkeypatch.setattr(api, "_band_agent_event_streamer", _fake_band_stream_crash_after_director)
     monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose/stream", json={"style": "disco"})
@@ -108,16 +106,16 @@ def test_compose_stream_survives_negotiation_exception_after_fallback_event(monk
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
     types = [e["type"] for e in events]
-    assert types == ["director", "agent_pass", "convergence", "done"]
-    assert events[1]["instrument_id"] == "bass"
-    assert "fallback" in events[1]["notes_summary"]
-    assert events[-1]["song"]["parts"]["bass"]["notes_summary"].startswith("fallback")
+    assert types == ["director", "convergence", "done"]
+    done = events[-1]
+    assert done["song"]["converged"] is False
+    assert done["song"]["parts"]["bass"]["notes_summary"] == "partial bass"
+    assert any("partial" in e for e in done["song"]["errors"])
 
 
 def test_compose_stream_emits_error_event_on_quota_exhaustion(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
-    monkeypatch.setattr(api, "run_director", _fake_song)
-    monkeypatch.setattr(api, "iter_negotiation_events", _fake_quota_negotiation_events)
+    monkeypatch.setattr(api, "_band_agent_event_streamer", _fake_band_stream_quota_after_director)
     monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose/stream", json={"style": "disco"})
@@ -135,8 +133,7 @@ def test_compose_stream_emits_error_event_on_quota_exhaustion(monkeypatch):
 
 def test_compose_stream_preserves_partial_parts_after_quota_error(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _Cfg())
-    monkeypatch.setattr(api, "run_director", _fake_song)
-    monkeypatch.setattr(api, "iter_negotiation_events", _fake_partial_then_quota_events)
+    monkeypatch.setattr(api, "_band_agent_event_streamer", _fake_band_stream_partial_then_quota)
     monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
     resp = client.post("/compose/stream", json={"style": "disco"})
@@ -144,12 +141,12 @@ def test_compose_stream_preserves_partial_parts_after_quota_error(monkeypatch):
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
     types = [e["type"] for e in events]
-    assert types == ["director", "agent_pass", "error", "done"]
+    assert types == ["director", "progress", "error", "done"]
     assert events[-1]["song"]["parts"]["bass"]["notes_summary"] == "partial bass"
     assert events[-1]["song"]["converged"] is False
 
 
-def test_compose_stream_canned_path_emits_director_and_done(monkeypatch):
+def test_compose_stream_emits_error_without_llm_configuration(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: _NoLLMCfg())
     monkeypatch.setattr(api, "render_artifacts", lambda song, job_dir: None)
     client = TestClient(api.app)
@@ -158,5 +155,7 @@ def test_compose_stream_canned_path_emits_director_and_done(monkeypatch):
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
     types = [e["type"] for e in events]
-    assert types == ["director", "convergence", "done"]
-    assert events[-1]["source"] == "canned"
+    assert types == ["error"]
+    assert events[0]["code"] == "llm_not_configured"
+    assert events[0]["partial"] is False
+    assert "provider" in events[0]["message"].lower()

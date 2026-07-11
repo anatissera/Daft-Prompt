@@ -1,18 +1,16 @@
-import { isReferenceQuestion } from "./referenceProfileView.mjs";
+// Minimal client-side routing: attachment → analyze, otherwise → chat (backend
+// runs its own intent classification on /chat).
 
-export function chooseChatAction({ prompt, hasSelectedFile, hasReferenceProfile }) {
+export function chooseChatAction({ prompt, hasSelectedFile }) {
   const messageText = normalizeMessageText(prompt, hasSelectedFile);
   if (hasSelectedFile) return { type: "analyze", messageText };
-  if (hasReferenceProfile && isReferenceQuestion(messageText)) {
-    return { type: "answer_reference", messageText };
-  }
-  return { type: "compose", messageText };
+  return { type: "chat", messageText };
 }
 
 export function normalizeMessageText(prompt, hasSelectedFile = false) {
   const trimmed = prompt.trim();
   if (trimmed) return trimmed;
-  return hasSelectedFile ? "Analyze this audio." : "Compose a short song.";
+  return hasSelectedFile ? "Analyze this audio." : "Hello.";
 }
 
 export function createTextMessage(role, text, index) {
@@ -31,6 +29,16 @@ export function createAnalysisMessage(role, text, profile, index) {
     role,
     text,
     profile,
+  };
+}
+
+export function createChordDiagramMessage(role, text, playableChords, index) {
+  return {
+    id: `${role}-${index}`,
+    kind: "chord_diagram",
+    role,
+    text,
+    playableChords,
   };
 }
 

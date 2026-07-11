@@ -27,5 +27,13 @@ export default function ScoreViewer({ musicXmlUrl }: { musicXmlUrl: string }) {
     };
   }, [musicXmlUrl]);
 
-  return <div ref={ref} className="media-frame media-frame-light" />;
+  return (
+    <div className="score-paper">
+      <span className="score-paper-corner score-paper-corner-tl" aria-hidden="true" />
+      <span className="score-paper-corner score-paper-corner-tr" aria-hidden="true" />
+      <span className="score-paper-corner score-paper-corner-bl" aria-hidden="true" />
+      <span className="score-paper-corner score-paper-corner-br" aria-hidden="true" />
+      <div ref={ref} className="score-paper-canvas" />
+    </div>
+  );
 }

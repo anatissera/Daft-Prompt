@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from llm_band.infrastructure.mir.tempo_grid import estimate_tempo_grid
+from music_assistant.infrastructure.mir.tempo_grid import estimate_tempo_grid
 
 
 def _stable_tracker(bpm: float, beats: int):

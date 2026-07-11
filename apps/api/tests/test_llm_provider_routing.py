@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from llm_band.config import Settings
-from llm_band.infrastructure.llm import (
+from music_assistant.config import Settings
+from music_assistant.infrastructure.llm import (
     LLMAllProvidersFailed,
     LLMProviderUnavailable,
     LLMQuotaExceeded,
@@ -126,7 +126,7 @@ def test_gemini_chat_model_uses_configured_retry_count(monkeypatch):
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-    import llm_band.infrastructure.llm as llm_module
+    import music_assistant.infrastructure.llm as llm_module
 
     monkeypatch.setattr(llm_module, "_import_gemini_chat", lambda: FakeGemini)
 
@@ -140,7 +140,7 @@ def test_gemini_chat_model_uses_configured_retry_count(monkeypatch):
 
 
 def test_openrouter_missing_dependency_mentions_attempted_model(monkeypatch):
-    import llm_band.infrastructure.llm as llm_module
+    import music_assistant.infrastructure.llm as llm_module
 
     def missing_openrouter():
         raise ModuleNotFoundError("No module named 'langchain_openai'")
