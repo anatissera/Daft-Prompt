@@ -9,6 +9,7 @@ import { harmonicFitView, harmonicFitLabel } from "@/lib/harmonicFitView.mjs";
 import { triggerMidiDownload } from "@/lib/midiExport";
 import NegotiationFeed from "@/components/NegotiationFeed";
 import RosterView from "@/components/RosterView";
+import PianoRoll from "@/components/PianoRoll";
 
 const ScoreViewer = dynamic(() => import("@/components/ScoreViewer"), { ssr: false });
 const TrackMixer = dynamic(() => import("@/components/TrackMixer"), { ssr: false });
@@ -66,6 +67,11 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
   // share the same Mute/Solo state.
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(() => new Set());
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
+  const partIds = useMemo(() => Object.keys(song.parts), [song.parts]);
+  const audibleTrackIds = useMemo(
+    () => getAudibleTrackIds(partIds, mutedTrackIds, soloTrackIds),
+    [partIds, mutedTrackIds, soloTrackIds],
+  );
 
   return (
     <section className="song-deck" aria-label="Generated song">
@@ -115,13 +121,12 @@ export default function GeneratedSongBlock({ message }: { message: CompositionCh
             onMutedChange={setMutedTrackIds}
             onSoloChange={setSoloTrackIds}
           />
+          <PianoRoll song={song} audibleTrackIds={audibleTrackIds} />
           <button
             type="button"
             className="artifact-link"
             onClick={() => {
-              const partIds = Object.keys(song.parts);
-              const audible = getAudibleTrackIds(partIds, mutedTrackIds, soloTrackIds);
-              triggerMidiDownload(song, audible);
+              triggerMidiDownload(song, audibleTrackIds);
             }}
           >
             ↓ Download MIDI ({hasMixState(mutedTrackIds, soloTrackIds) ? "audible tracks" : "full"})

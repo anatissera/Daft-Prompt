@@ -1974,6 +1974,60 @@ input[type="number"], select {
 .tab-event-chip-drums { color: var(--text); border-color: rgba(215, 218, 230, 0.28); background: rgba(215, 218, 230, 0.08); }
 .tab-event-chip-piano { min-width: 42px; color: #101014; background: linear-gradient(180deg, #fff9e7, #d7dae6); border-color: rgba(255, 255, 255, 0.5); }
 
+.piano-roll {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid rgba(215, 218, 230, 0.16);
+  border-radius: var(--radius-sm);
+  background: rgba(3, 5, 10, 0.46);
+}
+.piano-roll-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.piano-roll-header h3 { margin: 2px 0 0; font-size: 14px; }
+.piano-roll-eyebrow,
+.piano-roll-header > span,
+.piano-roll-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.piano-roll-eyebrow {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.piano-roll-scroll {
+  overflow-x: auto;
+  border: 1px solid rgba(215, 218, 230, 0.14);
+  border-radius: var(--radius-sm);
+  background: #05070d;
+}
+.piano-roll-svg {
+  display: block;
+  min-width: 760px;
+  width: 100%;
+  height: 238px;
+}
+.piano-roll-bg { fill: #05070d; }
+.piano-roll-row-white { fill: rgba(255, 255, 255, 0.018); }
+.piano-roll-row-black { fill: rgba(0, 0, 0, 0.2); }
+.piano-roll-label,
+.piano-roll-bar-label {
+  fill: rgba(215, 218, 230, 0.62);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.piano-roll-bar { stroke: rgba(215, 218, 230, 0.12); stroke-width: 1; }
+.piano-roll-bar-strong { stroke: rgba(244, 210, 122, 0.34); stroke-width: 1; }
+.piano-roll-note { stroke: rgba(255, 255, 255, 0.5); stroke-width: 0.8; }
+.piano-roll-note-muted { stroke: rgba(215, 218, 230, 0.12); }
+.piano-roll-timeline { fill: rgba(244, 210, 122, 0.18); }
+
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
   .app-sidebar { display: none; }
