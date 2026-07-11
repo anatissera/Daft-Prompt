@@ -170,6 +170,14 @@ export type KeyMode = "major" | "minor" | "unknown";
 export type ChordQuality = "major" | "minor" | "diminished" | "unknown";
 export type StemRole = "percussion" | "bass" | "vocal" | "harmony" | "mix" | "other";
 export type InstrumentFamily = "drums" | "bass" | "guitar" | "piano";
+export type PlayablePartKind =
+  | "guitar_tab"
+  | "bass_tab"
+  | "drum_tab"
+  | "piano_keys"
+  | "piano_roll"
+  | "chord_chart"
+  | "rhythm_grid";
 export type TransferMode =
   | "similar"
   | "literal"
@@ -191,7 +199,10 @@ export type EvidenceClaimType =
   | "instrumentation"
   | "groove"
   | "timbre"
+  | "tone"
   | "trait"
+  | "playable_part"
+  | "style_profile"
   | "audio_estimate"
   | "other";
 export type ExtractionMethod =
@@ -200,7 +211,8 @@ export type ExtractionMethod =
   | "api"
   | "audio_analyzer"
   | "manual_fixture"
-  | "inference";
+  | "inference"
+  | "source_connector";
 
 export interface ReferenceSource {
   reference_id: string;
@@ -470,6 +482,77 @@ export interface InstrumentTrait {
   confidence_label: ConfidenceLabel;
 }
 
+export interface TabEventProfile {
+  beat_index: number;
+  duration: string;
+  string: number | null;
+  fret: number | null;
+  pitch: number | null;
+  drum: string | null;
+  label: string;
+  rest: boolean;
+  tie: boolean;
+  ghost: boolean;
+}
+
+export interface TabMeasureProfile {
+  index: number;
+  marker: string | null;
+  time_signature: [number, number] | null;
+  events: TabEventProfile[];
+}
+
+export interface InstrumentTab {
+  instrument: string;
+  instrument_family: InstrumentFamily;
+  track_name: string;
+  tuning: string[];
+  capo: number | null;
+  measures: TabMeasureProfile[];
+  source_name: string;
+  source_url: string;
+  confidence: number;
+  confidence_label: ConfidenceLabel;
+}
+
+export interface PlayablePart {
+  part_id: string;
+  kind: PlayablePartKind;
+  instrument_family: InstrumentFamily | null;
+  title: string;
+  summary: string;
+  section_name: string | null;
+  source_name: string;
+  source_url: string;
+  evidence_claim_ids: string[];
+  tab: InstrumentTab | null;
+  chord_chart: string[][];
+  piano_keys: number[];
+  piano_roll: ReferenceNoteSeed[];
+  rhythm_grid: string[];
+  confidence: number;
+  rendering_notes: string[];
+  confidence_label: ConfidenceLabel;
+}
+
+export interface ToneProfile {
+  tone_id: string;
+  instrument: string;
+  family: InstrumentFamily | null;
+  description: string;
+  patch_family: string;
+  midi_program: number | null;
+  amp: string | null;
+  pedals: string[];
+  synth_params: Record<string, string | number | boolean>;
+  production_notes: string[];
+  source_claim_ids: string[];
+  source_name: string;
+  source_url: string;
+  confidence: number;
+  confidence_label: ConfidenceLabel;
+}
+
 export interface InstrumentTimbreProfile {
   instrument_name: string;
   source_label: string;
@@ -580,6 +663,46 @@ export interface ReferenceTransferIntent {
   clarification: string | null;
 }
 
+export interface RepresentativeSong {
+  title: string;
+  artist: string | null;
+  profile_id: string | null;
+  reason: string;
+  source_claim_ids: string[];
+  tab_available: boolean;
+  confidence: number;
+}
+
+export interface ArtistStyleProfile {
+  profile_id: string;
+  artist_name: string;
+  aliases: string[];
+  representative_songs: RepresentativeSong[];
+  source_profile_ids: string[];
+  genre_tags: string[];
+  subgenre_tags: string[];
+  tempo_range_bpm: [number | null, number | null];
+  common_meters: string[];
+  common_keys: string[];
+  common_modes: string[];
+  common_progressions: string[];
+  typical_instruments: string[];
+  drum_traits: string[];
+  bass_traits: string[];
+  guitar_traits: string[];
+  keys_traits: string[];
+  synth_traits: string[];
+  melody_hook_traits: string[];
+  production_tone_traits: string[];
+  section_form_traits: string[];
+  tone_profiles: ToneProfile[];
+  source_claims: EvidenceClaim[];
+  confidence: number;
+  confidence_summary: Record<string, string>;
+  uncertainty_notes: string[];
+  confidence_label: ConfidenceLabel;
+}
+
 export interface SongKnowledgeProfile {
   profile_id: string;
   identity: SongIdentity;
@@ -588,9 +711,12 @@ export interface SongKnowledgeProfile {
   evidence_claims: EvidenceClaim[];
   sections: SongSectionProfile[];
   traits: InstrumentTrait[];
+  playable_parts: PlayablePart[];
+  tone_profiles: ToneProfile[];
   conflicts: EvidenceConflict[];
   missing_data: MissingData[];
   confidence_summary: Record<string, string>;
+  source_names: string[];
   audio: AudioProfile | null;
 }
 
@@ -599,14 +725,21 @@ export interface CompositionBrief {
   user_request: string;
   global_constraints: Record<string, unknown>;
   references_used: string[];
+  song_profile_ids: string[];
+  artist_style_profile_ids: string[];
+  artist_style_profiles: ArtistStyleProfile[];
   transfer_policy: Record<string, string[]>;
   harmonic_guidance: Record<string, unknown>;
   rhythmic_guidance: Record<string, unknown>;
   melodic_guidance: Record<string, unknown>;
   form_guidance: Record<string, unknown>;
+  style_guidance: Record<string, unknown>;
   instrumentation: Record<string, unknown>;
   instrument_requests: Record<string, Record<string, unknown>>;
   timbre_traits: Record<string, unknown>;
+  tone_requests: ToneProfile[];
+  playable_parts_to_preserve: PlayablePart[];
+  preservation_requests: string[];
   forbidden_traits: string[];
   uncertainty_notes: string[];
 }

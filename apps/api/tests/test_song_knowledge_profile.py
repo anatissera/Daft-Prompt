@@ -7,14 +7,20 @@ import pytest
 from pydantic import ValidationError
 
 from music_assistant.domain.audio_profile import (
+    ArtistStyleProfile,
     CompositionBrief,
     EvidenceClaim,
     EvidenceConflict,
+    InstrumentTab,
     InstrumentTrait,
+    PlayablePart,
     ReferenceProfile,
     ReferenceSource,
+    RepresentativeSong,
     SongKnowledgeProfile,
     SongSectionProfile,
+    TabMeasureProfile,
+    ToneProfile,
 )
 
 
@@ -136,3 +142,130 @@ def test_instrument_trait_and_section_models_keep_evidence_scoped():
 
     assert section.instrument_claims[0].section_name == "verse"
     assert trait.source_claim_ids == ["claim_drums"]
+
+
+def test_song_profile_can_carry_playable_parts_and_tone_profiles():
+    tab_claim = EvidenceClaim(
+        claim_id="songsterr_guitar_intro",
+        claim_type="tab",
+        value="Intro guitar tab is available",
+        source_name="Songsterr",
+        source_url="https://songsterr.test/demo",
+        extraction_method="source_connector",
+        confidence=0.82,
+        snippet="Songsterr track: Electric Guitar",
+    )
+    tab = InstrumentTab(
+        instrument="electric guitar",
+        instrument_family="guitar",
+        track_name="Electric Guitar",
+        tuning=["E", "A", "D", "G", "B", "E"],
+        source_name="Songsterr",
+        source_url="https://songsterr.test/demo",
+        confidence=0.82,
+        measures=[TabMeasureProfile(index=0, marker="intro")],
+    )
+    playable = PlayablePart(
+        part_id="play_intro_guitar",
+        kind="guitar_tab",
+        instrument_family="guitar",
+        title="Intro guitar tab",
+        section_name="intro",
+        source_name="Songsterr",
+        source_url="https://songsterr.test/demo",
+        evidence_claim_ids=[tab_claim.claim_id],
+        tab=tab,
+        confidence=0.82,
+    )
+    tone = ToneProfile(
+        tone_id="tone_robot_guitar",
+        instrument="electric guitar",
+        family="guitar",
+        description="Tight filtered rhythm guitar",
+        patch_family="muted clean",
+        source_claim_ids=[tab_claim.claim_id],
+        confidence=0.61,
+    )
+    profile = SongKnowledgeProfile(
+        profile_id="song_demo",
+        identity={"title": "Demo Song", "artist": "Fixture Artist"},
+        evidence_claims=[tab_claim],
+        playable_parts=[playable],
+        tone_profiles=[tone],
+        source_names=["Songsterr"],
+    )
+
+    dumped = profile.model_dump(mode="json")
+
+    assert dumped["playable_parts"][0]["kind"] == "guitar_tab"
+    assert dumped["playable_parts"][0]["confidence_label"] == "high"
+    assert dumped["tone_profiles"][0]["confidence_label"] == "medium"
+    assert profile.source_names == ["Songsterr"]
+
+
+def test_artist_style_profile_and_composition_brief_share_compact_traits():
+    source_claim = EvidenceClaim(
+        claim_id="style_sparse_verses",
+        claim_type="style_profile",
+        value="Sparse verses with punchy chorus contrast",
+        source_name="style fixture",
+        source_url="file://style-fixture",
+        extraction_method="manual_fixture",
+        confidence=0.68,
+    )
+    tone = ToneProfile(
+        tone_id="tone_detuned_synth",
+        instrument="synth",
+        description="Compressed detuned synth lead",
+        patch_family="detuned lead",
+        confidence=0.66,
+    )
+    style = ArtistStyleProfile(
+        profile_id="artist_fixture_band",
+        artist_name="Fixture Band",
+        representative_songs=[
+            RepresentativeSong(
+                title="Representative Song",
+                artist="Fixture Band",
+                profile_id="song_representative",
+                reason="popular and tab-backed",
+                source_claim_ids=[source_claim.claim_id],
+                tab_available=True,
+                confidence=0.74,
+            )
+        ],
+        source_profile_ids=["song_representative"],
+        genre_tags=["alt pop"],
+        tempo_range_bpm=(92.0, 144.0),
+        common_meters=["4/4"],
+        common_progressions=["i - VI - III - VII"],
+        typical_instruments=["drums", "bass", "piano", "synth"],
+        drum_traits=["punchy chorus drums"],
+        production_tone_traits=["dry verses", "wide chorus"],
+        tone_profiles=[tone],
+        source_claims=[source_claim],
+        confidence=0.69,
+    )
+    playable = PlayablePart(
+        part_id="drums_to_keep",
+        kind="drum_tab",
+        instrument_family="drums",
+        title="Main drum groove",
+        confidence=0.8,
+    )
+    brief = CompositionBrief(
+        brief_id="brief_style",
+        user_request="Compose like Fixture Band but keep this drum groove exactly.",
+        references_used=["artist_fixture_band"],
+        artist_style_profile_ids=[style.profile_id],
+        artist_style_profiles=[style],
+        playable_parts_to_preserve=[playable],
+        preservation_requests=["keep drums exactly"],
+        style_guidance={"artist_fixture_band": ["sparse verses", "big chorus contrast"]},
+    )
+
+    dumped = brief.model_dump(mode="json")
+
+    assert dumped["artist_style_profiles"][0]["confidence_label"] == "medium"
+    assert dumped["playable_parts_to_preserve"][0]["kind"] == "drum_tab"
+    assert brief.preservation_requests == ["keep drums exactly"]

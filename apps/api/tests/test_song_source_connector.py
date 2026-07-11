@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from music_assistant.domain.audio_profile import EvidenceClaim
+from music_assistant.domain.audio_profile import EvidenceClaim, PlayablePart, ToneProfile
 from music_assistant.ports.song_source_connector import (
     ConnectorFailure,
     ConnectorResult,
@@ -136,6 +136,39 @@ def test_connector_status_contract_covers_expected_fetch_outcomes():
     assert "blocked" in statuses
     assert "js_rendered" in statuses
     assert "unsupported" in statuses
+
+
+def test_connector_result_can_return_playable_parts_and_tone_profiles():
+    query = ResolvedSongQuery(title="Demo Song", artist="Fixture Artist")
+    playable = PlayablePart(
+        part_id="songsterr_bass",
+        kind="bass_tab",
+        instrument_family="bass",
+        title="Bass tab",
+        source_name="Songsterr",
+        source_url="https://songsterr.test/demo",
+        confidence=0.81,
+    )
+    tone = ToneProfile(
+        tone_id="bass_tone",
+        instrument="bass",
+        family="bass",
+        patch_family="round fingerstyle",
+        source_name="Songsterr",
+        source_url="https://songsterr.test/demo",
+        confidence=0.62,
+    )
+
+    result = ConnectorResult(
+        source_name="Songsterr",
+        query=query,
+        fetch_status="fetched",
+        playable_parts=[playable],
+        tone_profiles=[tone],
+    )
+
+    assert result.playable_parts[0].kind == "bass_tab"
+    assert result.tone_profiles[0].confidence_label == "medium"
 
 
 def test_application_and_domain_do_not_import_concrete_source_connectors():

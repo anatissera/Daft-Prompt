@@ -9,6 +9,15 @@ from pydantic import BaseModel, Field, computed_field
 
 ConfidenceLabel = Literal["low", "medium", "high"]
 InstrumentFamily = Literal["drums", "bass", "guitar", "piano"]
+PlayablePartKind = Literal[
+    "guitar_tab",
+    "bass_tab",
+    "drum_tab",
+    "piano_keys",
+    "piano_roll",
+    "chord_chart",
+    "rhythm_grid",
+]
 TransferMode = Literal[
     "similar",
     "literal",
@@ -31,7 +40,10 @@ EvidenceClaimType = Literal[
     "instrumentation",
     "groove",
     "timbre",
+    "tone",
     "trait",
+    "playable_part",
+    "style_profile",
     "audio_estimate",
     "other",
 ]
@@ -42,6 +54,7 @@ ExtractionMethod = Literal[
     "audio_analyzer",
     "manual_fixture",
     "inference",
+    "source_connector",
 ]
 
 
@@ -142,6 +155,97 @@ class InstrumentTrait(BaseModel):
     role: str
     traits: dict[str, str] = Field(default_factory=dict)
     source_claim_ids: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @computed_field
+    @property
+    def confidence_label(self) -> ConfidenceLabel:
+        return confidence_label(self.confidence)
+
+
+class TabEventProfile(BaseModel):
+    """A compact event for source-backed playable views."""
+
+    beat_index: float = Field(default=0.0, ge=0.0)
+    duration: str = ""
+    string: Optional[int] = Field(default=None, ge=1)
+    fret: Optional[int] = Field(default=None, ge=0)
+    pitch: Optional[int] = Field(default=None, ge=0, le=127)
+    drum: Optional[str] = None
+    label: str = ""
+    rest: bool = False
+    tie: bool = False
+    ghost: bool = False
+
+
+class TabMeasureProfile(BaseModel):
+    index: int = Field(ge=0)
+    marker: Optional[str] = None
+    time_signature: Optional[tuple[int, int]] = None
+    events: list[TabEventProfile] = Field(default_factory=list, max_length=256)
+
+
+class InstrumentTab(BaseModel):
+    """Source-backed tab data normalized enough for teaching views."""
+
+    instrument: str
+    instrument_family: InstrumentFamily
+    track_name: str = ""
+    tuning: list[str] = Field(default_factory=list, max_length=12)
+    capo: Optional[int] = Field(default=None, ge=0)
+    measures: list[TabMeasureProfile] = Field(default_factory=list, max_length=512)
+    source_name: str = ""
+    source_url: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @computed_field
+    @property
+    def confidence_label(self) -> ConfidenceLabel:
+        return confidence_label(self.confidence)
+
+
+class PlayablePart(BaseModel):
+    """A requested playable view, backed by source evidence or SongState."""
+
+    part_id: str
+    kind: PlayablePartKind
+    instrument_family: Optional[InstrumentFamily] = None
+    title: str
+    summary: str = ""
+    section_name: Optional[str] = None
+    source_name: str = ""
+    source_url: str = ""
+    evidence_claim_ids: list[str] = Field(default_factory=list)
+    tab: Optional[InstrumentTab] = None
+    chord_chart: list[list[str]] = Field(default_factory=list, max_length=128)
+    piano_keys: list[int] = Field(default_factory=list, max_length=256)
+    piano_roll: list[ReferenceNoteSeed] = Field(default_factory=list, max_length=1024)
+    rhythm_grid: list[str] = Field(default_factory=list, max_length=128)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    rendering_notes: list[str] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def confidence_label(self) -> ConfidenceLabel:
+        return confidence_label(self.confidence)
+
+
+class ToneProfile(BaseModel):
+    """Compact tone/patch traits for generated or source-backed parts."""
+
+    tone_id: str
+    instrument: str
+    family: Optional[InstrumentFamily] = None
+    description: str = ""
+    patch_family: str = ""
+    midi_program: Optional[int] = Field(default=None, ge=0, le=127)
+    amp: Optional[str] = None
+    pedals: list[str] = Field(default_factory=list)
+    synth_params: dict[str, str | float | int | bool] = Field(default_factory=dict)
+    production_notes: list[str] = Field(default_factory=list)
+    source_claim_ids: list[str] = Field(default_factory=list)
+    source_name: str = ""
+    source_url: str = ""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
     @computed_field
@@ -260,8 +364,54 @@ class ReferenceTransferIntent(BaseModel):
     clarification: Optional[str] = None
 
 
+class RepresentativeSong(BaseModel):
+    title: str
+    artist: Optional[str] = None
+    profile_id: Optional[str] = None
+    reason: str = ""
+    source_claim_ids: list[str] = Field(default_factory=list)
+    tab_available: bool = False
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class ArtistStyleProfile(BaseModel):
+    """Aggregated artist/band traits for evidence-guided composition."""
+
+    profile_id: str
+    artist_name: str
+    aliases: list[str] = Field(default_factory=list)
+    representative_songs: list[RepresentativeSong] = Field(default_factory=list, max_length=16)
+    source_profile_ids: list[str] = Field(default_factory=list)
+    genre_tags: list[str] = Field(default_factory=list)
+    subgenre_tags: list[str] = Field(default_factory=list)
+    tempo_range_bpm: tuple[Optional[float], Optional[float]] = (None, None)
+    common_meters: list[str] = Field(default_factory=list)
+    common_keys: list[str] = Field(default_factory=list)
+    common_modes: list[str] = Field(default_factory=list)
+    common_progressions: list[str] = Field(default_factory=list, max_length=32)
+    typical_instruments: list[str] = Field(default_factory=list)
+    drum_traits: list[str] = Field(default_factory=list)
+    bass_traits: list[str] = Field(default_factory=list)
+    guitar_traits: list[str] = Field(default_factory=list)
+    keys_traits: list[str] = Field(default_factory=list)
+    synth_traits: list[str] = Field(default_factory=list)
+    melody_hook_traits: list[str] = Field(default_factory=list)
+    production_tone_traits: list[str] = Field(default_factory=list)
+    section_form_traits: list[str] = Field(default_factory=list)
+    tone_profiles: list[ToneProfile] = Field(default_factory=list)
+    source_claims: list[EvidenceClaim] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence_summary: dict[str, str] = Field(default_factory=dict)
+    uncertainty_notes: list[str] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def confidence_label(self) -> ConfidenceLabel:
+        return confidence_label(self.confidence)
+
+
 class SongKnowledgeProfile(BaseModel):
-    """Traceable known-song profile built from web and optional audio evidence."""
+    """Traceable known-song profile built from source connector evidence."""
 
     profile_id: str
     identity: SongIdentity
@@ -270,9 +420,12 @@ class SongKnowledgeProfile(BaseModel):
     evidence_claims: list[EvidenceClaim] = Field(default_factory=list)
     sections: list[SongSectionProfile] = Field(default_factory=list)
     traits: list[InstrumentTrait] = Field(default_factory=list)
+    playable_parts: list[PlayablePart] = Field(default_factory=list)
+    tone_profiles: list[ToneProfile] = Field(default_factory=list)
     conflicts: list[EvidenceConflict] = Field(default_factory=list)
     missing_data: list[MissingData] = Field(default_factory=list)
     confidence_summary: dict[str, str] = Field(default_factory=dict)
+    source_names: list[str] = Field(default_factory=list)
     audio: Optional["AudioProfile"] = None
 
 
@@ -283,14 +436,21 @@ class CompositionBrief(BaseModel):
     user_request: str
     global_constraints: dict[str, Any] = Field(default_factory=dict)
     references_used: list[str] = Field(default_factory=list)
+    song_profile_ids: list[str] = Field(default_factory=list)
+    artist_style_profile_ids: list[str] = Field(default_factory=list)
+    artist_style_profiles: list[ArtistStyleProfile] = Field(default_factory=list)
     transfer_policy: dict[str, list[str]] = Field(default_factory=dict)
     harmonic_guidance: dict[str, Any] = Field(default_factory=dict)
     rhythmic_guidance: dict[str, Any] = Field(default_factory=dict)
     melodic_guidance: dict[str, Any] = Field(default_factory=dict)
     form_guidance: dict[str, Any] = Field(default_factory=dict)
+    style_guidance: dict[str, Any] = Field(default_factory=dict)
     instrumentation: dict[str, Any] = Field(default_factory=dict)
     instrument_requests: dict[str, dict[str, Any]] = Field(default_factory=dict)
     timbre_traits: dict[str, Any] = Field(default_factory=dict)
+    tone_requests: list[ToneProfile] = Field(default_factory=list)
+    playable_parts_to_preserve: list[PlayablePart] = Field(default_factory=list)
+    preservation_requests: list[str] = Field(default_factory=list)
     forbidden_traits: list[str] = Field(default_factory=list)
     uncertainty_notes: list[str] = Field(default_factory=list)
 

@@ -6,7 +6,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-from music_assistant.domain.audio_profile import EvidenceClaim
+from music_assistant.domain.audio_profile import EvidenceClaim, PlayablePart, ToneProfile
 
 
 FetchStatus = Literal[
@@ -47,6 +47,8 @@ class ConnectorResult(BaseModel):
     query: ResolvedSongQuery
     fetch_status: FetchStatus
     claims: list[EvidenceClaim] = Field(default_factory=list)
+    playable_parts: list[PlayablePart] = Field(default_factory=list)
+    tone_profiles: list[ToneProfile] = Field(default_factory=list)
     failures: list[ConnectorFailure] = Field(default_factory=list)
 
 
