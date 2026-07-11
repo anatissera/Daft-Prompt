@@ -19,6 +19,7 @@ from music_assistant.application.answer_music_question import AnswerMusicQuestio
 from music_assistant.application.artist_style_profile import BuildArtistStyleProfile
 from music_assistant.application.chat_agent import ChatAgent
 from music_assistant.application.composition_brief import BuildCompositionBrief
+from music_assistant.application.generated_song_edits import BuildGeneratedSongEditIntent, apply_generated_song_edit
 from music_assistant.application.compose_song import ComposeConfigurationError, ComposeSong
 from music_assistant.application.language import is_spanish
 from music_assistant.application.music_tool_models import (
@@ -205,19 +206,15 @@ class ChatMusic:
 
     def _handle(self, request: ChatRequest) -> ChatResponse:
         message = request.message.strip()
+        profile = self.reference_store.get(request.reference_id) if request.reference_id else None
+        profiles = _profiles_from_request(request, self.reference_store)
+        if profile is None and profiles:
+            profile = profiles[0]
         if request.current_song is not None and _is_tab_request(message):
             excerpt = _tab_excerpt_from_song(request.current_song, message)
             return _tab_chat_response(excerpt)
         if request.current_song is not None and _looks_like_song_edit(message):
-            return self._revise_current_song(message, request.current_song)
-        profile = (
-            self.reference_store.get(request.reference_id)
-            if request.reference_id
-            else None
-        )
-        profiles = _profiles_from_request(request, self.reference_store)
-        if profile is None and profiles:
-            profile = profiles[0]
+            return self._revise_current_song(message, request.current_song, reference=profile)
 
         if request.artist_style_profiles and _wants_existing_artist_style(message):
             return self._compose_from_artist_style(message, request.artist_style_profiles[-1])
@@ -525,7 +522,27 @@ class ChatMusic:
             diagnostics={"route": "deterministic_artist_style_compose", "artist": profile.artist_name},
         )
 
-    def _revise_current_song(self, message: str, song: SongState) -> ChatResponse:
+    def _revise_current_song(self, message: str, song: SongState, *, reference: ReferenceProfile | None = None) -> ChatResponse:
+        structural_intent = BuildGeneratedSongEditIntent(chat_model=self.chat_model).execute(message)
+        if structural_intent.operation in {
+            "replace_instrument",
+            "add_instrument",
+            "remove_instrument",
+            "rebalance",
+        }:
+            revised = apply_generated_song_edit(
+                song,
+                structural_intent,
+                reference=reference,
+                songsterr_tab_store=self.songsterr_tab_store,
+            )
+            return ChatResponse(
+                intent="compose",
+                reply=_structural_edit_reply(message, structural_intent, revised),
+                reference_id=reference.reference_id if reference else None,
+                reference_label=_reference_label(reference) if reference else None,
+                compose=ChatComposeResult(song=revised, source="director", warnings=_composition_warnings(revised)),
+            )
         match = _target_instrument(song, message)
         if match is None:
             choices = ", ".join(_instrument_label(item) for item in song.roster) or "the generated parts"
@@ -850,6 +867,20 @@ def _composition_warnings(song: SongState) -> list[str]:
     return warnings
 
 
+def _structural_edit_reply(message: str, intent, song: SongState) -> str:
+    if intent.operation == "replace_instrument":
+        targets = ", ".join(intent.target_families)
+        replacements = ", ".join(intent.replacement_families)
+        return f"Replaced {targets} material with new {replacements} material while preserving unaffected tracks."
+    if intent.operation == "rebalance":
+        return "Rebalanced the requested instrument layers while preserving the rest of the arrangement."
+    if intent.operation == "add_instrument":
+        return f"Added {', '.join(intent.replacement_families or intent.target_families)} material to the generated song."
+    if intent.operation == "remove_instrument":
+        return f"Removed {', '.join(intent.target_families)} material while preserving unaffected tracks."
+    return f"Updated the generated arrangement; it now has {len(song.roster)} instruments."
+
+
 def _is_chord_question(message: str) -> bool:
     return bool(re.search(r"\b(chord|chords|progression|harmony|harmonic|acorde|acordes|progresi[oó]n|armon[ií]a)\b", message, re.IGNORECASE))
 
@@ -944,7 +975,7 @@ _LOCAL_REFERENCE_QUESTION_RE = re.compile(
 )
 
 _SONG_EDIT_RE = re.compile(
-    r"\b(make|regenerate|revise|modify|change|update|edit|less|more|busier|quieter|louder|faster|slower"
+    r"\b(make|replace|swap|substitute|add|remove|balance|rebalance|regenerate|revise|modify|change|update|edit|less|more|busier|quieter|louder|faster|slower"
     r"|hac[eé]|rehac[eé]|regener[aá]|revis[aá]|modific[aá]|cambi[aá]|actualiz[aá]|edit[aá]"
     r"|menos|m[aá]s|r[aá]pido|lento)\b",
     re.IGNORECASE,

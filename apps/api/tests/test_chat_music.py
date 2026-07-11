@@ -961,6 +961,41 @@ def test_piano_chord_edit_without_chord_asks_for_target_chord():
     assert composer.revision_calls == []
 
 
+def test_structural_edit_replaces_piano_material_with_new_guitar_material():
+    chat, composer, _, _ = _make_chat()
+    original = _generated_song_with_drums_and_keys()
+    bass_before = original.parts["bass"]
+    drums_before = original.parts["drums"]
+
+    response = chat.handle(
+        ChatRequest(message="Replace the piano with guitars like the song.", current_song=original)
+    )
+
+    assert response.intent == "compose"
+    assert response.compose is not None
+    revised = response.compose.song
+    assert all("piano" not in f"{item.id} {item.instrument}".lower() for item in revised.roster)
+    guitar_ids = [item.id for item in revised.roster if "guitar" in f"{item.id} {item.instrument}".lower()]
+    assert len(guitar_ids) >= 2
+    assert any(revised.parts[item_id].notes for item_id in guitar_ids[1:])
+    assert revised.parts["bass"] == bass_before
+    assert revised.parts["drums"] == drums_before
+    assert composer.calls == []
+
+
+def test_structural_rebalance_makes_guitar_material_exceed_piano_material():
+    chat, _, _, _ = _make_chat()
+    original = _generated_song_with_drums_and_keys()
+
+    response = chat.handle(ChatRequest(message="Make it more guitar than piano.", current_song=original))
+
+    assert response.compose is not None
+    revised = response.compose.song
+    guitar_count = sum(len(part.notes) for part_id, part in revised.parts.items() if "guitar" in part_id)
+    piano_count = sum(len(part.notes) for part_id, part in revised.parts.items() if "piano" in part_id)
+    assert guitar_count > piano_count
+
+
 def test_spanish_song_edit_routes_to_the_named_instrument():
     composer = _RecordingComposer()
     chat, _, _, _ = _make_chat(composer=composer)
