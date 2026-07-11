@@ -250,6 +250,7 @@ class ChatMusic:
                 TabExcerptToolInput(
                     reference_id=profile.reference_id,
                     instrument=_tab_instrument(message),
+                    section_name=_requested_section_from_message(message),
                     measure_count=4,
                 )
             )
@@ -991,6 +992,14 @@ def _tab_instrument(message: str) -> str:
     return "guitar"
 
 
+def _requested_section_from_message(message: str) -> str | None:
+    normalized = message.lower()
+    match = re.search(r"\b(chorus|verse|pre[- ]?chorus|bridge|intro|interlude|solo|outro)\s*(\d+)?\b", normalized)
+    if not match:
+        return None
+    return " ".join(part for part in [match.group(1).replace(" ", "-"), match.group(2)] if part)
+
+
 def _tab_chat_response(excerpt: TabExcerptToolOutput, profile: ReferenceProfile | None = None) -> ChatResponse:
     error = None
     if excerpt.error:
@@ -1026,8 +1035,23 @@ def _tab_excerpt_from_song(song: SongState, message: str) -> TabExcerptToolOutpu
             error="instrument_missing",
         )
     part = song.parts[target.id]
+    requested_section = _requested_section_from_message(message)
+    selected_bars = _song_section_bars(song, requested_section)
+    if requested_section and selected_bars is None:
+        available = ", ".join(section.name for section in song.header.sections) or "none"
+        answer = f"I could not find a {requested_section} section in the current song. Available sections: {available}."
+        return TabExcerptToolOutput(
+            instrument=requested,
+            track_name=target.instrument,
+            section_name=requested_section,
+            available_sections=[section.name for section in song.header.sections],
+            answer=answer,
+            summary=answer,
+            error="section_missing",
+        )
+    bars = selected_bars or list(range(min(song.header.num_bars, 4)))
     measures: list[TabExcerptMeasure] = []
-    for bar in range(min(song.header.num_bars, 4)):
+    for bar in bars[:4]:
         events = []
         for note in sorted((note for note in part.notes if note.bar == bar), key=lambda note: note.start_beat):
             if note.pitch is None:
@@ -1068,8 +1092,24 @@ def _tab_excerpt_from_song(song: SongState, message: str) -> TabExcerptToolOutpu
         instrument=requested,
         track_name=target.instrument,
         tuning=_tab_tuning(requested),
+        section_name=requested_section,
+        available_sections=[section.name for section in song.header.sections],
         measures=measures,
     )
+
+
+def _song_section_bars(song: SongState, requested: str | None) -> list[int] | None:
+    if not requested:
+        return None
+    requested_label = re.sub(r"\s+", " ", requested.lower().replace("-", " ")).strip()
+    for section in song.header.sections:
+        candidate = re.sub(r"\s+", " ", section.name.lower().replace("-", " ")).strip()
+        if candidate == requested_label or (
+            not re.search(r"\s+\d+$", requested_label)
+            and re.sub(r"\s+\d+$", "", candidate) == requested_label
+        ):
+            return list(range(section.start_bar, min(section.end_bar, song.header.num_bars)))
+    return None
 
 
 def _tab_position(pitch: int, instrument: str) -> tuple[int | None, int | None]:

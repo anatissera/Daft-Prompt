@@ -197,6 +197,8 @@ class TabExcerptToolOutput(ToolOutput):
     instrument: str = ""
     track_name: str = ""
     tuning: list[str] = Field(default_factory=list)
+    section_name: Optional[str] = None
+    available_sections: list[str] = Field(default_factory=list)
     measures: list[TabExcerptMeasure] = Field(default_factory=list)
 
 

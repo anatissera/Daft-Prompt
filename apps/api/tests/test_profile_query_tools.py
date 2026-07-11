@@ -188,6 +188,18 @@ def test_answer_music_question_uses_knowledge_tools_before_audio_fallback():
     assert any("chord_progression" in item for item in answer.evidence)
 
 
+def test_chord_answers_strip_markdown_emphasis_artifacts():
+    profile = knowledge_profile()
+    profile.evidence_claims = [
+        claim("intro_chords", "chord_progression", "**Intro:** Am | F", section="intro", confidence=0.7)
+    ]
+
+    answer = AnswerMusicQuestion().execute("What chords are in the intro?", reference_with_knowledge().model_copy(update={"knowledge": profile}))
+
+    assert "**" not in answer.answer
+    assert "Intro:" in answer.answer
+
+
 def test_answer_music_question_combines_key_and_chords_from_knowledge():
     answer = AnswerMusicQuestion().execute(
         "What key is it in and what chords are in the chorus?",

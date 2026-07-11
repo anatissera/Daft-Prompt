@@ -2190,6 +2190,19 @@ input[type="number"], select {
 .tab-measure header span { color: var(--text-muted); font-size: 11px; }
 .tab-measure ol { margin: 8px 0 0; padding-left: 18px; color: var(--text); font-family: var(--font-mono); font-size: 11px; line-height: 1.65; }
 .tab-measure p { margin: 8px 0 0; color: var(--text-muted); font-size: 11px; }
+.tab-ascii {
+  overflow-x: auto;
+  margin: 0;
+  padding: 14px;
+  color: var(--gold-bright);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(215, 218, 230, 0.18);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+}
 .tab-event-list { display: grid; gap: 6px; list-style: none; padding-left: 0 !important; }
 .tab-event-list li { display: grid; grid-template-columns: minmax(54px, max-content) 1fr; align-items: center; gap: 8px; min-width: 0; }
 .tab-event-chip {

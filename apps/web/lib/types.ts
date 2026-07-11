@@ -261,6 +261,8 @@ export interface TabExcerpt {
   instrument: string;
   track_name: string;
   tuning: string[];
+  section_name?: string | null;
+  available_sections?: string[];
   measures: TabExcerptMeasure[];
   evidence?: string[];
   error?: string | null;

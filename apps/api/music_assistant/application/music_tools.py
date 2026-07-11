@@ -392,19 +392,39 @@ class MusicTools:
                 error="instrument_missing",
             )
         track = tracks[0]
-        selected = track.measures[payload.start_measure : payload.start_measure + payload.measure_count]
+        available_sections = _track_sections(track)
+        section_measures = _measures_for_section(track.measures, payload.section_name)
+        if payload.section_name and not section_measures:
+            available = ", ".join(available_sections) or "none"
+            answer = (
+                f"I could not find a {payload.section_name} section in this {track.instrument_family} tab. "
+                f"Available sections: {available}."
+            )
+            return TabExcerptToolOutput(
+                reference_id=payload.reference_id,
+                instrument=track.instrument_family,
+                track_name=track.name,
+                tuning=track.tuning,
+                section_name=payload.section_name,
+                available_sections=available_sections,
+                answer=answer,
+                summary=answer,
+                evidence=[f"songsterr:sections:{len(available_sections)}"],
+                error="section_missing",
+            )
+        selected = section_measures[payload.start_measure : payload.start_measure + payload.measure_count]
         if selected and not any(
             event for measure in selected for event in measure.events if not event.rest
         ):
             first_playable = next(
                 (
-                    index for index, measure in enumerate(track.measures)
+                    index for index, measure in enumerate(section_measures)
                     if any(not event.rest for event in measure.events)
                 ),
                 None,
             )
             if first_playable is not None:
-                selected = track.measures[first_playable : first_playable + payload.measure_count]
+                selected = section_measures[first_playable : first_playable + payload.measure_count]
         measures = [
             TabExcerptMeasure(
                 index=measure.index,
@@ -434,6 +454,8 @@ class MusicTools:
             f"{selected[-1].index if selected else payload.start_measure}, "
             f"{sum(measure.note_events for measure in measures)} note events, markers: {marker_text}."
         )
+        if payload.section_name:
+            summary = f"{payload.section_name.title()} section. " + summary
         return TabExcerptToolOutput(
             reference_id=payload.reference_id,
             answer=summary,
@@ -442,6 +464,8 @@ class MusicTools:
             instrument=track.instrument_family,
             track_name=track.name,
             tuning=track.tuning,
+            section_name=payload.section_name,
+            available_sections=available_sections,
             measures=measures,
         )
 
@@ -726,6 +750,65 @@ def _unique_durations(events: list[Any]) -> list[str]:
         if event.duration and event.duration not in durations:
             durations.append(event.duration)
     return durations[:4]
+
+
+def _track_sections(track: Any) -> list[str]:
+    return list(dict.fromkeys(
+        str(measure.marker).strip()
+        for measure in track.measures
+        if measure.marker and str(measure.marker).strip()
+    ))
+
+
+def _measures_for_section(measures: list[Any], requested: str | None) -> list[Any]:
+    if not requested:
+        return list(measures)
+    start = next(
+        (index for index, measure in enumerate(measures) if _tab_section_matches(requested, measure.marker)),
+        None,
+    )
+    if start is None:
+        return []
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(measures))
+            if measures[index].marker and not _tab_section_matches(requested, measures[index].marker)
+        ),
+        len(measures),
+    )
+    return list(measures[start:end])
+
+
+def _tab_section_matches(requested: str, candidate: str | None) -> bool:
+    if not candidate:
+        return False
+    requested_label = _tab_section_label(requested)
+    candidate_label = _tab_section_label(candidate)
+    if requested_label == candidate_label:
+        return True
+    if re.search(r"\s+\d+$", requested_label):
+        return False
+    return re.sub(r"\s+\d+$", "", candidate_label) == requested_label
+
+
+def _tab_section_label(value: str) -> str:
+    aliases = {
+        "refrain": "chorus",
+        "refrão": "chorus",
+        "refrão": "chorus",
+        "coro": "chorus",
+        "estribillo": "chorus",
+        "verso": "verse",
+        "estrofa": "verse",
+        "ponte": "bridge",
+        "puente": "bridge",
+        "introdução": "intro",
+        "introducao": "intro",
+        "introducción": "intro",
+    }
+    normalized = re.sub(r"\s+", " ", value.strip().lower().replace("-", " "))
+    return aliases.get(normalized, normalized)
 
 
 def _normalize_instrument(value: str) -> str:

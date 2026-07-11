@@ -1,4 +1,5 @@
 import type { TabExcerpt, TabExcerptEvent } from "@/lib/types";
+import { renderTabAscii } from "@/lib/tabAsciiRenderer.mjs";
 
 type TabKind = "guitar" | "bass" | "drums" | "piano" | "tab";
 
@@ -83,7 +84,11 @@ export default function TabExcerptBlock({ excerpt }: { excerpt: TabExcerpt }) {
         <p className="tab-excerpt-tuning">Tuning · {excerpt.tuning.join(" · ")}</p>
       ) : null}
       <div className="tab-measures">
-        {excerpt.measures.map((measure) => (
+        {(kind === "guitar" || kind === "bass") ? (
+          <pre className="tab-ascii" aria-label={`${excerpt.instrument} ASCII tablature`}>
+            {renderTabAscii(excerpt) || "No playable fretted events in this excerpt."}
+          </pre>
+        ) : excerpt.measures.map((measure) => (
           <article className="tab-measure" key={measure.index}>
             <header>
               <strong>m. {measure.index + 1}</strong>

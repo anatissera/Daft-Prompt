@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from music_assistant.application.profile_queries import answer_from_profile
+from music_assistant.application.profile_queries import answer_from_profile, plain_music_text
 from music_assistant.application.language import is_spanish
 from music_assistant.domain.audio_profile import (
     ChordSpan,
@@ -32,7 +32,8 @@ class AnswerMusicQuestion:
         self.explainer = explainer or DeterministicMusicQuestionExplainer(songsterr_tab_store=songsterr_tab_store)
 
     def execute(self, question: str, profile: ReferenceProfile) -> ExplanationAnswer:
-        return self.explainer.answer(question, profile)
+        answer = self.explainer.answer(question, profile)
+        return answer.model_copy(update={"answer": plain_music_text(answer.answer)})
 
 
 class LLMGroundedMusicQuestionExplainer:
@@ -72,7 +73,7 @@ class LLMGroundedMusicQuestionExplainer:
             synthesized = self.chat_model.with_structured_output(GroundedAnswer).invoke(messages)
         except Exception:
             return evidence_answer
-        return evidence_answer.model_copy(update={"answer": synthesized.answer})
+        return evidence_answer.model_copy(update={"answer": plain_music_text(synthesized.answer)})
 
 
 class DeterministicMusicQuestionExplainer:

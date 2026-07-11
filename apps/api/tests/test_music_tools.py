@@ -249,6 +249,23 @@ def test_get_tab_excerpt_returns_small_extract_not_full_track_json():
     assert output.error is None
 
 
+def test_get_tab_excerpt_selects_requested_section_and_reports_missing_sections():
+    tools = _tools()
+
+    intro = tools.get_tab_excerpt(
+        TabExcerptToolInput(reference_id="ref_queen", instrument="bass", section_name="intro", measure_count=2)
+    )
+    missing = tools.get_tab_excerpt(
+        TabExcerptToolInput(reference_id="ref_queen", instrument="bass", section_name="chorus", measure_count=2)
+    )
+
+    assert intro.error is None
+    assert intro.section_name == "intro"
+    assert [measure.index for measure in intro.measures] == [0]
+    assert missing.error == "section_missing"
+    assert "Intro" in missing.answer and "Verse I" in missing.answer
+
+
 def test_get_piano_excerpt_includes_source_provided_midi_pitch():
     output = _tools().get_tab_excerpt(
         TabExcerptToolInput(reference_id="ref_queen", instrument="piano", start_measure=0, measure_count=1)

@@ -510,7 +510,7 @@ def _summarize_progression_claim(claim: EvidenceClaim) -> ProgressionSummary:
     if repeat is None:
         shown = bars[:8]
         if len(bars) <= 1:
-            text = bars[0] if bars else claim.value.strip()
+            text = bars[0] if bars else _plain_music_text(claim.value)
         else:
             suffix = ", and continues beyond that" if len(bars) > len(shown) else ""
             text = f"starts {' | '.join(shown)}{suffix}"
@@ -548,6 +548,7 @@ def _summarize_progression_claim(claim: EvidenceClaim) -> ProgressionSummary:
 
 
 def _bar_segments(value: str) -> list[str]:
+    value = _plain_music_text(value)
     bars = [
         " ".join(segment.strip().split())
         for segment in value.split("|")
@@ -588,7 +589,23 @@ def _extended_repeat_note(summary: ProgressionSummary, claims: list[EvidenceClai
 
 
 def _truncate(value: str, max_length: int) -> str:
-    cleaned = " ".join(value.split())
+    cleaned = _plain_music_text(value)
     if len(cleaned) <= max_length:
         return cleaned
     return cleaned[: max_length - 1].rstrip() + "…"
+
+
+def _plain_music_text(value: str) -> str:
+    cleaned = plain_music_text(value)
+    cleaned = re.sub(r"^\s*[-*]\s+", "", cleaned)
+    return cleaned.strip()
+
+
+def plain_music_text(value: str) -> str:
+    """Remove presentation-only Markdown artifacts from deterministic answers."""
+    cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", value)
+    cleaned = re.sub(r"`([^`]*)`", r"\1", cleaned)
+    cleaned = re.sub(r"^\s*#{1,6}\s+", "", cleaned)
+    cleaned = re.sub(r"^\s*[-*]\s+", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
