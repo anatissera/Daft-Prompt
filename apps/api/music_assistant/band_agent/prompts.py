@@ -3,9 +3,28 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Optional
 
 from music_assistant.domain.patch import PATCH_SPEC
+from music_assistant.music.genre_idioms import lookup as lookup_idioms
+
+
+def _idiom_block(genre: Optional[str]) -> str:
+    """Reference text on how each role idiomatically plays in this genre.
+
+    Empty when the genre isn't in the curated library — the director then relies
+    on the corpus and its own knowledge, exactly as before.
+    """
+    idioms = lookup_idioms(genre)
+    if not idioms:
+        return ""
+    lines = "\n".join(f"- {role}: {note}" for role, note in idioms.items())
+    return (
+        "GENRE PLAYING IDIOMS (expert reference for how each role idiomatically "
+        "plays in this style — ground `rhythmic_feel` and each instrument's "
+        "`playing_style` in these; a strong prior, but honour the specific "
+        f"request when it diverges):\n{lines}\n\n"
+    )
 
 
 _SAMPLER_PATCHES = sorted(
@@ -225,7 +244,9 @@ def skeleton_user_prompt(
     corpus: dict[str, Any],
     excerpts: list[dict[str, Any]] | None = None,
     song_evidence: dict[str, Any] | None = None,
+    genre: str | None = None,
 ) -> str:
+    idiom_block = _idiom_block(genre if genre is not None else style)
     excerpt_block = ""
     if excerpts:
         excerpt_block = (
@@ -244,6 +265,7 @@ def skeleton_user_prompt(
         )
     return (
         f"USER REQUEST:\n{style.strip() or 'a short demo song'}\n\n"
+        f"{idiom_block}"
         f"{evidence_block}"
         f"{excerpt_block}"
         f"WEB RESEARCH (titles only):\n{json.dumps(research, ensure_ascii=False, indent=2)}\n\n"

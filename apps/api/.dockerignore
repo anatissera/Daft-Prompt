@@ -10,6 +10,5 @@ __pycache__/
 data/
 outputs/
 uploads/
-scripts/
 tests/
 uv.lock

@@ -104,8 +104,6 @@ def retrieve_corpus(query: str, *, k: int = 6, energy: str = "medium") -> dict[s
         return _empty_digest()
 
     examples = retrieve_style_examples(q, energy=energy, n=k)
-    if not examples:
-        return _empty_digest()
 
     tempos = sorted(float(e.tempo) for e in examples if e.tempo)
     median_tempo = tempos[len(tempos) // 2] if tempos else 120.0
@@ -113,6 +111,13 @@ def retrieve_corpus(query: str, *, k: int = 6, energy: str = "medium") -> dict[s
     key_counter: Counter[str] = Counter(e.key for e in examples if e.key)
     role_counter: Counter[str] = Counter(r for e in examples for r in e.roles)
 
+    # The groove is retrieved independently of the Lakh exemplars: the two
+    # corpora are separate downloads, and the Groove index (small, always
+    # shipped) is useful on its own even when Lakh (1.6 GB, bucket-only) is
+    # absent. Retrieving it before the empty-check is what lets a Groove-only
+    # deployment still drive real drum patterns instead of the hard-coded
+    # four-on-the-floor.
+    #
     # Groove index styles are coarser than Lakh genres (rock/funk/jazz/hiphop/
     # latin/pop/dance/...); when the raw query doesn't hit a groove style, fall
     # back to the closest coarse category. Keeps EDM prompts from silently
@@ -122,6 +127,9 @@ def retrieve_corpus(query: str, *, k: int = 6, energy: str = "medium") -> dict[s
         mapped = _GROOVE_STYLE_FALLBACKS.get(q.lower())
         if mapped:
             groove = retrieve_groove(mapped, bpm=median_tempo, energy=energy)
+
+    if not examples and groove is None:
+        return _empty_digest()
 
     return {
         "examples": [
@@ -135,7 +143,7 @@ def retrieve_corpus(query: str, *, k: int = 6, energy: str = "medium") -> dict[s
             }
             for e in examples
         ],
-        "median_tempo": round(median_tempo, 1),
+        "median_tempo": round(median_tempo, 1) if examples else None,
         "common_keys": [k for k, _ in key_counter.most_common(3)],
         "common_roles": [r for r, _ in role_counter.most_common(6)],
         "groove": None if groove is None else {

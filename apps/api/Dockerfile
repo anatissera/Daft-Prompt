@@ -42,6 +42,17 @@ COPY music_assistant ./music_assistant
 # silently shorten the chain.
 RUN pip install -e ".[gemini,groq,openrouter]"
 
+# Bake the Magenta Groove index (~5 MB download, tiny index) so drum grooves are
+# genre-grounded instead of degrading to the hard-coded four-on-the-floor. The
+# raw MIDI is deleted after indexing; only data/index/groove_patterns.* remains.
+# The much larger Lakh corpus is intentionally NOT baked here — it goes on the
+# mounted bucket. If the download host is down the build fails loudly, which is
+# what we want (a silently corpus-less image is the bug we're fixing).
+COPY scripts ./scripts
+RUN python scripts/fetch_corpora.py --groove \
+    && python -m music_assistant.corpus.groove_index \
+    && rm -rf data/groove
+
 RUN mkdir -p /app/outputs /app/uploads /app/.cache/torch
 
 EXPOSE 8000
