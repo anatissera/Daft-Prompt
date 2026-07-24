@@ -53,8 +53,22 @@ from music_assistant.interfaces.api_models import (
     sse_data,
 )
 
-OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
+DEFAULT_OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
 REFERENCE_UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
+
+
+def _artifacts_root() -> Path:
+    """Where rendered MIDI/MusicXML land.
+
+    Configurable so container hosts with a read-only or memory-backed
+    filesystem can point it at a writable path (ARTIFACTS_DIR=/tmp/outputs on
+    Cloud Run). Mirrors ``_reference_upload_root`` below.
+    """
+    configured = getattr(get_settings(), "artifacts_dir", None)
+    return Path(configured).expanduser() if configured else DEFAULT_OUTPUTS
+
+
+OUTPUTS = _artifacts_root()
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
 REFERENCE_STORE = InMemoryReferenceStore()
 SUPPORTED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
