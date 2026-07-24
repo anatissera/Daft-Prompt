@@ -147,15 +147,35 @@ docker-compose up
 The frontend runs on Vercel, the backend as a container on Google Cloud Run.
 
 ```text
-BROWSER ──upload, no size or time cap──► Cloud Run  /references/analyze/stream
-BROWSER ──► Vercel proxy ──X-API-Key───► Cloud Run  /chat/stream
-BROWSER ──► Vercel rewrite ────────────► Cloud Run  /artifacts/*
+BROWSER ──upload, up to 32 MiB, no time cap──► Cloud Run  /references/analyze/stream
+BROWSER ──► Vercel proxy ──X-API-Key─────────► Cloud Run  /chat/stream
+BROWSER ──► Vercel rewrite ──────────────────► Cloud Run  /artifacts/*
 ```
 
-Audio uploads bypass the proxy because a serverless function caps request bodies
-at 4.5 MB — 25 seconds of WAV — and caps its own duration below what CPU stem
-separation takes. Chat and compose keep the proxy, which holds the shared secret
-so the browser never sees it.
+Audio uploads bypass the proxy because a Vercel function caps request bodies at
+4.5 MB — 25 seconds of WAV — and caps its own duration at 300s, which is less
+than stem separation takes. Chat and compose keep the proxy, which holds the
+shared secret so the browser never sees it.
+
+Going direct raises the ceiling rather than removing it: Cloud Run rejects
+HTTP/1 requests over **32 MiB** at its edge. That is roughly 3 minutes of stereo
+WAV, 6 of FLAC, or 13 of a 320 kbps MP3, so it only bites lossless files. The UI
+checks the size first, because the rejection arrives as an HTML error page.
+
+Measured on the deployed service against the same 2:30 stereo WAV:
+
+| Stage | 4 vCPU | 8 vCPU |
+|---|---|---|
+| Demucs stem separation | 171s | 94s |
+| Harmonic source | 44s | 32s |
+| Tempo grid, key, chords, structure | 25s | 17s |
+| **Total** | **244s** | **157s** |
+
+Separation dominates and scales close to linearly with cores, so the service
+runs on 8 vCPU: it costs twice as much per second but finishes in a bit over
+half the time, which comes out roughly cost-neutral. Extrapolated to a 4-minute
+track that is still around four minutes of waiting — which is why analysis
+cannot go through a function capped at 300s.
 
 Nothing persists: artifacts and uploads live on the container's ephemeral
 filesystem and disappear on restart, which `AGENTS.md` § Persistence allows.
