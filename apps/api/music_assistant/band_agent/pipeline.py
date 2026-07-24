@@ -72,6 +72,7 @@ class _AgentState(TypedDict, total=False):
     excerpts: list[dict[str, Any]]
     song_evidence: dict[str, Any]
     corpus: dict[str, Any]
+    inferred_genre: str
     skeleton: BandSkeleton
     fills: dict[str, list[NotePlan]]
     spec: BandSpec
@@ -156,6 +157,7 @@ def _research_node(state: _AgentState) -> _AgentState:
         "excerpts": excerpts,
         "song_evidence": song_evidence,
         "corpus": corpus,
+        "inferred_genre": inferred_genre or "",
         "events": events,
     }
 
@@ -171,6 +173,7 @@ def _skeleton_node(state: _AgentState) -> _AgentState:
                 state.get("corpus", {}),
                 excerpts=state.get("excerpts") or None,
                 song_evidence=state.get("song_evidence") or None,
+                genre=state.get("inferred_genre") or state.get("style", ""),
             )
         ),
     ]
