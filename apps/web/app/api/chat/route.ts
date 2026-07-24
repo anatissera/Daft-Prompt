@@ -5,6 +5,8 @@
 import { NextRequest } from "next/server";
 import { Agent } from "undici";
 
+import { upstreamHeaders } from "@/lib/upstreamHeaders";
+
 export const dynamic = "force-dynamic";
 // Vercel Hobby caps serverless maxDuration at 300s; a real compose runs ~85s so
 // this is ample. (A value >300 makes the Vercel deploy fail to build.)
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest) {
   try {
     const upstream = await fetch(`${API_BASE_URL}/chat`, withDispatcher({
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: upstreamHeaders({ "content-type": "application/json" }),
       signal: req.signal,
       body: JSON.stringify({ message, reference_id: referenceId }),
     }));
