@@ -15,6 +15,7 @@ import {
   createTextMessage,
 } from "@/lib/chatActionAdapter.mjs";
 import { deriveSessionTitle } from "@/lib/sessionTitle.mjs";
+import { analyzeEndpoint } from "@/lib/apiBase.mjs";
 
 type Intent = "answer_reference" | "song_question" | "edit_song" | "playable_chords" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
 
@@ -373,7 +374,14 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/references/analyze", { method: "POST", body: formData, signal: controller.signal });
+      // Straight to the backend when NEXT_PUBLIC_API_BASE_URL is set: a
+      // serverless proxy would reject anything over 4.5 MB and time out before
+      // stem separation finishes. Falls back to the proxy route locally.
+      const res = await fetch(analyzeEndpoint(process.env.NEXT_PUBLIC_API_BASE_URL), {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error(await readApiError(res));
       if (!res.body) throw new Error("backend did not return an analysis stream");
 
