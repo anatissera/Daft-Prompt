@@ -45,6 +45,7 @@ class Settings(BaseSettings):
 
     max_rounds: int = 3
     artifacts_dir: Optional[str] = None
+    reference_store_dir: Optional[str] = None
     reference_upload_dir: Optional[str] = None
     reference_upload_max_bytes: int = 50 * 1024 * 1024
 
