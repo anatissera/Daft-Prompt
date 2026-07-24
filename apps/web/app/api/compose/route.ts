@@ -7,7 +7,10 @@
 // client as the negotiation progresses rather than all at once at the end.
 import { NextRequest } from "next/server";
 
+import { upstreamHeaders } from "@/lib/upstreamHeaders";
+
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 
@@ -15,7 +18,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const upstream = await fetch(`${API_BASE_URL}/compose/stream`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: upstreamHeaders({ "content-type": "application/json" }),
     body: JSON.stringify(body),
   });
   return new Response(upstream.body, {

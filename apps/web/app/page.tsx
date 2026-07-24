@@ -15,6 +15,7 @@ import {
   createTextMessage,
 } from "@/lib/chatActionAdapter.mjs";
 import { deriveSessionTitle } from "@/lib/sessionTitle.mjs";
+import { analyzeEndpoint, uploadTooLargeMessage } from "@/lib/apiBase.mjs";
 
 type Intent = "answer_reference" | "song_question" | "edit_song" | "playable_chords" | "compose" | "compose_from_reference" | "clarify" | "off_topic";
 
@@ -366,6 +367,15 @@ export default function Home() {
   }
 
   async function analyzeReference(file: File) {
+    // Checked before the request because the host rejects oversized uploads at
+    // its edge, with an HTML error page we can't turn into a useful message.
+    const tooLarge = uploadTooLargeMessage(file.size);
+    if (tooLarge) {
+      setError(tooLarge);
+      appendMessage(createTextMessage("assistant", tooLarge, nextMessageIndex()));
+      return;
+    }
+
     startWork("Analyzing audio (tempo, key, energy, sections, chords)…");
     const controller = new AbortController();
     abortRef.current = controller;
@@ -373,7 +383,14 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/references/analyze", { method: "POST", body: formData, signal: controller.signal });
+      // Straight to the backend when NEXT_PUBLIC_API_BASE_URL is set: a
+      // serverless proxy caps bodies at 4.5 MB and would time out before stem
+      // separation finishes. Falls back to the proxy route locally.
+      const res = await fetch(analyzeEndpoint(process.env.NEXT_PUBLIC_API_BASE_URL), {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error(await readApiError(res));
       if (!res.body) throw new Error("backend did not return an analysis stream");
 
