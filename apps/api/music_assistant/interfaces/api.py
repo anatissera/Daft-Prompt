@@ -34,6 +34,7 @@ from music_assistant.graph import iter_negotiation_events, run_negotiation
 from music_assistant.band_agent import stream_compose as band_agent_stream
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
+from music_assistant.infrastructure.storage.file_reference_store import FileReferenceStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
 from music_assistant.infrastructure.web_research.researcher import DefaultSongResearcher
@@ -71,9 +72,23 @@ def _artifacts_root() -> Path:
     return Path(configured).expanduser() if configured else DEFAULT_OUTPUTS
 
 
+def _reference_store():
+    """Persist analysed references to disk when a directory is configured.
+
+    REFERENCE_STORE_DIR points at a mounted GCS bucket on Cloud Run, so a
+    reference survives restarts, scale-to-zero and multiple instances. Without
+    it (local dev, tests) the in-memory dict is fine — losing references when
+    the process exits is acceptable there.
+    """
+    configured = getattr(get_settings(), "reference_store_dir", None)
+    if configured:
+        return FileReferenceStore(Path(configured).expanduser())
+    return InMemoryReferenceStore()
+
+
 OUTPUTS = _artifacts_root()
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
-REFERENCE_STORE = InMemoryReferenceStore()
+REFERENCE_STORE = _reference_store()
 SUPPORTED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 ANALYSIS_KEEPALIVE_SECONDS = 15.0
