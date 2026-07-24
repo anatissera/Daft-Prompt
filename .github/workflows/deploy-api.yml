@@ -1,0 +1,75 @@
+name: Deploy API
+
+# Builds and ships the backend image whenever apps/api changes land on main.
+# Auth uses Workload Identity Federation, so there is no service-account key in
+# the repository: GitHub mints an OIDC token, Google exchanges it for short-lived
+# credentials scoped to this repo alone.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: daft-prompt-udesa
+  REGION: us-east1
+  SERVICE: daft-prompt-api
+  REPOSITORY: daft-prompt
+
+jobs:
+  deploy:
+    name: build and deploy to Cloud Run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Impersonating a service account (rather than using the pool identity
+      # directly) is what makes `docker push` to Artifact Registry work: direct
+      # workload identity federation cannot mint OAuth access tokens.
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: daft-prompt-udesa
+          workload_identity_provider: projects/1059431972512/locations/global/workloadIdentityPools/github/providers/daft-prompt
+          service_account: github-deployer@daft-prompt-udesa.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The torch + Demucs-weights layer is keyed on pyproject.toml, so the
+      # registry cache makes a code-only change a fast rebuild.
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          push: true
+          tags: |
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:${{ github.sha }}
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:latest
+          cache-from: type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:buildcache,mode=max
+
+      # Only the image changes here. Environment variables, secrets and sizing
+      # stay as configured on the service so they can be tuned with
+      # `gcloud run services update` without a rebuild.
+      - run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:${{ github.sha }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --quiet
+
+      - run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} \
+            --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }} \
+            --format='value(status.url)')
+          echo "Deployed to $URL"
+          curl -fsS "$URL/health"

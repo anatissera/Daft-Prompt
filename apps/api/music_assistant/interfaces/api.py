@@ -12,7 +12,7 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import AsyncIterator, Iterator, Optional
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -34,6 +34,7 @@ from music_assistant.graph import iter_negotiation_events, run_negotiation
 from music_assistant.band_agent import stream_compose as band_agent_stream
 from music_assistant.infrastructure.mir.deep_harmonic_analyzer import DeepHarmonicAnalyzer
 from music_assistant.infrastructure.storage.in_memory_reference_store import InMemoryReferenceStore
+from music_assistant.infrastructure.storage.file_reference_store import FileReferenceStore
 from music_assistant.infrastructure.storage.render_artifacts import render_artifacts
 from music_assistant.infrastructure.storage.local_store import LocalArtifactStore
 from music_assistant.infrastructure.web_research.researcher import DefaultSongResearcher
@@ -52,11 +53,42 @@ from music_assistant.interfaces.api_models import (
     ResearchRequest,
     sse_data,
 )
+from music_assistant.interfaces.security import cors_options, require_api_key
 
-OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
+LLM_ROUTE_GUARD = [Depends(require_api_key)]
+
+DEFAULT_OUTPUTS = Path(__file__).resolve().parents[2] / "outputs"
 REFERENCE_UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
+
+
+def _artifacts_root() -> Path:
+    """Where rendered MIDI/MusicXML land.
+
+    Configurable so container hosts with a read-only or memory-backed
+    filesystem can point it at a writable path (ARTIFACTS_DIR=/tmp/outputs on
+    Cloud Run). Mirrors ``_reference_upload_root`` below.
+    """
+    configured = getattr(get_settings(), "artifacts_dir", None)
+    return Path(configured).expanduser() if configured else DEFAULT_OUTPUTS
+
+
+def _reference_store():
+    """Persist analysed references to disk when a directory is configured.
+
+    REFERENCE_STORE_DIR points at a mounted GCS bucket on Cloud Run, so a
+    reference survives restarts, scale-to-zero and multiple instances. Without
+    it (local dev, tests) the in-memory dict is fine — losing references when
+    the process exits is acceptable there.
+    """
+    configured = getattr(get_settings(), "reference_store_dir", None)
+    if configured:
+        return FileReferenceStore(Path(configured).expanduser())
+    return InMemoryReferenceStore()
+
+
+OUTPUTS = _artifacts_root()
 ARTIFACTS = LocalArtifactStore(OUTPUTS)
-REFERENCE_STORE = InMemoryReferenceStore()
+REFERENCE_STORE = _reference_store()
 SUPPORTED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 ANALYSIS_KEEPALIVE_SECONDS = 15.0
@@ -65,9 +97,9 @@ app = FastAPI(title="Multi-agent Band API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    **cors_options(),
 )
 
 
@@ -236,7 +268,7 @@ def _reference_analyzer() -> DeepHarmonicAnalyzer:
     return DeepHarmonicAnalyzer(output_root=_reference_upload_root())
 
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat", response_model=ChatResponse, dependencies=LLM_ROUTE_GUARD)
 def chat(req: ChatRequest, request: Request) -> ChatResponse:
     if req.reference_id and REFERENCE_STORE.get(req.reference_id) is None:
         raise HTTPException(status_code=404, detail=f"reference_id not found: {req.reference_id}")
@@ -270,7 +302,7 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
     return response
 
 
-@app.post("/chat/stream")
+@app.post("/chat/stream", dependencies=LLM_ROUTE_GUARD)
 async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     """Streaming variant of /chat. Emits SSE events so the UI can drive a real
     pipeline visualisation from actual backend milestones instead of a fake
@@ -499,7 +531,7 @@ def _reference_upload_max_bytes() -> int:
     return int(getattr(get_settings(), "reference_upload_max_bytes", 50 * 1024 * 1024))
 
 
-@app.post("/compose", response_model=ComposeResponse)
+@app.post("/compose", response_model=ComposeResponse, dependencies=LLM_ROUTE_GUARD)
 def compose(req: ComposeRequest, request: Request) -> ComposeResponse:
     job = ARTIFACTS.create_job()
     try:
@@ -631,7 +663,7 @@ def _compose_configuration_error_event(exc: ComposeConfigurationError) -> dict:
     ).model_dump(mode="json")
 
 
-@app.post("/compose/stream")
+@app.post("/compose/stream", dependencies=LLM_ROUTE_GUARD)
 def compose_stream(req: ComposeRequest, request: Request) -> StreamingResponse:
     job = ARTIFACTS.create_job()
     base = str(request.base_url).rstrip("/")

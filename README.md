@@ -142,6 +142,94 @@ docker-compose up
 # UI:  http://localhost:3000
 ```
 
+## Deployment
+
+The frontend runs on Vercel, the backend as a container on Google Cloud Run.
+
+```text
+BROWSER ──upload, up to 32 MiB, no time cap──► Cloud Run  /references/analyze/stream
+BROWSER ──► Vercel proxy ──X-API-Key─────────► Cloud Run  /chat/stream
+BROWSER ──► Vercel rewrite ──────────────────► Cloud Run  /artifacts/*
+```
+
+Audio uploads bypass the proxy because a Vercel function caps request bodies at
+4.5 MB — 25 seconds of WAV — and caps its own duration at 300s, which is less
+than stem separation takes. Chat and compose keep the proxy, which holds the
+shared secret so the browser never sees it.
+
+Going direct raises the ceiling rather than removing it: Cloud Run rejects
+HTTP/1 requests over **32 MiB** at its edge. That is roughly 3 minutes of stereo
+WAV, 6 of FLAC, or 13 of a 320 kbps MP3, so it only bites lossless files. The UI
+checks the size first, because the rejection arrives as an HTML error page.
+
+Measured on the deployed service against the same 2:30 stereo WAV:
+
+| Stage | 4 vCPU | 8 vCPU |
+|---|---|---|
+| Demucs stem separation | 171s | 94s |
+| Harmonic source | 44s | 32s |
+| Tempo grid, key, chords, structure | 25s | 17s |
+| **Total** | **244s** | **157s** |
+
+Separation dominates and scales close to linearly with cores, so the service
+runs on 8 vCPU: it costs twice as much per second but finishes in a bit over
+half the time, which comes out roughly cost-neutral. Extrapolated to a 4-minute
+track that is still around four minutes of waiting — which is why analysis
+cannot go through a function capped at 300s.
+
+A Cloud Storage bucket is mounted at `/mnt/artifacts`, so analysed references
+and rendered songs persist across restarts, scale-to-zero and multiple
+instances — a user can analyse a track, come back later, and still ask about it.
+Raw audio uploads and Demucs stems stay on local `/tmp`: they are large and
+disposable, and GCS FUSE latency would only slow separation down.
+
+### Environment
+
+Backend (Cloud Run):
+
+| Variable | Purpose |
+|---|---|
+| `ARTIFACTS_DIR` | Rendered songs (MIDI/MusicXML); points at the mounted bucket so they persist |
+| `REFERENCE_STORE_DIR` | Analysed references (JSON); the mounted bucket. Unset falls back to an in-memory dict |
+| `REFERENCE_UPLOAD_DIR` | Raw audio and stems; local `/tmp`, deliberately not persisted |
+| `LLM_PROVIDER` + provider keys | See LLM configuration below |
+| `API_KEY` | Shared secret required on the chat and compose routes |
+| `CORS_ALLOW_ORIGINS` | The frontend's production origin |
+| `CORS_ALLOW_ORIGIN_REGEX` | Preview deployments, whose hostnames are generated |
+
+Frontend (Vercel), all three needed in Production and Preview:
+
+| Variable | Purpose |
+|---|---|
+| `API_BASE_URL` | Backend URL for the proxy routes and the `/artifacts/*` rewrite |
+| `NEXT_PUBLIC_API_BASE_URL` | Same URL, exposed to the browser for uploads |
+| `API_KEY` | Must match the backend's |
+
+`NEXT_PUBLIC_*` is inlined at build time, so changing it requires a redeploy.
+
+### Redeploying
+
+Merging to `main` with changes under `apps/api/` triggers
+`.github/workflows/deploy-api.yml`, which builds the image, pushes it to Artifact
+Registry and rolls out a new Cloud Run revision. Authentication uses Workload
+Identity Federation, so no service-account key lives in the repository.
+
+By hand:
+
+```bash
+gcloud run deploy daft-prompt-api --source apps/api --region us-east1
+```
+
+Environment variables, sizing, secrets and the bucket mount live on the service,
+not in the workflow, so they can be changed with `gcloud run services update`
+without a rebuild. The bucket was attached once with:
+
+```bash
+gcloud run services update daft-prompt-api --region us-east1 \
+  --add-volume=name=artifacts,type=cloud-storage,bucket=daft-prompt-udesa-artifacts \
+  --add-volume-mount=volume=artifacts,mount-path=/mnt/artifacts
+```
+
 ## LLM configuration
 
 The backend is provider-agnostic. Pick one provider via environment variables (or `.env` in `apps/api`, see `.env.example` for the full list):
@@ -150,13 +238,25 @@ The backend is provider-agnostic. Pick one provider via environment variables (o
 |----------|----------|-------|
 | Gemini | `LLM_PROVIDER=gemini`, `GEMINI_API_KEY` | Default. Free tier works |
 | Groq | `LLM_PROVIDER=groq`, `GROQ_API_KEY` | |
-| OpenRouter | `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` | Also any OpenAI-compatible server (llama-server, vLLM) via `OPENROUTER_BASE_URL` |
+| OpenRouter | `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` | Also any OpenAI-compatible server (llama-server, vLLM, OpenCode Go) via `OPENROUTER_BASE_URL` |
 | Vertex AI | `LLM_PROVIDER=vertexai`, `GOOGLE_CLOUD_PROJECT` | Uses Application Default Credentials, no API key |
+
+The deployed backend uses OpenCode Go through the OpenRouter slot — a flat-fee
+gateway, so a live demo can't run out of quota mid-compose:
+
+```bash
+LLM_PROVIDER=openrouter
+OPENROUTER_BASE_URL=https://opencode.ai/zen/go/v1
+OPENROUTER_MODEL_DIRECTOR=minimax-m3      # one call per compose, highest stakes
+OPENROUTER_MODEL_INSTRUMENT=minimax-m2.7  # 10-21 calls in parallel
+OPENROUTER_MODEL_ARBITER=minimax-m3
+LLM_FALLBACK_PROVIDERS=gemini,groq
+```
 
 Useful knobs:
 
 * `MODEL_DIRECTOR`, `MODEL_INSTRUMENT`, `MODEL_ARBITER` set the model per agent role.
-* `GEMINI_MODEL_FALLBACKS` and `LLM_FALLBACK_PROVIDERS` define fallback chains when a model or provider hits quota.
+* `GEMINI_MODEL_FALLBACKS` and `LLM_FALLBACK_PROVIDERS` define fallback chains when a model or provider hits quota. Note that structured-output failures do *not* escalate to the next provider — a model that truncates its tool call falls through to the deterministic fill instead.
 * `LLM_RPM_LIMIT`, `LLM_MAX_RETRIES`, `LLM_FAIL_FAST_ON_QUOTA` are free-tier guardrails: quota errors surface in the UI instead of producing empty instrument parts.
 * `MAX_ROUNDS` caps negotiation rounds during composition.
 * `LANGSMITH_TRACING=true` plus `LANGSMITH_API_KEY` enables LangSmith tracing (optional).

@@ -193,7 +193,7 @@ const AGENT_NODES: NodeSpec[] = [
 
   // ── bottom lane: shared plumbing ─────────────────────────────────────
   { id: "llmstack", x: 690, y: 600, w: 190, h: 96, title: "LLM STACK", lines: ["make_llm(role) → fallbacks", "ChatOpenAI · opencode.ai", "minimax-m3 / m2.5 (fills)", "pydantic structured output"], kind: "langchain · http" },
-  { id: "stream", x: 940, y: 600, w: 190, h: 80, title: "STREAMING", lines: ['graph.stream("values")', "→ FastAPI SSE → proxy", "→ pipeline stepper + deck"], accent: SILVER, kind: "langgraph · transport" },
+  { id: "stream", x: 940, y: 600, w: 190, h: 94, title: "STREAMING", lines: ['graph.stream("values")', "→ FastAPI SSE", "chat proxy · upload direct", "→ pipeline stepper + deck"], accent: SILVER, kind: "langgraph · transport" },
 ];
 
 const AGENT_EDGES: EdgeSpec[] = [

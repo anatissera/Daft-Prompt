@@ -7,6 +7,8 @@
 import { NextRequest } from "next/server";
 import { Agent } from "undici";
 
+import { upstreamHeaders } from "@/lib/upstreamHeaders";
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
@@ -31,7 +33,7 @@ export async function POST(req: NextRequest) {
       `${API_BASE_URL}/chat/stream`,
       withDispatcher({
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: upstreamHeaders({ "content-type": "application/json" }),
         signal: req.signal,
         body: JSON.stringify(body),
       }),
