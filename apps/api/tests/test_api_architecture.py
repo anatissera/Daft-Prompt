@@ -64,6 +64,29 @@ def test_local_artifact_store_rejects_traversal(tmp_path):
     assert store.path_for("../bad", "song.mid") is None
 
 
+def test_artifacts_root_defaults_to_the_in_repo_outputs_dir(monkeypatch):
+    """Container hosts need a writable path; local dev must keep working untouched."""
+    from music_assistant import config
+    from music_assistant.interfaces import api
+
+    monkeypatch.delenv("ARTIFACTS_DIR", raising=False)
+    config.get_settings.cache_clear()
+
+    assert api._artifacts_root() == api.DEFAULT_OUTPUTS
+
+
+def test_artifacts_root_follows_the_artifacts_dir_setting(monkeypatch, tmp_path):
+    from music_assistant import config
+    from music_assistant.interfaces import api
+
+    monkeypatch.setenv("ARTIFACTS_DIR", str(tmp_path / "artifacts"))
+    config.get_settings.cache_clear()
+    try:
+        assert api._artifacts_root() == tmp_path / "artifacts"
+    finally:
+        config.get_settings.cache_clear()
+
+
 def test_legacy_root_architecture_modules_are_removed():
     assert importlib.util.find_spec("music_assistant.schema") is None
     assert importlib.util.find_spec("music_assistant.api_models") is None
