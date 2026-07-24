@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { analyzeEndpoint } from "./apiBase.mjs";
+import { MAX_UPLOAD_BYTES, analyzeEndpoint, uploadTooLargeMessage } from "./apiBase.mjs";
 
 test("targets the backend directly when a public base is configured", () => {
   assert.equal(
@@ -40,4 +40,20 @@ test("trims surrounding whitespace", () => {
 test("ignores a non-string base", () => {
   assert.equal(analyzeEndpoint(null), "/api/references/analyze");
   assert.equal(analyzeEndpoint(42), "/api/references/analyze");
+});
+
+test("accepts a file at the limit", () => {
+  assert.equal(uploadTooLargeMessage(MAX_UPLOAD_BYTES), null);
+  assert.equal(uploadTooLargeMessage(1024), null);
+});
+
+test("reports the actual size when a file is over the limit", () => {
+  const message = uploadTooLargeMessage(MAX_UPLOAD_BYTES + 1024 * 1024);
+  assert.match(message, /33\.0 MB/);
+  assert.match(message, /32 MB/);
+});
+
+test("ignores a non-numeric size", () => {
+  assert.equal(uploadTooLargeMessage(undefined), null);
+  assert.equal(uploadTooLargeMessage("big"), null);
 });
