@@ -177,8 +177,11 @@ half the time, which comes out roughly cost-neutral. Extrapolated to a 4-minute
 track that is still around four minutes of waiting — which is why analysis
 cannot go through a function capped at 300s.
 
-Nothing persists: artifacts and uploads live on the container's ephemeral
-filesystem and disappear on restart, which `AGENTS.md` § Persistence allows.
+A Cloud Storage bucket is mounted at `/mnt/artifacts`, so analysed references
+and rendered songs persist across restarts, scale-to-zero and multiple
+instances — a user can analyse a track, come back later, and still ask about it.
+Raw audio uploads and Demucs stems stay on local `/tmp`: they are large and
+disposable, and GCS FUSE latency would only slow separation down.
 
 ### Environment
 
@@ -186,7 +189,9 @@ Backend (Cloud Run):
 
 | Variable | Purpose |
 |---|---|
-| `ARTIFACTS_DIR`, `REFERENCE_UPLOAD_DIR` | Point at `/tmp`; the container filesystem is memory-backed |
+| `ARTIFACTS_DIR` | Rendered songs (MIDI/MusicXML); points at the mounted bucket so they persist |
+| `REFERENCE_STORE_DIR` | Analysed references (JSON); the mounted bucket. Unset falls back to an in-memory dict |
+| `REFERENCE_UPLOAD_DIR` | Raw audio and stems; local `/tmp`, deliberately not persisted |
 | `LLM_PROVIDER` + provider keys | See LLM configuration below |
 | `API_KEY` | Shared secret required on the chat and compose routes |
 | `CORS_ALLOW_ORIGINS` | The frontend's production origin |
@@ -215,8 +220,15 @@ By hand:
 gcloud run deploy daft-prompt-api --source apps/api --region us-east1
 ```
 
-Environment variables and sizing live on the service, not in the workflow, so
-they can be changed with `gcloud run services update` without a rebuild.
+Environment variables, sizing, secrets and the bucket mount live on the service,
+not in the workflow, so they can be changed with `gcloud run services update`
+without a rebuild. The bucket was attached once with:
+
+```bash
+gcloud run services update daft-prompt-api --region us-east1 \
+  --add-volume=name=artifacts,type=cloud-storage,bucket=daft-prompt-udesa-artifacts \
+  --add-volume-mount=volume=artifacts,mount-path=/mnt/artifacts
+```
 
 ## LLM configuration
 
