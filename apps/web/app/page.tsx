@@ -354,7 +354,15 @@ export default function Home() {
           : createTextMessage("assistant", replyResponse.reply, idx);
         appendMessage({ ...msg, meta });
       } else if (intent) {
-        appendMessage(createTextMessage("assistant", "(no response)", idx));
+        // The stream ended without a terminal `done`/`reply` event. The usual
+        // cause is the proxy's 300s ceiling cutting a compose that ran longer:
+        // the backend keeps working and still renders its artifacts, so the run
+        // is recoverable. Saying that beats the silent "(no response)" this
+        // used to print, which read as if the model had nothing to say.
+        const m =
+          "The stream ended before the backend finished — a compose past the 300s proxy limit gets cut here. It may have completed server-side; try again.";
+        setError(m);
+        appendMessage(createTextMessage("assistant", `Chat failed: ${m}`, idx));
       }
     } catch (err) {
       if (controller.signal.aborted) return;

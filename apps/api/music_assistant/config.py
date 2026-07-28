@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     llm_fallback_providers: str = "gemini,openrouter"
 
     llm_max_retries: int = 1
+    # Sized for a free tier. The limiter is process-global and spaces every call
+    # by 60/limit seconds, so this also caps how fast the parallel fill pool can
+    # go: at 5 a compose spends minutes asleep. Flat-fee gateways should raise it
+    # — see the note in .env.example.
     llm_rpm_limit: int = 5
     llm_fail_fast_on_quota: bool = True
 
@@ -48,6 +52,10 @@ class Settings(BaseSettings):
     reference_store_dir: Optional[str] = None
     reference_upload_dir: Optional[str] = None
     reference_upload_max_bytes: int = 50 * 1024 * 1024
+
+    # Root log level. INFO keeps the pipeline's per-stage TIMING lines, which
+    # are the only way to see where a slow compose spent its time.
+    log_level: str = "INFO"
 
     # HTTP access control. All unset by default: no auth, CORS wide open.
     api_key: Optional[str] = None
