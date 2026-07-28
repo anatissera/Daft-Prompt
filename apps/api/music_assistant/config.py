@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     reference_upload_dir: Optional[str] = None
     reference_upload_max_bytes: int = 50 * 1024 * 1024
 
+    # Root log level. INFO keeps the pipeline's per-stage TIMING lines, which
+    # are the only way to see where a slow compose spent its time.
+    log_level: str = "INFO"
+
     # HTTP access control. All unset by default: no auth, CORS wide open.
     api_key: Optional[str] = None
     cors_allow_origins: Optional[str] = None

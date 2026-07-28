@@ -54,6 +54,11 @@ from music_assistant.interfaces.api_models import (
     sse_data,
 )
 from music_assistant.interfaces.security import cors_options, require_api_key
+from music_assistant.observability import configure_logging
+
+# Uvicorn leaves the root logger unconfigured, so this is what makes the
+# pipeline's INFO-level TIMING lines visible in the container log.
+configure_logging(get_settings().log_level)
 
 LLM_ROUTE_GUARD = [Depends(require_api_key)]
 
